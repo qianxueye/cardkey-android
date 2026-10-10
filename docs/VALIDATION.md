@@ -26,6 +26,6 @@ The JSON vectors in `docs/vectors/apdu-v1.json` are public standard examples for
 
 ## Local software result
 
-On 2026-10-10, `assembleDebug testDebugUnitTest lintDebug` completed successfully in 8 seconds after dependency caches were populated. All 92 JVM tests passed (1.086 seconds of test execution). Android lint reported zero errors and 9 warnings: version-update notices for deliberately pinned dependencies and the unused Bouncy Castle TLS helper. No lint baseline or error suppression was added. Initial public dependency resolution and the first APK build took 2 minutes 34 seconds.
+On 2026-10-10, `assembleDebug testDebugUnitTest lintDebug` completed successfully in 8 seconds after dependency caches were populated. All 92 JVM tests passed (1.086 seconds of test execution). Android lint reported zero errors and 9 warnings: version-update notices for deliberately pinned dependencies, the unused Bouncy Castle TLS helper, and a monochrome-icon warning on the base icon resource (an Android 13 icon resource supplies it). No lint baseline or error suppression was added. Initial public dependency resolution and the first APK build took 2 minutes 34 seconds.
 
 This result covers the local implementation; physical phone/card qualification and pending confirmation copy remain separate.
