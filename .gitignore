@@ -7,3 +7,8 @@ local.properties
 *.jks
 *.keystore
 .DS_Store
+local/
+secrets/
+private-evidence/
+*.p12
+*.pfx

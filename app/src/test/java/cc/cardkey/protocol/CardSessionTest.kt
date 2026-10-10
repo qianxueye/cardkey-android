@@ -80,4 +80,11 @@ class CardSessionTest {
         assertTrue(channel.closed)
         assertTrue(channel.commands.isEmpty())
     }
+
+    @Test fun zeroRemainingPinRetriesAreReportedBlocked() {
+        val channel = FakeChannel(mutableListOf("63c0".hexBytes()))
+        val result = CardSession(channel).run { it.exchange(Apdu(ins = 0x20), effectful = true).requireSuccess() }
+        assertEquals(FailureCode.PIN_BLOCKED, (result as OperationResult.Failed).code)
+        assertEquals(0x63c0, result.status)
+    }
 }

@@ -10,6 +10,7 @@ data class ApduResponse(val data: ByteArray, val status: Int) {
     fun requireSuccess(): ByteArray {
         if (status != 0x9000) throw CardFailure(
             when {
+                status == 0x63c0 -> FailureCode.PIN_BLOCKED
                 status and 0xfff0 == 0x63c0 -> FailureCode.PIN_INVALID
                 status == 0x6983 -> FailureCode.PIN_BLOCKED
                 status == 0x6982 -> FailureCode.AUTHORIZATION_DENIED

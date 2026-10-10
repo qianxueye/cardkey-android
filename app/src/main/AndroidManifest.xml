@@ -3,8 +3,9 @@
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
-    <application android:allowBackup="false" android:label="CardKey" android:supportsRtl="true"
-        android:theme="@style/Theme.CardKey" android:usesCleartextTraffic="false">
+    <application android:allowBackup="false" android:fullBackupContent="false" android:label="CardKey" android:supportsRtl="true"
+        android:theme="@style/Theme.CardKey" android:usesCleartextTraffic="false"
+        android:icon="@mipmap/ic_launcher" android:dataExtractionRules="@xml/data_extraction_rules">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

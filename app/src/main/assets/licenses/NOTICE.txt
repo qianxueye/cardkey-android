@@ -1,0 +1,10 @@
+CardKey for Android
+Original code: Apache License 2.0.
+
+AndroidX (including Jetpack Compose and Material 3), Kotlin, Kotlin Coroutines,
+JetBrains annotations and JSpecify: Apache License 2.0.
+Bouncy Castle provider, PKIX and utility libraries: Bouncy Castle MIT-style license.
+
+The corresponding license texts are included in this directory.
+Dependency versions and public source links are maintained in docs/DEPENDENCIES.md
+in the public source repository: https://github.com/qianxueye/cardkey-android
