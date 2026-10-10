@@ -1,8 +1,9 @@
-.DS_Store
-local/
-secrets/
-private-evidence/
-*.p12
-*.pfx
+.gradle/
+.kotlin/
+**/build/
+local.properties
+.idea/
+*.iml
 *.jks
 *.keystore
+.DS_Store
