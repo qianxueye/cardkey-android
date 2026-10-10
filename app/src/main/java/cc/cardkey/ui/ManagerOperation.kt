@@ -6,23 +6,23 @@ import cc.cardkey.protocol.piv.*
 import java.security.SecureRandom
 import java.util.Base64
 
-enum class ManagerOperation(val title: String, val piv: Boolean = false, val confirmation: Boolean = false) {
+enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     FIDO_INFO("FIDO2 · 读取"), FIDO_RETRIES("PIN · 重试次数"),
-    FIDO_SET_PIN("PIN · 设置", confirmation = true), FIDO_CHANGE_PIN("PIN · 修改", confirmation = true),
-    FIDO_CAPACITY("凭据 · 容量", confirmation = true), FIDO_RPS("RP · 读取", confirmation = true),
-    FIDO_CREDENTIALS("凭据 · 读取", confirmation = true), FIDO_DELETE("凭据 · 删除", confirmation = true),
-    FIDO_UPDATE("凭据 · 修改", confirmation = true), FIDO_ALWAYS_UV("始终验证用户", confirmation = true),
-    FIDO_MIN_PIN("PIN · 最短长度", confirmation = true), FIDO_ENTERPRISE("企业证明 · 启用", confirmation = true),
-    FIDO_REGISTER("注册 · 验证", confirmation = true), FIDO_ASSERT("签名 · 验证", confirmation = true),
-    U2F_INFO("U2F · 读取"), U2F_REGISTER("U2F · 注册", confirmation = true), U2F_ASSERT("U2F · 验证", confirmation = true),
-    FIDO_BLOB_READ("扩展数据 · 读取"), FIDO_BLOB_WRITE("扩展数据 · 设置", confirmation = true),
+    FIDO_SET_PIN("PIN · 设置"), FIDO_CHANGE_PIN("PIN · 修改"),
+    FIDO_CAPACITY("凭据 · 容量"), FIDO_RPS("RP · 读取"),
+    FIDO_CREDENTIALS("凭据 · 读取"), FIDO_DELETE("凭据 · 删除"),
+    FIDO_UPDATE("凭据 · 修改"), FIDO_ALWAYS_UV("始终验证用户"),
+    FIDO_MIN_PIN("PIN · 最短长度"), FIDO_ENTERPRISE("企业证明 · 启用"),
+    FIDO_REGISTER("注册 · 验证"), FIDO_ASSERT("签名 · 验证"),
+    U2F_INFO("U2F · 读取"), U2F_REGISTER("U2F · 注册"), U2F_ASSERT("U2F · 验证"),
+    FIDO_BLOB_READ("扩展数据 · 读取"), FIDO_BLOB_WRITE("扩展数据 · 设置"),
     PIV_INFO("PIV · 读取", true), PIV_SLOT("证书 · 读取", true),
-    PIV_CHANGE_PIN("PIN · 修改", true, true), PIV_CHANGE_PUK("PUK · 修改", true, true),
-    PIV_UNBLOCK("PIN · 解锁", true, true), PIV_ADMIN("管理密钥 · 修改", true, true),
-    PIV_GENERATE("生成密钥", true, true), PIV_CSR("导出 CSR", true, true),
-    PIV_IMPORT("导入证书", true, true), PIV_SIGN("验证签名", true, true),
-    PIV_ECDH("ECDH · 验证", true, true), PIV_DECRYPT("RSA · 验证", true, true),
-    PIV_RESET("PIV · 重置", true, true)
+    PIV_CHANGE_PIN("PIN · 修改", true), PIV_CHANGE_PUK("PUK · 修改", true),
+    PIV_UNBLOCK("PIN · 解锁", true), PIV_ADMIN("管理密钥 · 修改", true),
+    PIV_GENERATE("生成密钥", true), PIV_CSR("导出 CSR", true),
+    PIV_IMPORT("导入证书", true), PIV_SIGN("验证签名", true),
+    PIV_ECDH("ECDH · 验证", true), PIV_DECRYPT("RSA · 验证", true),
+    PIV_RESET("PIV · 重置", true)
 }
 
 class OperationInput(

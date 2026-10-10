@@ -46,19 +46,28 @@ class CardSession(private val channel: CardChannel) : Closeable {
             val part = send(encode(apdu.copy(cla = apdu.cla or 0x10,
                 data = apdu.data.copyOfRange(offset, offset + chunkSize), le = null)), effectful)
             part.requireSuccess()
-            if (part.data.isNotEmpty()) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+            if (part.data.isNotEmpty()) {
+                if (effectful) securityStateUncertain()
+                throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+            }
             offset += chunkSize
         }
         var response = send(encode(apdu.copy(data = apdu.data.copyOfRange(offset, apdu.data.size))), effectful)
         var data = response.data
         var continuations = 0
         while (response.status ushr 8 == 0x61) {
-            if (++continuations > 256 || data.size > 65536) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+            if (++continuations > 256 || data.size > 65536) {
+                if (effectful) securityStateUncertain()
+                throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+            }
             response = send(byteArrayOf(apdu.cla.toByte(), 0xc0.toByte(), 0, 0,
                 (response.status and 0xff).toByte()), effectful)
             data += response.data
         }
-        if (data.size > 65536) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+        if (data.size > 65536) {
+            if (effectful) securityStateUncertain()
+            throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+        }
         return ApduResponse(data, response.status)
     }
 

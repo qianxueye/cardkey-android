@@ -21,7 +21,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. CI uses public Ubu
 - PIV: information, slot metadata, public keys and certificates; PIN/PUK changes and unblock; 3DES/AES management authentication and key changes; RSA-2048/P-256/P-384 generation; verified card-signed CSR export; matching certificate import/readback; signature, ECDH and RSA-decryption checks.
 - PIV reset only when the card already reports both PIN and PUK blocked. The app never consumes retries to reach that state. Blocking both has already erased keys in the supported CardKey profile.
 
-Confirmation and status wording is subject to Owner approval. While that batch is pending, the public-read screens are active and operations requiring confirmation remain disabled. Protocol services and synthetic tests are implemented independently; this is not a claim that full device acceptance has passed. [Copy review list](docs/COPY-PROPOSAL.md)
+Management actions use the approved Chinese confirmation and result messages. PIN/PUK-sensitive PIV operations read live retry counts before verification; a last attempt that could erase keys requires an additional confirmation and a second check of those facts in the same session. Unknown writes require inspection before another mutation. These controls do not replace physical device acceptance. [Copy scope](docs/COPY-PROPOSAL.md)
 
 ## Card and session rules
 

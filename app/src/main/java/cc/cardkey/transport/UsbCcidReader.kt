@@ -27,6 +27,31 @@ object UsbCcidReader {
         allowInitialPowerOn: Boolean = false,
         timeoutMillis: Int = 15000,
     ): CardChannel {
+        val channel = openChannel(manager, descriptor, timeoutMillis)
+        try {
+            channel.initialize(allowInitialPowerOn)
+            return channel
+        } catch (error: Exception) {
+            channel.close()
+            throw TransportException(Dispatch.NOT_DISPATCHED, error)
+        }
+    }
+
+    fun isCardAbsent(
+        manager: UsbManager,
+        descriptor: UsbReaderDescriptor,
+        timeoutMillis: Int = 1500,
+    ): Boolean = try {
+        openChannel(manager, descriptor, timeoutMillis).use { it.isCardAbsent() }
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun openChannel(
+        manager: UsbManager,
+        descriptor: UsbReaderDescriptor,
+        timeoutMillis: Int,
+    ): CcidChannel {
         val device = descriptor.device
         if (device.vendorId != 0x04e6 || device.productId != 0x5810 ||
             !manager.hasPermission(device) || Thread.currentThread().isInterrupted) {
@@ -42,7 +67,6 @@ object UsbCcidReader {
             throw TransportException(Dispatch.NOT_DISPATCHED, error)
         }
         var claimed = false
-        var channel: CcidChannel? = null
         try {
             val capabilities = CcidCapabilities.parse(connection.rawDescriptors, intf.id)
             require(timeoutMillis in 1..60000)
@@ -60,16 +84,10 @@ object UsbCcidReader {
                     }
                 }
             }
-            channel = CcidChannel(io, capabilities, endpoints.first.maxPacketSize, timeoutMillis)
-            channel.initialize(allowInitialPowerOn)
-            return channel
+            return CcidChannel(io, capabilities, endpoints.first.maxPacketSize, timeoutMillis)
         } catch (error: Exception) {
-            if (channel != null) {
-                channel.close()
-            } else {
-                if (claimed) runCatching { connection.releaseInterface(intf) }
-                connection.close()
-            }
+            if (claimed) runCatching { connection.releaseInterface(intf) }
+            connection.close()
             throw TransportException(Dispatch.NOT_DISPATCHED, error)
         }
     }

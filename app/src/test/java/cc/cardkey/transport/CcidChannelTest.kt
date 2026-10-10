@@ -10,6 +10,52 @@ class CcidChannelTest {
     private val caps = CcidCapabilities(3, 0x4004a, 271)
     private val apdu = byteArrayOf(0, 0x20, 0, 0)
 
+    @Test fun absenceProbeUsesOnlyGetSlotStatusAndClosesWithoutPowerCommands() {
+        for (status in 0..2) {
+            val io = FakeIo(listOf(frame(0x81, 0, status = status)))
+            val absent = CcidChannel(io, caps, 64, 1500).use { it.isCardAbsent() }
+            assertEquals(status == 2, absent)
+            assertEquals(listOf(0x65), io.types())
+            assertEquals(1, io.closes)
+        }
+    }
+
+    @Test fun absenceProbeFailuresNeverProveRemoval() {
+        val invalid = listOf(
+            emptyList(),
+            listOf(frame(0x81, 0, status = 0x42)),
+            listOf(frame(0x81, 1, status = 2)),
+            listOf(frame(0x80, 0, status = 2)),
+            listOf(frame(0x81, 0, status = 2, data = byteArrayOf(0))),
+            listOf(frame(0x81, 0, status = 2, parameter = 4)),
+            listOf(frame(0x81, 0, status = 3)),
+            List(65) { frame(0x81, 0, status = 0x82) },
+        )
+        for (responses in invalid) {
+            val io = FakeIo(responses)
+            assertFalse(CcidChannel(io, caps, 64, 1500).use { it.isCardAbsent() })
+            assertEquals(listOf(0x65), io.types())
+            assertEquals(1, io.closes)
+        }
+        for (written in listOf(-1, 0, 5)) {
+            val io = FakeIo(listOf(frame(0x81, 0, status = 2))).also { it.writeResult = written }
+            assertFalse(CcidChannel(io, caps, 64, 1500).use { it.isCardAbsent() })
+            assertEquals(listOf(0x65), io.types())
+            assertEquals(0, io.reads)
+            assertEquals(1, io.closes)
+        }
+    }
+
+    @Test fun absenceProbeKeepsItsDeadlineAcrossExtensions() {
+        var clock = 0L
+        val io = FakeIo(listOf(frame(0x81, 0, status = 0x82)))
+        io.afterRead = { clock += 1_501_000_000L }
+        assertFalse(CcidChannel(io, caps, 64, 1500, { clock }).use { it.isCardAbsent() })
+        assertEquals(listOf(0x65), io.types())
+        assertEquals(1, io.reads)
+        assertEquals(1, io.closes)
+    }
+
     @Test fun activeCardNeverPowersOnOrOff() {
         val io = FakeIo(active())
         val channel = CcidChannel(io, caps, 64)

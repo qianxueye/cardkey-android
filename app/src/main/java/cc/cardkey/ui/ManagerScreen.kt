@@ -12,10 +12,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import cc.cardkey.protocol.*
+import cc.cardkey.R
 import cc.cardkey.protocol.piv.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.transport.UsbReaderDescriptor
@@ -42,6 +44,8 @@ fun ManagerScreen(
     onImport: () -> Unit,
     imported: ByteArray?,
     onExport: (ManagerReport) -> Unit,
+    onLastRetry: (Boolean) -> Unit,
+    onSecureChange: (Boolean) -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
     var operation by remember { mutableStateOf(ManagerOperation.FIDO_INFO) }
@@ -61,8 +65,35 @@ fun ManagerScreen(
     var adminAlgorithm by remember { mutableStateOf(ManagementAlgorithm.TDES) }
     var newAdminAlgorithm by remember { mutableStateOf(ManagementAlgorithm.AES256) }
     var invalid by remember { mutableStateOf(false) }
+    var confirmation by remember { mutableStateOf<PendingOperation?>(null) }
+    val secretResult = (state.result as? OperationResult.Completed)?.value?.rows?.any {
+        it.label in setOf("largeBlobKey", "hmac-secret")
+    } == true
+    val secretForm = tab != 2 && (needsPin(operation) || operation in setOf(
+        ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE,
+        ManagerOperation.PIV_IMPORT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE))
+    SideEffect { onSecureChange(secretForm || secretResult || state.lastRetry != null) }
     LaunchedEffect(clearInputs, operation) {
         pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; invalid = false
+        confirmation?.close(); confirmation = null
+    }
+    DisposableEffect(Unit) { onDispose { confirmation?.close() } }
+    confirmation?.let { input ->
+        AlertDialog(onDismissRequest = { input.close(); confirmation = null },
+            title = { Text(input.operation.title) },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                input.messages.forEach { Text(stringResource(it)) }
+            } },
+            confirmButton = { TextButton(onClick = { confirmation = null; input.dispatch(onSubmit) }) { Text("确认") } },
+            dismissButton = { TextButton(onClick = { input.close(); confirmation = null }) { Text("取消") } })
+    }
+    state.lastRetry?.let { (current, other) ->
+        AlertDialog(onDismissRequest = { onLastRetry(false) },
+            title = { Text(state.operation?.title ?: "PIV") },
+            text = { Text(stringResource(R.string.confirm_lastRetryErasesKeys)
+                .replace("{当前验证项}", current).replace("{另一项}", other)) },
+            confirmButton = { TextButton(onClick = { onLastRetry(true) }) { Text("确认") } },
+            dismissButton = { TextButton(onClick = { onLastRetry(false) }) { Text("取消") } })
     }
     Scaffold(
         topBar = { TopAppBar(title = { Text("CardKey") }) },
@@ -82,6 +113,8 @@ fun ManagerScreen(
             Column(Modifier.widthIn(max = 840.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (tab == 2) {
                     Text("读卡器", style = MaterialTheme.typography.headlineSmall)
+                    if (state.readers.isEmpty()) Text(stringResource(R.string.reader_empty))
+                    if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission))
                     OutlinedCard(onClick = { if (!state.busy) onReader(null) }, Modifier.fillMaxWidth()) {
                         ListItem(headlineContent = { Text("NFC") }, trailingContent = { RadioButton(state.nfc, onClick = null) })
                     }
@@ -96,6 +129,7 @@ fun ManagerScreen(
                 } else {
                     Text(if (tab == 0) "FIDO2" else "PIV", style = MaterialTheme.typography.headlineSmall)
                     AssistChip(onClick = { tab = 2 }, label = { Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器") })
+                    if (state.nfc) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodyMedium)
                     Choice("操作", operation, ManagerOperation.entries.filter { it.piv == (tab == 1) }, { it.title }, !state.busy) { operation = it }
                     val op = operation
                     if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
@@ -103,6 +137,7 @@ fun ManagerScreen(
                         Choice("槽位", slot, PivClient.slots, { "%02X".format(it) }, !state.busy) { slot = it }
                     }
                     if (needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy) { pin = it }
+                    if (op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
                     if (op in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
                             ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK)) {
                         SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK) "新 PUK" else "新 PIN", newPin, !state.busy) { newPin = it }
@@ -165,7 +200,7 @@ fun ManagerScreen(
                         OutlinedButton(onClick = onImport, enabled = !state.busy) { Text("导入证书") }
                         imported?.let { Text("${it.size} bytes", style = MaterialTheme.typography.bodySmall) }
                     }
-                    if (invalid) Text("输入", color = MaterialTheme.colorScheme.error)
+                    if (invalid) Text(stringResource(R.string.error_invalidInput), color = MaterialTheme.colorScheme.error)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = {
                             try {
@@ -179,15 +214,22 @@ fun ManagerScreen(
                                         if ("hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) extensionValue.hexBytes() else null,
                                         "largeBlobKey" in extensionNames))
                                 pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
-                                onSubmit(input)
+                                if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
+                                else confirmation = PendingOperation(input)
                             } catch (_: IllegalArgumentException) { invalid = true }
-                        }, enabled = !state.busy && !op.confirmation) { Text(op.title.substringAfter("·").trim()) }
+                        }, enabled = !state.busy && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
                         if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
                     }
                 }
                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 when (val result = state.result) {
                     is OperationResult.Completed -> {
+                        Text(stringResource(R.string.operation_completed), style = MaterialTheme.typography.titleMedium)
+                        if (state.operation in setOf(ManagerOperation.FIDO_REGISTER, ManagerOperation.FIDO_ASSERT,
+                                ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT, ManagerOperation.PIV_CSR,
+                                ManagerOperation.PIV_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
+                            Text(stringResource(R.string.status_verification), style = MaterialTheme.typography.bodySmall)
+                        }
                         result.value.rows.forEach { row -> OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(row.label, style = MaterialTheme.typography.labelLarge)
@@ -199,13 +241,16 @@ fun ManagerScreen(
                     is OperationResult.Failed -> {
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
-                                Text("读取", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+                                ConfirmationPolicy.resultMessages(result).forEach {
+                                    Text(stringResource(it), color = MaterialTheme.colorScheme.error)
+                                }
                                 result.status?.let { Text("0x%04X".format(it)) }
                             }
                         }
                     }
                     null -> Unit
                 }
+                if (tab == 0) Text(stringResource(R.string.restriction_fidoReset), style = MaterialTheme.typography.bodySmall)
             }
         }
     }

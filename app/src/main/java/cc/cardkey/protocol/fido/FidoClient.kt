@@ -19,7 +19,10 @@ class FidoClient(private val session: CardSession) {
         check(selected)
         val bytes = byteArrayOf(code.toByte()) + (parameters?.let(CborCodec::encode) ?: byteArrayOf())
         val response = session.exchange(Apdu(cla = 0x80, ins = 0x10, data = bytes), effectful).requireSuccess()
-        if (response.isEmpty()) malformed()
+        if (response.isEmpty()) {
+            if (effectful) session.securityStateUncertain()
+            malformed()
+        }
         val status = response[0].toInt() and 255
         if (effectful && code == 6) when (status) {
             0x31, 0x34 -> session.securityStateChanged()

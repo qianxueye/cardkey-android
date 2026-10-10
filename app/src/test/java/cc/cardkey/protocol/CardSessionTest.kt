@@ -87,4 +87,12 @@ class CardSessionTest {
         assertEquals(FailureCode.PIN_BLOCKED, (result as OperationResult.Failed).code)
         assertEquals(0x63c0, result.status)
     }
+
+    @Test fun oversizedWriteResponseRemainsUnknown() {
+        val channel = FakeChannel(mutableListOf(ByteArray(65537) + "9000".hexBytes()))
+        val result = CardSession(channel).run { it.exchange(Apdu(ins = 0xdb), effectful = true) }
+        assertEquals(FailureCode.MALFORMED_RESPONSE, (result as OperationResult.Failed).code)
+        assertEquals(Effect.UNKNOWN, result.effect)
+        assertEquals(1, channel.commands.size)
+    }
 }

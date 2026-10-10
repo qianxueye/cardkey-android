@@ -83,6 +83,17 @@ internal class CcidChannel(
     }
 
     @Synchronized
+    fun isCardAbsent(): Boolean = try {
+        transaction {
+            val status = exchange(0x65, byteArrayOf(), 0x81)
+            require(status.data.isEmpty() && status.parameter in 0..3)
+            status.cardStatus == 2
+        }
+    } catch (_: TransportException) {
+        false
+    }
+
+    @Synchronized
     fun initialize(allowInitialPowerOn: Boolean) {
         check(!initialized)
         transaction {

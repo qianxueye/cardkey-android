@@ -1,0 +1,36 @@
+<resources>
+    <string name="operation_completed" formatted="false">操作已完成。</string>
+    <string name="operation_notDispatched" formatted="false">指令未发送到卡片。</string>
+    <string name="operation_unknown" formatted="false">指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。</string>
+    <string name="operation_appliedReadbackFailed" formatted="false">卡片已接受更改，但回读未完成。请读取卡片状态，勿重复提交更改。</string>
+    <string name="error_contactRequired" formatted="false">此操作需要接触式读卡器。NFC 目前仅支持读取 PIV 公开信息。</string>
+    <string name="error_physicalActionRequired" formatted="false">请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。</string>
+    <string name="error_pinInvalid" formatted="false">PIN 或 PUK 验证失败，请查看剩余重试次数。</string>
+    <string name="error_pinBlocked" formatted="false">PIN 或 PUK 已锁定。</string>
+    <string name="error_unsupported" formatted="false">当前卡片或读卡器不支持此操作。</string>
+    <string name="error_authorization" formatted="false">卡片未授权此操作。</string>
+    <string name="error_malformed" formatted="false">卡片响应无效。</string>
+    <string name="error_keyMismatch" formatted="false">证书公钥与所选槽位不匹配，未导入证书。</string>
+    <string name="error_invalidInput" formatted="false">输入格式有误，请检查所填内容。</string>
+    <string name="error_transport" formatted="false">卡片连接失败。</string>
+    <string name="error_cancelled" formatted="false">操作已取消。已发送的指令可能已生效，请查看卡片状态。</string>
+    <string name="reader_nfc" formatted="false">选择操作后，将卡片贴近手机。</string>
+    <string name="reader_usbPermission" formatted="false">请在系统提示中允许 CardKey 访问此 USB 读卡器。</string>
+    <string name="reader_empty" formatted="false">未连接受支持的 USB 读卡器。</string>
+    <string name="confirm_authenticate" formatted="false">当前 PIN 或 PUK 输入错误会减少重试次数。确认继续？</string>
+    <string name="confirm_pinChange" formatted="false">当前 PIN 或 PUK 输入错误会减少重试次数。确认修改？</string>
+    <string name="confirm_lastRetryErasesKeys" formatted="false">{当前验证项} 仅剩一次重试，{另一项} 已锁定。此次验证失败将清除 PIV 私钥。确认继续？</string>
+    <string name="confirm_adminChange" formatted="false">更换后，后续管理操作需要新管理密钥。请先妥善保存新密钥。确认更换？</string>
+    <string name="confirm_credentialDelete" formatted="false">删除所选凭据后，无法再用它登录已绑定的账户。此操作不可撤销。确认删除？</string>
+    <string name="confirm_credentialUpdate" formatted="false">更新所选凭据的用户信息，用户 ID 保留。确认更新？</string>
+    <string name="confirm_alwaysUvEnable" formatted="false">开启后，创建凭据和登录验证始终要求用户验证，U2F 将不可用。确认开启？</string>
+    <string name="confirm_alwaysUvDisable" formatted="false">关闭后，创建凭据和登录验证按卡片和凭据各自的策略要求用户验证。确认关闭？</string>
+    <string name="confirm_minPin" formatted="false">最短 PIN 长度不能降低。提高长度后，卡片可能要求修改 PIN；选择强制修改时，须先修改 PIN 才能再次进行 PIN 验证。确认应用？</string>
+    <string name="confirm_enterprise" formatted="false">按卡内既有策略开启企业证明，允许的服务可能据此识别这张卡。确认开启？</string>
+    <string name="confirm_keyGenerate" formatted="false">生成新密钥将覆盖所选槽位的现有私钥，原证书可能不再匹配。此操作不可撤销。确认生成？</string>
+    <string name="confirm_certificateImport" formatted="false">公钥匹配验证通过后，将替换所选槽位的证书。确认导入？</string>
+    <string name="confirm_registration" formatted="false">将为 cardkey.example 创建测试凭据；驻留凭据会占用卡内存储。确认创建？</string>
+    <string name="confirm_pivReset" formatted="false">仅在 PIN 和 PUK 均已锁定时重置 PIV。PIV 私钥此前已清除；重置将清除 PIV 数据，并恢复默认 PIN、PUK 和管理密钥。FIDO 凭据保留。确认重置？</string>
+    <string name="restriction_fidoReset" formatted="false">此卡不提供 CTAP 重置。重装 FIDO applet 需在桌面初始化流程中执行，现有 FIDO 凭据将失效。</string>
+    <string name="status_verification" formatted="false">此结果仅验证卡片返回的密码运算、CSR 或签名，不代表证书受信任或外部账户接受。</string>
+</resources>

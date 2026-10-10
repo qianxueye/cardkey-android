@@ -49,6 +49,13 @@ class FidoClientTest {
         assertEquals(OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN, dispatch = Dispatch.RESPONSE_UNAVAILABLE), result)
         assertEquals(listOf(4, 13), channel.commands.map { it.first }); assertTrue(channel.closed)
     }
+    @Test fun missingCtapStatusAfterDispatchedToggleIsUnknown() {
+        val channel = FidoChannel { code, _ -> if (code == 4)
+            success(info(mapOf("authnrCfg" to true, "alwaysUv" to false))) else byteArrayOf() }
+        val result = CardSession(channel).run { session -> FidoClient(session).apply { select() }.setAlwaysUv(null, true) }
+        assertEquals(OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, Effect.UNKNOWN), result)
+        assertEquals(listOf(4, 13), channel.commands.map { it.first })
+    }
     @Test fun confirmedToggleWithMalformedReadbackRetainsAppliedEffect() {
         var read = 0
         val channel = FidoChannel { code, _ -> if (code == 4) {

@@ -9,6 +9,7 @@ import android.hardware.usb.UsbManager
 import android.nfc.NfcAdapter
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,6 +19,8 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import cc.cardkey.ui.*
+import cc.cardkey.protocol.FailureCode
+import cc.cardkey.protocol.OperationResult
 import cc.cardkey.transport.UsbReaderDescriptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,6 +35,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var imported by mutableStateOf<ByteArray?>(null)
     private var export: ManagerReport? = null
     private var requestedReader: UsbReaderDescriptor? = null
+    private var lastNfcTag: android.nfc.Tag? = null
     private val permissionAction get() = "$packageName.USB_PERMISSION"
 
     private val importer = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -72,6 +76,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             if (intent.action == permissionAction) {
                 requestedReader?.let { reader -> if (usb.hasPermission(reader.device)) model.selectReader(reader) }
                 requestedReader = null
+                model.permissionPending(false)
             }
             model.refreshReaders()
         }
@@ -91,10 +96,19 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         model.refreshReaders()
         setContent {
             val state by model.state.collectAsState()
+            LaunchedEffect(state.result) {
+                val failure = state.result as? OperationResult.Failed
+                if (state.nfc && failure?.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
+                    lastNfcTag?.let { tag -> nfc?.ignore(tag, 250,
+                        { lastNfcTag = null }, Handler(mainLooper)) }
+                }
+            }
             CardKeyTheme {
                 ManagerScreen(state, clearInputs, ::selectReader, model::refreshReaders, model::submit, model::cancel,
                     { importer.launch(arrayOf("*/*")) }, imported,
-                    { report -> export = report; exporter.launch(report.fileName ?: "cardkey.der") })
+                    { report -> export = report; exporter.launch(report.fileName ?: "cardkey.der") }, model::approveLastRetry,
+                    { secure -> if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) })
             }
         }
     }
@@ -103,6 +117,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         if (reader == null || usb.hasPermission(reader.device)) model.selectReader(reader)
         else {
             requestedReader = reader
+            model.permissionPending(true)
             val intent = Intent(permissionAction).setPackage(packageName)
             usb.requestPermission(reader.device, PendingIntent.getBroadcast(this, 0, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
@@ -122,6 +137,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         super.onPause()
     }
 
-    override fun onTagDiscovered(tag: android.nfc.Tag) { model.onTag(tag) }
+    override fun onTagDiscovered(tag: android.nfc.Tag) {
+        runOnUiThread { lastNfcTag = tag; model.onTag(tag) }
+    }
     override fun onDestroy() { unregisterReceiver(receiver); super.onDestroy() }
 }
