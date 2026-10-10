@@ -28,5 +28,6 @@ enum class Effect { NONE, APPLIED, UNKNOWN }
 
 sealed interface OperationResult<out T> {
     data class Completed<T>(val value: T, val effect: Effect) : OperationResult<T>
-    data class Failed(val code: FailureCode, val effect: Effect, val status: Int? = null) : OperationResult<Nothing>
+    data class Failed(val code: FailureCode, val effect: Effect, val status: Int? = null,
+        val dispatch: Dispatch? = null, val writeAccepted: Boolean = false) : OperationResult<Nothing>
 }

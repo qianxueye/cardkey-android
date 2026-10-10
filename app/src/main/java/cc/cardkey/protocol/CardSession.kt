@@ -25,12 +25,15 @@ class CardSession(private val channel: CardChannel) : Closeable {
         private set
     private var finished = false
     private var running = false
+    private var writeAccepted = false
 
     fun requireContact() {
         if (medium != Medium.CONTACT) throw CardFailure(FailureCode.CONTACT_REQUIRED)
     }
 
-    fun applied() { effect = Effect.APPLIED }
+    fun applied() { effect = Effect.APPLIED; writeAccepted = true }
+    fun securityStateChanged() { effect = Effect.APPLIED }
+    fun securityStateUncertain() { effect = Effect.UNKNOWN }
 
     fun exchange(apdu: Apdu, effectful: Boolean = false): ApduResponse {
         check(!finished)
@@ -70,7 +73,7 @@ class CardSession(private val channel: CardChannel) : Closeable {
             if (effectful) effect = Effect.UNKNOWN
             throw CardFailure(FailureCode.MALFORMED_RESPONSE)
         }
-        val status = (bytes[bytes.size - 2].toInt() and 255 shl 8) or (bytes.last().toInt() and 255)
+        val status = ((bytes[bytes.size - 2].toInt() and 255) shl 8) or (bytes.last().toInt() and 255)
         return ApduResponse(bytes.copyOf(bytes.size - 2), status)
     }
 
@@ -78,9 +81,10 @@ class CardSession(private val channel: CardChannel) : Closeable {
         check(!running && !finished)
         running = true
         return try { OperationResult.Completed(operation(this), effect) }
-        catch (e: CardFailure) { OperationResult.Failed(e.code, effect, e.status) }
-        catch (_: TransportException) { OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, effect) }
-        catch (_: IllegalArgumentException) { OperationResult.Failed(FailureCode.INVALID_INPUT, effect) }
+        catch (e: CardFailure) { OperationResult.Failed(e.code, effect, e.status, writeAccepted = writeAccepted) }
+        catch (e: TransportException) { OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, effect, dispatch = e.dispatch, writeAccepted = writeAccepted) }
+        catch (_: java.security.GeneralSecurityException) { OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, effect, writeAccepted = writeAccepted) }
+        catch (_: IllegalArgumentException) { OperationResult.Failed(FailureCode.INVALID_INPUT, effect, writeAccepted = writeAccepted) }
         finally { close() }
     }
 
