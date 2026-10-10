@@ -1,0 +1,15 @@
+# Repository instructions
+
+Implementation status: awaiting Owner approval of the project plan. This repository was initialized with planning documents only. A later direct Owner approval in the conversation authorizes the approved work; update the recorded status and do not ask repeatedly for the same authorization.
+
+Use English for subagent briefs and internal handoffs, and Chinese for Owner-facing explanations. Follow the parent workspace Git, signing, attribution, review, verification and copy rules. Preserve unrelated work. After bootstrap, use a fresh task branch from the current remote default branch, commit coherent steps, and publish one consolidated tested candidate per package or review round.
+
+Verify live issue/PR state before implementation. Keep each package independently working and reviewable, with its necessary tests and documentation. Root owns remote gates and closeout; one assigned owner serializes all physical card mutations and integration sessions. No agent should wait on CI in a self-spawned background loop.
+
+Preserve the Owner-confirmed J3R180 / Java Card 3.0.5 / GP 2.3 baseline. Keep FIDO, PIV, reader, app and system-consumer acceptance separate. Do not claim deployment, certification, account acceptance or successful writes without the corresponding readback. Do not automatically retry uncertain mutations.
+
+Keep management keys, PINs, attestation private keys, signing keys, real credentials and raw private logs outside Git and CI output. Use synthetic fixtures. Never change repository visibility without the Owner-authorized publication scope. No routine checksum manifests or repeated reassurance tests.
+
+Before adopting upstream source, pin the revision and preserve its license/notices. Frontend wording approval remains separate from functional approval.
+
+Repository scope: Self-contained Kotlin/Compose application managing both FIDO2 and PIV through qualified NFC/USB paths; Android 14+ credential-provider integration.
