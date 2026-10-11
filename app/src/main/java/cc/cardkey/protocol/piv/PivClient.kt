@@ -39,33 +39,47 @@ public data class RetryMetadata(val defaultValue: Boolean, val total: Int, val r
 public data class PivInfo(val version: String, val serial: Long, val pin: RetryMetadata, val puk: RetryMetadata,
                          val managementAlgorithm: ManagementAlgorithm, val managementDefault: Boolean)
 public data class SlotMetadata(val algorithm: KeyAlgorithm, val pinPolicy: Int, val touchPolicy: Int,
-                              val generated: Boolean, val publicKey: PublicKey)
+                              val generated: Boolean, val publicKey: PublicKey?)
+public data class PivPinStatus(val verified: Boolean, val retriesRemaining: Int?, val contactRequired: Boolean)
 public data class PivSlot(val slot: Int, val metadata: SlotMetadata?, val certificate: X509Certificate?)
 
-public class PivClient(private val session: CardSession) {
+public class PivClient(private val session: CardSession, private val secure: PivSecureContext? = null) {
     private val random = SecureRandom()
 
-    fun readInfo(): PivInfo {
+    fun readInfo(): PivInfo = validateResponse {
         select()
         val version = send(Apdu(ins = 0xfd)).also { if (it.size != 3) malformed() }
         val serial = send(Apdu(ins = 0xf8)).also { if (it.size != 4) malformed() }
         val admin = metadata(0x9b)
         val algorithm = ManagementAlgorithm.entries.firstOrNull { it.code == byte(admin, 1) }
             ?: throw CardFailure(FailureCode.UNSUPPORTED)
-        return PivInfo(version.joinToString(".") { (it.toInt() and 255).toString() },
+        PivInfo(version.joinToString(".") { (it.toInt() and 255).toString() },
             BigInteger(1, serial).toLong(), retries(0x80), retries(0x81), algorithm, flag(admin, 5))
     }
 
-    fun readSlot(slot: Int): PivSlot {
+    fun readSlot(slot: Int): PivSlot = validateResponse {
         requireSlot(slot)
         select()
-        return PivSlot(slot, slotMetadataOrNull(slot), certificate(slot))
+        PivSlot(slot, slotMetadataOrNull(slot), certificate(slot))
     }
 
     fun verifyPin(pin: CharArray) {
         return withPin(pin) { encoded ->
             select()
             verifyEncoded(encoded)
+        }
+    }
+
+    fun pinStatus(): PivPinStatus = validateResponse {
+        if (secure == null) session.requireContact() else secure.requireCurrent(session)
+        select()
+        val response = exchange(Apdu(ins = 0x20, p2 = 0x80, le = null))
+        if (response.data.isNotEmpty()) malformed()
+        when {
+            response.status == 0x9000 -> PivPinStatus(true, null, false)
+            response.status and 0xfff0 == 0x63c0 -> PivPinStatus(false, response.status and 15, false)
+            response.status == 0x6983 -> PivPinStatus(false, null, session.medium == Medium.NFC)
+            else -> { response.requireSuccess(); malformed() }
         }
     }
 
@@ -133,7 +147,8 @@ public class PivClient(private val session: CardSession) {
             session.applied()
             val generated = publicKey(algorithm, PivTlv.one(result, 0x7f49))
             val readback = slotMetadata(slot)
-            if (!generated.encoded.contentEquals(readback.publicKey.encoded) || readback.algorithm != algorithm || !readback.generated ||
+            val readbackKey = readback.publicKey ?: malformed()
+            if (!generated.encoded.contentEquals(readbackKey.encoded) || readback.algorithm != algorithm || !readback.generated ||
                 readback.pinPolicy != pinPolicy.code || readback.touchPolicy != 1) malformed()
             return readback
         } finally { managementKey.fill(0) }
@@ -146,6 +161,7 @@ public class PivClient(private val session: CardSession) {
             require(name.rdNs.isNotEmpty())
             select()
             val info = slotMetadata(slot)
+            val verifiedKey = info.publicKey ?: throw CardFailure(FailureCode.UNSUPPORTED)
             verifyEncoded(encodedPin)
             val buffer = ByteArrayOutputStream()
             val signer = object : ContentSigner {
@@ -154,9 +170,9 @@ public class PivClient(private val session: CardSession) {
                 override fun getOutputStream() = buffer
                 override fun getSignature(): ByteArray = sign(slot, info.algorithm, buffer.toByteArray())
             }
-            val request = PKCS10CertificationRequestBuilder(name, SubjectPublicKeyInfo.getInstance(info.publicKey.encoded)).build(signer)
+            val request = PKCS10CertificationRequestBuilder(name, SubjectPublicKeyInfo.getInstance(verifiedKey.encoded)).build(signer)
             try {
-                if (!request.isSignatureValid(JcaContentVerifierProviderBuilder().build(info.publicKey))) malformed()
+                if (!request.isSignatureValid(JcaContentVerifierProviderBuilder().build(verifiedKey))) malformed()
             } catch (_: org.bouncycastle.pkcs.PKCSException) { malformed() }
             request.encoded
         }
@@ -171,7 +187,8 @@ public class PivClient(private val session: CardSession) {
             val cert = parseCertificate(certificateDer)
             select()
             val info = slotMetadata(slot)
-            if (!cert.publicKey.encoded.contentEquals(info.publicKey.encoded))
+            val verifiedKey = info.publicKey ?: throw CardFailure(FailureCode.UNSUPPORTED)
+            if (!cert.publicKey.encoded.contentEquals(verifiedKey.encoded))
                 throw CardFailure(FailureCode.CERTIFICATE_KEY_MISMATCH)
             authenticate(managementAlgorithm, managementKey)
             val container = PivTlv.encode(0x70, cert.encoded) + PivTlv.encode(0x71, byteArrayOf(0)) + PivTlv.encode(0xfe, byteArrayOf())
@@ -189,11 +206,12 @@ public class PivClient(private val session: CardSession) {
             requireSlot(slot)
             select()
             val info = slotMetadata(slot)
+            val verifiedKey = info.publicKey ?: throw CardFailure(FailureCode.UNSUPPORTED)
             val challenge = ByteArray(32).also(random::nextBytes)
             verifyEncoded(encodedPin)
             val signature = sign(slot, info.algorithm, challenge)
             val verifier = Signature.getInstance(info.algorithm.signature)
-            verifier.initVerify(info.publicKey)
+            verifier.initVerify(verifiedKey)
             verifier.update(challenge)
             try { verifier.verify(signature).also { if (!it) malformed() } }
             catch (_: SignatureException) { malformed() }
@@ -205,13 +223,14 @@ public class PivClient(private val session: CardSession) {
             requireSlot(slot)
             select()
             val info = slotMetadata(slot)
+            val verifiedKey = info.publicKey ?: throw CardFailure(FailureCode.UNSUPPORTED)
             val curve = info.algorithm.curve ?: throw CardFailure(FailureCode.UNSUPPORTED)
             val generator = KeyPairGenerator.getInstance("EC")
             generator.initialize(ECGenParameterSpec(curve), random)
             val ephemeral = generator.generateKeyPair()
             val agreement = KeyAgreement.getInstance("ECDH")
             agreement.init(ephemeral.private)
-            agreement.doPhase(info.publicKey, true)
+            agreement.doPhase(verifiedKey, true)
             val expected = agreement.generateSecret()
             verifyEncoded(encodedPin)
             val actual = privateOperation(slot, info.algorithm, 0x85, point(ephemeral.public as ECPublicKey))
@@ -224,10 +243,11 @@ public class PivClient(private val session: CardSession) {
             requireSlot(slot)
             select()
             val info = slotMetadata(slot)
+            val verifiedKey = info.publicKey ?: throw CardFailure(FailureCode.UNSUPPORTED)
             if (info.algorithm != KeyAlgorithm.RSA2048) throw CardFailure(FailureCode.UNSUPPORTED)
             val expected = ByteArray(256).also(random::nextBytes).also { it[0] = 0 }
             val cipher = Cipher.getInstance("RSA/ECB/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, info.publicKey)
+            cipher.init(Cipher.ENCRYPT_MODE, verifiedKey)
             val encrypted = cipher.doFinal(expected)
             verifyEncoded(encodedPin)
             val actual = privateOperation(slot, info.algorithm, 0x81, encrypted)
@@ -251,15 +271,30 @@ public class PivClient(private val session: CardSession) {
     private inline fun <T> withPin(pin: CharArray, operation: (ByteArray) -> T): T {
         var encoded = byteArrayOf()
         try {
-            session.requireContact()
+            if (secure == null) session.requireContact() else secure.requireCurrent(session)
             encoded = secret(pin)
-            return operation(encoded)
+            return validateResponse { operation(encoded) }
         } finally { pin.fill('\u0000'); encoded.fill(0) }
     }
 
-    private fun select() { send(Apdu(ins = 0xa4, p1 = 4, data = "a000000308000010000100".hexBytes())) }
+    private inline fun <T> validateResponse(operation: () -> T): T = try {
+        operation()
+    } catch (e: CardFailure) {
+        if (e.code == FailureCode.MALFORMED_RESPONSE) secure?.close()
+        throw e
+    } catch (e: GeneralSecurityException) {
+        secure?.close()
+        throw e
+    }
+
+    private fun select() {
+        if (secure != null) secure.requireCurrent(session)
+        else send(Apdu(ins = 0xa4, p1 = 4, data = "a000000308000010000100".hexBytes()))
+    }
+    private fun exchange(apdu: Apdu, effectful: Boolean = false): ApduResponse =
+        secure?.exchange(apdu, effectful) ?: session.exchange(apdu, effectful)
     private fun send(apdu: Apdu, effectful: Boolean = false): ByteArray = try {
-        val response = session.exchange(apdu, effectful)
+        val response = exchange(apdu, effectful)
         if (effectful && response.status and 0xfff0 == 0x63c0) session.securityStateChanged()
         response.requireSuccess()
     } finally { if (effectful) apdu.data.fill(0) }
@@ -279,19 +314,32 @@ public class PivClient(private val session: CardSession) {
     }
     private fun slotMetadata(slot: Int) = slotMetadataOrNull(slot) ?: throw CardFailure(FailureCode.CARD_REJECTED, 0x6a88)
     private fun slotMetadataOrNull(slot: Int): SlotMetadata? {
-        val response = session.exchange(Apdu(ins = 0xf7, p2 = slot))
+        val response = exchange(Apdu(ins = 0xf7, p2 = slot))
         if (response.status == 0x6a88) return null
         val fields = PivTlv.parse(response.requireSuccess())
-        val algorithm = KeyAlgorithm.from(byte(fields, 1))
         val policy = fields[2] ?: malformed()
         if (policy.size != 2) malformed()
         val pinPolicy = policy[0].toInt() and 255
         val touchPolicy = policy[1].toInt() and 255
         if (pinPolicy !in 1..3 || touchPolicy !in 1..3) malformed()
-        return SlotMetadata(algorithm, pinPolicy, touchPolicy, !flag(fields, 3), publicKey(algorithm, fields[4] ?: malformed()))
+        val generated = !flag(fields, 3)
+        if (!fields.containsKey(1) && !fields.containsKey(4)) {
+            if (fields.keys != setOf(2, 3)) malformed()
+            return null
+        }
+        if (!fields.containsKey(1)) malformed()
+        val algorithm = KeyAlgorithm.from(byte(fields, 1))
+        val key = if (fields.containsKey(4)) {
+            if (fields.keys != setOf(1, 2, 3, 4)) malformed()
+            publicKey(algorithm, fields.getValue(4))
+        } else {
+            if (generated || fields.keys != setOf(1, 2, 3)) malformed()
+            null
+        }
+        return SlotMetadata(algorithm, pinPolicy, touchPolicy, generated, key)
     }
     private fun certificate(slot: Int): X509Certificate? {
-        val response = session.exchange(Apdu(ins = 0xcb, p1 = 0x3f, p2 = 0xff, data = objectTag(slot)))
+        val response = exchange(Apdu(ins = 0xcb, p1 = 0x3f, p2 = 0xff, data = objectTag(slot)))
         if (response.status == 0x6a82 || response.status == 0x6a88) return null
         val fields = PivTlv.parse(PivTlv.one(response.requireSuccess(), 0x53))
         if (byte(fields, 0x71) != 0) throw CardFailure(FailureCode.UNSUPPORTED)

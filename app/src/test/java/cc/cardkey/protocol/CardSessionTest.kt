@@ -27,6 +27,15 @@ class CardSessionTest {
         assertTrue(channel.closed)
     }
 
+    @Test fun protectedContinuationUsesPlainClaAndFidoKeepsItsProprietaryCla() {
+        for ((cla, expected) in listOf(0x0c to 0x00, 0x80 to 0x80)) {
+            val channel = FakeChannel(mutableListOf("01026102".hexBytes(), "03049000".hexBytes()))
+            CardSession(channel).run { it.exchange(Apdu(cla = cla, ins = 0x87)) }
+            assertEquals(expected, channel.commands[1][0].toInt() and 255)
+            assertEquals(0xc0, channel.commands[1][1].toInt() and 255)
+        }
+    }
+
     @Test fun lostWriteResponseIsUnknownAndNeverReplayed() {
         val channel = FakeChannel(mutableListOf(TransportException(Dispatch.RESPONSE_UNAVAILABLE)))
         val result = CardSession(channel).run { it.exchange(Apdu(ins = 0xdb), effectful = true) }

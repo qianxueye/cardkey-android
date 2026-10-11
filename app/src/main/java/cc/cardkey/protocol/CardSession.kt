@@ -36,7 +36,33 @@ class CardSession(private val channel: CardChannel) : Closeable {
     fun securityStateChanged() { effect = Effect.APPLIED }
     fun securityStateUncertain() { effect = Effect.UNKNOWN }
 
-    fun exchange(apdu: Apdu, effectful: Boolean = false): ApduResponse {
+    private var secureOwner: Closeable? = null
+
+    @Synchronized internal fun bindSecure(owner: Closeable) {
+        check(!finished)
+        invalidateSecure()
+        secureOwner = owner
+    }
+
+    @Synchronized internal fun ownsSecure(owner: Closeable) = !finished && secureOwner === owner
+
+    @Synchronized fun invalidateSecure() {
+        val previous = secureOwner
+        secureOwner = null
+        previous?.close()
+    }
+
+    @Synchronized internal fun exchangeSecure(owner: Closeable, apdu: Apdu, effectful: Boolean, finalDispatch: () -> Unit): ApduResponse {
+        if (!ownsSecure(owner)) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
+        return exchangeWire(apdu, effectful, finalDispatch)
+    }
+
+    @Synchronized fun exchange(apdu: Apdu, effectful: Boolean = false): ApduResponse {
+        invalidateSecure()
+        return exchangeWire(apdu, effectful)
+    }
+
+    private fun exchangeWire(apdu: Apdu, effectful: Boolean, finalDispatch: (() -> Unit)? = null): ApduResponse {
         check(!finished)
         require(apdu.data.size <= 65535 && apdu.le in listOf(null, 256))
         val chunkSize = minOf(255, channel.maxCommandBytes - 6)
@@ -44,15 +70,17 @@ class CardSession(private val channel: CardChannel) : Closeable {
         var offset = 0
         while (apdu.data.size - offset > chunkSize) {
             val part = send(encode(apdu.copy(cla = apdu.cla or 0x10,
-                data = apdu.data.copyOfRange(offset, offset + chunkSize), le = null)), effectful)
+                data = apdu.data.copyOfRange(offset, offset + chunkSize), le = null)), effectful && finalDispatch == null)
             part.requireSuccess()
             if (part.data.isNotEmpty()) {
-                if (effectful) securityStateUncertain()
+                if (effectful && finalDispatch == null) securityStateUncertain()
                 throw CardFailure(FailureCode.MALFORMED_RESPONSE)
             }
             offset += chunkSize
         }
-        var response = send(encode(apdu.copy(data = apdu.data.copyOfRange(offset, apdu.data.size))), effectful)
+        val finalCommand = encode(apdu.copy(data = apdu.data.copyOfRange(offset, apdu.data.size)))
+        finalDispatch?.invoke()
+        var response = send(finalCommand, effectful)
         var data = response.data
         var continuations = 0
         while (response.status ushr 8 == 0x61) {
@@ -60,7 +88,7 @@ class CardSession(private val channel: CardChannel) : Closeable {
                 if (effectful) securityStateUncertain()
                 throw CardFailure(FailureCode.MALFORMED_RESPONSE)
             }
-            response = send(byteArrayOf(apdu.cla.toByte(), 0xc0.toByte(), 0, 0,
+            response = send(byteArrayOf((if (apdu.cla == 0x0c) 0 else apdu.cla).toByte(), 0xc0.toByte(), 0, 0,
                 (response.status and 0xff).toByte()), effectful)
             data += response.data
         }
@@ -98,7 +126,8 @@ class CardSession(private val channel: CardChannel) : Closeable {
         finally { close() }
     }
 
-    override fun close() {
+    @Synchronized override fun close() {
+        invalidateSecure()
         if (!finished) { finished = true; try { channel.close() } catch (_: IOException) { } }
     }
 

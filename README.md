@@ -25,7 +25,7 @@ Management actions use the approved Chinese confirmation and result messages. PI
 
 ## Card and session rules
 
-PIV private operations, PIN/PUK checks, administration and writes require contact transport. NFC and unknown transports are rejected before a sensitive PIV command is transmitted. Certificate import compares the certificate public key with fresh on-card slot metadata before authentication and writing; certificate correspondence does not establish CA trust.
+The manager screens require contact transport for PIV private operations, PIN/PUK checks, administration and writes. NFC and unknown transports are rejected before these sensitive manager commands are transmitted. The separate [CS7 protocol API](docs/CS7-WIRE.md) supports protected PIN and private-key operations after explicit issuer/card enrollment and authenticated pairing; it does not add enrollment storage or a manager workflow. Administration and PUK recovery remain contact-only even with a paired secure context. Certificate import compares the certificate public key with fresh on-card slot metadata before authentication and writing; certificate correspondence does not establish CA trust.
 
 The supported CardKey profile uses 6–8 ASCII digits for both PIN and PUK, padded with `FF` to eight bytes. Its PUK rule is a profile-specific restriction, not a statement about every PIV implementation.
 
