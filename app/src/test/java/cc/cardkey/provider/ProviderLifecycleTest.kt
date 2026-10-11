@@ -131,4 +131,58 @@ class ProviderLifecycleTest {
         assertFalse(CardOperationGate.isRemovalRequired(reader))
     }
 
+    @Test fun cancellationDoesNotWipeInputsUntilActiveConsumerExits() {
+        val entered = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val runner = ProviderOperationRunner()
+        val inputs = GetExtensionInputs(prfInputs = PrfInputs(byteArrayOf(3), byteArrayOf(4)),
+            largeBlobWrite = byteArrayOf(5))
+        val prf = requireNotNull(inputs.prfInputs)
+        val request = ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)),
+            UserVerificationRequirement.DISCOURAGED, inputs)
+        val channel = FidoChannel { code, _ ->
+            assertEquals(4, code)
+            entered.countDown()
+            check(resume.await(5, TimeUnit.SECONDS))
+            assertArrayEquals(byteArrayOf(3), prf.first)
+            assertArrayEquals(byteArrayOf(5), inputs.largeBlobWrite)
+            throw CardFailure(FailureCode.CANCELLED)
+        }
+        val worker = Thread {
+            runner.execute(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null) { channel }
+        }
+        worker.start()
+        assertTrue(entered.await(5, TimeUnit.SECONDS))
+        try {
+            runner.cancel()
+            assertArrayEquals(byteArrayOf(3), prf.first)
+            assertArrayEquals(byteArrayOf(5), inputs.largeBlobWrite)
+            val duplicate = runner.execute(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null) { error("no replay") }
+            assertEquals(FailureCode.CANCELLED, (duplicate as OperationResult.Failed).code)
+            assertArrayEquals(byteArrayOf(3), prf.first)
+        } finally { resume.countDown(); worker.join(5000) }
+        assertFalse(worker.isAlive)
+        assertArrayEquals(byteArrayOf(0), prf.first)
+        assertArrayEquals(byteArrayOf(0), prf.second)
+        assertArrayEquals(byteArrayOf(0), inputs.largeBlobWrite)
+    }
+
+    @Test fun preOperationCancellationContentionAndConnectionFailureWipeInputs() {
+        for (kind in listOf("cancel", "busy", "connect")) {
+            val runner = ProviderOperationRunner()
+            val inputs = GetExtensionInputs(prfInputs = PrfInputs(byteArrayOf(3)), largeBlobWrite = byteArrayOf(5))
+            val request = ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.DISCOURAGED, inputs)
+            val lease = if (kind == "busy") CardOperationGate.tryAcquire() else null
+            if (kind == "cancel") runner.cancel()
+            try {
+                assertTrue(runner.execute(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null) {
+                    assertEquals("connect", kind)
+                    throw TransportException(Dispatch.NOT_DISPATCHED)
+                } is OperationResult.Failed)
+            } finally { lease?.close() }
+            assertArrayEquals(byteArrayOf(0), inputs.prfInputs!!.first)
+            assertArrayEquals(byteArrayOf(0), inputs.largeBlobWrite)
+        }
+    }
+
 }

@@ -48,7 +48,6 @@ object RequestParser {
             else -> invalidRequest()
         }
         commonFields(root)
-        val extensions = ExtensionParser.create(root.optional("extensions"))
         ParsedCreate(
             rpId = validateRpId(rp.required("id").stringValue()),
             rpName = rp.required("name").stringValue().boundedText(),
@@ -62,7 +61,7 @@ object RequestParser {
             userVerification = verification(selection?.optional("userVerification")),
             excludeIds = descriptors(root.optional("excludeCredentials")),
             attestation = attestation,
-            extensions = extensions,
+            extensions = ExtensionParser.create(root.optional("extensions")),
         )
     }
 
@@ -70,10 +69,9 @@ object RequestParser {
         val root = StrictJson.parse(json).objectValue()
         commonFields(root)
         val allowIds = descriptors(root.optional("allowCredentials"))
-        val extensions = ExtensionParser.get(root.optional("extensions"), allowIds)
         ParsedGet(
             validateRpId(root.required("rpId").stringValue()), challenge(root),
-            allowIds, verification(root.optional("userVerification")), extensions,
+            allowIds, verification(root.optional("userVerification")), ExtensionParser.get(root.optional("extensions"), allowIds),
         )
     }
 
@@ -122,7 +120,10 @@ internal fun validateRpId(value: String): String {
 internal fun decodeBase64Url(value: String, minimum: Int, maximum: Int): ByteArray {
     if (value.length > (maximum * 4 + 2) / 3 || value.any { it !in 'a'..'z' && it !in 'A'..'Z' && it !in '0'..'9' && it != '-' && it != '_' }) invalidRequest()
     val bytes = try { Base64.getUrlDecoder().decode(value) } catch (_: IllegalArgumentException) { invalidRequest() }
-    if (bytes.size !in minimum..maximum || Base64.getUrlEncoder().withoutPadding().encodeToString(bytes) != value) invalidRequest()
+    if (bytes.size !in minimum..maximum || Base64.getUrlEncoder().withoutPadding().encodeToString(bytes) != value) {
+        bytes.fill(0)
+        invalidRequest()
+    }
     return bytes
 }
 

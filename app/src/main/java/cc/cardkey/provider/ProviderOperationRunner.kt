@@ -65,6 +65,8 @@ internal class ProviderOperationRunner {
         } finally {
             channel.set(null)
             pin?.fill('\u0000')
+            create?.extensions?.close()
+            get?.extensions?.close()
         }
     }
 
