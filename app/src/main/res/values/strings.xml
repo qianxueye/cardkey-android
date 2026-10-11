@@ -50,4 +50,5 @@
     <string name="confirm_secretShow" formatted="false">秘密输出可用于派生密钥，请勿分享或粘贴到日志。确认显示？</string>
     <string name="blob_help" formatted="false">Large Blob 按所选凭据加密。读取或写入前，请先验证该凭据并读取 largeBlobKey；密钥仅供下一次操作使用。</string>
     <string name="confirm_blobExport" formatted="false">将导出此凭据解密后的 Large Blob 内容。请保存在受保护的位置。确认导出？</string>
+    <string name="confirm_blobWrite" formatted="false">将写入此凭据的 Large Blob。若共享数据已损坏，写入会重建存储，其他凭据的 Large Blob 数据可能丢失。确认写入？</string>
 </resources>

@@ -45,4 +45,24 @@ class PendingOperationTest {
         assertFalse(secret.dispatch { fail("Cancelled secret operation dispatched") })
     }
 
+    @Test fun refusingBlobWriteConsentDispatchesNeitherFreshProofNorBlobCommand() {
+        var apdus = 0
+        val channel = object : cc.cardkey.protocol.CardChannel {
+            override val medium = cc.cardkey.protocol.Medium.CONTACT
+            override val maxCommandBytes = 261
+            override fun transmit(command: ByteArray): ByteArray { apdus++; error("Refused operation reached the card") }
+            override fun close() = Unit
+        }
+        val input = OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "123456".toCharArray(), bytes = byteArrayOf(9))
+        val confirmation = PendingOperation(input)
+        assertTrue(confirmation.messages.contains(cc.cardkey.R.string.confirm_blobWrite))
+        confirmation.close()
+        assertFalse(confirmation.dispatch { actual ->
+            cc.cardkey.protocol.CardSession(channel).run { ManagerOperations().execute(it, actual) }
+        })
+        assertEquals(0, apdus)
+        assertArrayEquals(CharArray(6), input.pin)
+        assertArrayEquals(byteArrayOf(0), input.bytes)
+    }
+
 }

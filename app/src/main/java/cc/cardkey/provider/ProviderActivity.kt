@@ -142,6 +142,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     val rp = create?.rpId ?: requireNotNull(get).rpId
                     val caller = requireNotNull(extracted).caller.packageName
                     Text(stringResource(if (create != null) R.string.provider_create_confirmation else R.string.provider_get_confirmation, rp, caller))
+                    if (get?.extensions?.largeBlobWrite != null) Text(stringResource(R.string.confirm_blobWrite))
                     create?.let {
                         Text(stringResource(if (it.attestation == AttestationPreference.DIRECT)
                             R.string.provider_attestation_direct else R.string.provider_attestation_none))

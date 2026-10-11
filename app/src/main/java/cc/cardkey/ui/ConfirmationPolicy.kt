@@ -10,6 +10,7 @@ object ConfirmationPolicy {
             ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
             ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK -> R.string.confirm_pinChange
             ManagerOperation.PIV_ADMIN -> R.string.confirm_adminChange
+            ManagerOperation.FIDO_BLOB_WRITE -> R.string.confirm_blobWrite
             ManagerOperation.FIDO_DELETE -> R.string.confirm_credentialDelete
             ManagerOperation.FIDO_UPDATE -> R.string.confirm_credentialUpdate
             ManagerOperation.FIDO_ALWAYS_UV -> if (input.enabled) R.string.confirm_alwaysUvEnable else R.string.confirm_alwaysUvDisable

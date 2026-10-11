@@ -95,4 +95,11 @@ class ConfirmationPolicyTest {
             .contains(R.string.confirm_secretRead))
     }
 
+    @Test fun blobWriteConsentRetainsSecretAndPinConsequencesWhileReadDoesNotAskToWrite() {
+        assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead, R.string.confirm_authenticate),
+            ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "123456".toCharArray())))
+        assertEquals(listOf(R.string.confirm_secretRead),
+            ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_READ)))
+    }
+
 }
