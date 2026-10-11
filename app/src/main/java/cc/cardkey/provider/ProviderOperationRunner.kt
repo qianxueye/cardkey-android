@@ -1,13 +1,12 @@
 package cc.cardkey.provider
 
 import cc.cardkey.protocol.*
-import cc.cardkey.protocol.fido.Assertion
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 internal sealed interface ProviderOutput {
     data class Created(val credential: CreatedCredential) : ProviderOutput
-    data class Assertions(val values: List<Assertion>) : ProviderOutput
+    data class Assertions(val values: List<ProvidedAssertion>) : ProviderOutput
 }
 
 internal class ProviderOperationRunner {
@@ -40,7 +39,10 @@ internal class ProviderOperationRunner {
                         if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
                         val result = if (create != null) ProviderOutput.Created(CardCredentialOperation.create(it, create, clientData, pin))
                             else ProviderOutput.Assertions(CardCredentialOperation.get(it, requireNotNull(get), clientData, pin))
-                        if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
+                        if (cancelled.get()) {
+                            if (result is ProviderOutput.Assertions) result.values.forEach { it.close() }
+                            throw CardFailure(FailureCode.CANCELLED)
+                        }
                         result
                     }
                 }

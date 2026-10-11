@@ -35,7 +35,6 @@ import androidx.credentials.provider.PendingIntentHandler
 import androidx.lifecycle.lifecycleScope
 import cc.cardkey.R
 import cc.cardkey.protocol.*
-import cc.cardkey.protocol.fido.Assertion
 import cc.cardkey.transport.NfcCardChannel
 import cc.cardkey.transport.UsbCcidReader
 import cc.cardkey.transport.UsbReaderDescriptor
@@ -60,7 +59,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var busy by mutableStateOf(false)
     private var awaitingNfc by mutableStateOf(false)
     private var failure by mutableStateOf<OperationResult.Failed?>(null)
-    private var assertions by mutableStateOf<List<Assertion>>(emptyList())
+    private var assertions by mutableStateOf<List<ProvidedAssertion>>(emptyList())
     private var readers by mutableStateOf<List<UsbReaderDescriptor>>(emptyList())
     private var selected by mutableStateOf<UsbReaderDescriptor?>(null)
     private var permissionPending by mutableStateOf(false)
@@ -136,7 +135,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     Text(stringResource(R.string.provider_choose_account, requireNotNull(get).rpId))
                     assertions.forEachIndexed { index, assertion ->
                         OutlinedButton(onClick = { completeAssertion(assertion) }, modifier = Modifier.fillMaxWidth()) {
-                            Text(assertion.user?.displayName ?: assertion.user?.name ?: "${index + 1}")
+                            Text(assertion.assertion.user?.displayName ?: assertion.assertion.user?.name ?: "${index + 1}")
                         }
                     }
                 } else {
@@ -232,7 +231,11 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             val result = if (requestCancelled && cardResult is OperationResult.Completed)
                 OperationResult.Failed(FailureCode.CANCELLED, cardResult.effect) else cardResult
             busy = false
-            if (completed) return@launch
+            if (completed || requestCancelled) {
+                if (cardResult is OperationResult.Completed && cardResult.value is ProviderOutput.Assertions)
+                    cardResult.value.values.forEach { it.close() }
+                if (completed) return@launch
+            }
             when (result) {
                 is OperationResult.Completed -> when (val output = result.value) {
                     is ProviderOutput.Created -> completeCreate(output.credential)
@@ -266,17 +269,19 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         }
     }
 
-    private fun completeAssertion(assertion: Assertion) {
+    private fun completeAssertion(assertion: ProvidedAssertion) {
         if (completed) return
         try {
             val result = Intent()
             PendingIntentHandler.setGetCredentialResponse(result,
                 GetCredentialResponse(PublicKeyCredential(ResponseEncoder.get(assertion, requireNotNull(clientData)))))
             completed = true
+            assertions.forEach { it.close() }
             assertions = emptyList()
             setResult(RESULT_OK, result)
             finish()
         } catch (_: Exception) { failure = OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, Effect.APPLIED) }
+        finally { assertion.close() }
     }
 
     private fun cancelRequest() {
@@ -286,6 +291,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         pendingPin?.fill('\u0000')
         pendingPin = null
         awaitingNfc = false
+        assertions.forEach { it.close() }
         assertions = emptyList()
         runner.cancel()
         if (busy) {
@@ -342,6 +348,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     override fun onDestroy() {
+        assertions.forEach { it.close() }
         pendingPin?.fill('\u0000')
         runner.cancel()
         if (receiverRegistered) unregisterReceiver(receiver)

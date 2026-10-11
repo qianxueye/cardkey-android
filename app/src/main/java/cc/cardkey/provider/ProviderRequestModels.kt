@@ -15,6 +15,7 @@ data class ParsedCreate(
     val userVerification: UserVerificationRequirement,
     val excludeIds: List<ByteArray>,
     val attestation: AttestationPreference,
+    val extensions: CreateExtensionInputs = CreateExtensionInputs(),
 )
 
 data class ParsedGet(
@@ -22,6 +23,7 @@ data class ParsedGet(
     val challenge: String,
     val allowIds: List<ByteArray>,
     val userVerification: UserVerificationRequirement,
+    val extensions: GetExtensionInputs = GetExtensionInputs(),
 )
 
 data class ClientData(val json: ByteArray, val hash: ByteArray, val browserDelegated: Boolean)

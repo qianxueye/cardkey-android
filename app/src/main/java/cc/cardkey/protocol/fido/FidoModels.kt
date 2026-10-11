@@ -24,12 +24,12 @@ data class MakeCredentialRequest(val rpId: String, val rpName: String, val user:
     val requireUv: Boolean = true, val excludeIds: List<ByteArray> = emptyList(),
     val extensions: MakeExtensions = MakeExtensions(), val enterpriseAttestation: Int? = null)
 data class MakeExtensions(val credentialProtection: Int? = null, val credentialBlob: ByteArray? = null,
-    val hmacSecret: Boolean = false, val minPinLength: Boolean = false, val largeBlobKey: Boolean = false)
+    val hmacSecret: Boolean = false, val minPinLength: Boolean = false, val largeBlobKey: Boolean = false, val uvm: Boolean = false)
 data class GetAssertionRequest(val rpId: String, val clientDataHash: ByteArray,
     val allowIds: List<ByteArray> = emptyList(), val requireUv: Boolean = true,
     val extensions: AssertionExtensions = AssertionExtensions())
 data class AssertionExtensions(val credentialBlob: Boolean = false, val hmacSalts: ByteArray? = null,
-    val largeBlobKey: Boolean = false)
+    val largeBlobKey: Boolean = false, val uvm: Boolean = false)
 data class MakeCredentialResult(val format: String, val authData: ByteArray, val statement: Cbor.Map,
     val largeBlobKey: ByteArray?, val enterpriseAttestation: Boolean?)
 data class Assertion(val credentialId: ByteArray, val authData: ByteArray, val signature: ByteArray,
