@@ -60,6 +60,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var loading by mutableStateOf(true)
     private var rejected by mutableStateOf(false)
     private var busy by mutableStateOf(false)
+    private var userPresenceRequired by mutableStateOf(false)
+    private var presenceGeneration = 0L
     private var awaitingNfc by mutableStateOf(false)
     private var failureWire by mutableStateOf(CardWire.APDU)
     private var failure by mutableStateOf<OperationResult.Failed?>(null)
@@ -248,6 +250,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun execute(connect: () -> CardChannel) {
+        val generation = ++presenceGeneration
+        userPresenceRequired = false
         val reader = selected
         failureWire = reader?.wire ?: CardWire.APDU
         val secret = pendingPin
@@ -258,13 +262,16 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             var retained = false
             try {
                 val cardResult = withContext(Dispatchers.IO) {
-                    runner.execute(create, get, requireNotNull(clientData), secret, reader?.routeKey, requireNotNull(extracted).claim, connect).also { pendingOutput = it }
+                    runner.execute(create, get, requireNotNull(clientData), secret, reader?.routeKey, requireNotNull(extracted).claim,
+                        onUserPresenceRequired = { required -> runOnUiThread { updateUserPresence(generation, reader, required) } },
+                        connect = connect).also { pendingOutput = it }
                 }
                 val result = if (requestCancelled && cardResult is OperationResult.Completed)
                     OperationResult.Failed(FailureCode.CANCELLED, cardResult.effect, writeAccepted = when (val output = cardResult.value) {
                         is ProviderOutput.Created -> true
                         is ProviderOutput.Assertions -> output.values.any { it.extensions.largeBlobWritten == true }
                     }) else cardResult
+                userPresenceRequired = false
                 busy = false
                 if (completed || requestCancelled) {
                     if (cardResult is OperationResult.Completed && cardResult.value is ProviderOutput.Assertions)
@@ -288,6 +295,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     }
                 }
             } finally {
+                if (generation == presenceGeneration) { presenceGeneration++; userPresenceRequired = false }
                 operationOwnsInputs = false
                 closeIdleInputs()
                 val output = (pendingOutput as? OperationResult.Completed)?.value
@@ -298,6 +306,12 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 }
             }
         }
+    }
+
+    private fun updateUserPresence(generation: Long, reader: UsbReaderDescriptor?, required: Boolean) {
+        if (generation != presenceGeneration) return
+        userPresenceRequired = required && runner.isActive && active && busy && !completed && !requestCancelled &&
+            selected?.routeKey == reader?.routeKey && (reader == null || UsbAuthenticatorReader.isCurrent(usb, reader))
     }
 
     private fun completeCreate(credential: CreatedCredential) {
@@ -334,6 +348,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private fun cancelRequest() {
         if (completed) return
         requestCancelled = true
+        presenceGeneration++
+        userPresenceRequired = false
         pin = ""
         pendingPin?.fill('\u0000')
         pendingPin = null
@@ -410,6 +426,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     override fun onDestroy() {
+        presenceGeneration++
+        userPresenceRequired = false
         assertions.forEach { it.close() }
         pendingPin?.fill('\u0000')
         runner.cancel()
