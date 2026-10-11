@@ -30,6 +30,7 @@ class PivClientTest {
         var pukRemaining = 3
         var corruptSignature = false
         var certificate: ByteArray? = null
+        var slotMetadata: ByteArray? = null
         var managementAlgorithm = ManagementAlgorithm.TDES
         var managementKey = ByteArray(24) { (it % 8 + 1).toByte() }
         private val witness = ByteArray(16) { (it + 1).toByte() }
@@ -57,7 +58,7 @@ class PivClientTest {
                     0x80, 0x81 -> PivTlv.encode(5, byteArrayOf(1)) + PivTlv.encode(6, byteArrayOf(3,
                         (if (apdu.p2 == 0x80) pinRemaining else pukRemaining).toByte()))
                     0x9b -> PivTlv.encode(1, byteArrayOf(managementAlgorithm.code.toByte())) + PivTlv.encode(5, byteArrayOf(0))
-                    else -> metadata()
+                    else -> slotMetadata ?: metadata()
                 }
                 0xcb -> certificate?.let { PivTlv.encode(0x53, PivTlv.encode(0x70, it) + PivTlv.encode(0x71, byteArrayOf(0))) }
                     ?: return "6a82".hexBytes()
@@ -153,6 +154,33 @@ class PivClientTest {
         assertTrue(result is OperationResult.Completed)
         assertTrue(card.commands.all { it.ins in listOf(0xa4, 0xfd, 0xf8, 0xf7, 0xcb) })
     }
+    @Test fun emptySlotMetadataHasValidatedPolicyAndOriginOnContact() {
+        val card = FakeCard().apply { slotMetadata = "02020301030100".hexBytes() }
+        val session = CardSession(card)
+        val slot = PivClient(session).readSlot(0x9c)
+        assertEquals(0x9c, slot.slot)
+        assertNull(slot.metadata)
+        assertNull(slot.certificate)
+        assertEquals(listOf(0xa4, 0xf7, 0xcb), card.commands.map { it.ins })
+        assertEquals(Effect.NONE, session.effect)
+    }
+
+    @Test fun malformedEmptyAndPartialSlotMetadataRemainRejected() {
+        val malformed = listOf(
+            "", "02020301", "030100", "020103030100", "0203030101030100",
+            "02020001030100", "02020401030100", "02020300030100", "02020304030100",
+            "020203010300", "0202030103020000", "02020301030102",
+            "01011102020301030100", "020203010301000400", "02020301030100050100"
+        )
+        for (encoded in malformed) {
+            val card = FakeCard().apply { slotMetadata = encoded.hexBytes() }
+            val result = CardSession(card).run { PivClient(it).readSlot(0x9c) }
+            assertEquals(encoded, FailureCode.MALFORMED_RESPONSE, (result as OperationResult.Failed).code)
+            assertEquals(encoded, Effect.NONE, result.effect)
+            assertEquals(encoded, listOf(0xa4, 0xf7), card.commands.map { it.ins })
+        }
+    }
+
     @Test fun rejectsMalformedTlv() {
         listOf("0180", "0102ff", "018101ff", "010100010100", "1f800100", "0183000001").forEach {
             try { PivTlv.parse(it.hexBytes()); fail(it) } catch (failure: CardFailure) { assertEquals(FailureCode.MALFORMED_RESPONSE, failure.code) }

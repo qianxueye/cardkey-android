@@ -301,13 +301,19 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         val response = exchange(Apdu(ins = 0xf7, p2 = slot))
         if (response.status == 0x6a88) return null
         val fields = PivTlv.parse(response.requireSuccess())
-        val algorithm = KeyAlgorithm.from(byte(fields, 1))
         val policy = fields[2] ?: malformed()
         if (policy.size != 2) malformed()
         val pinPolicy = policy[0].toInt() and 255
         val touchPolicy = policy[1].toInt() and 255
         if (pinPolicy !in 1..3 || touchPolicy !in 1..3) malformed()
-        return SlotMetadata(algorithm, pinPolicy, touchPolicy, !flag(fields, 3), publicKey(algorithm, fields[4] ?: malformed()))
+        val generated = !flag(fields, 3)
+        if (!fields.containsKey(1) && !fields.containsKey(4)) {
+            if (fields.keys != setOf(2, 3)) malformed()
+            return null
+        }
+        if (!fields.containsKey(1) || !fields.containsKey(4)) malformed()
+        val algorithm = KeyAlgorithm.from(byte(fields, 1))
+        return SlotMetadata(algorithm, pinPolicy, touchPolicy, generated, publicKey(algorithm, fields.getValue(4)))
     }
     private fun certificate(slot: Int): X509Certificate? {
         val response = exchange(Apdu(ins = 0xcb, p1 = 0x3f, p2 = 0xff, data = objectTag(slot)))

@@ -123,6 +123,32 @@ class PivSecureContextTest {
         assertEquals(Effect.NONE, session.effect)
     }
 
+    @Test fun protectedEmptySlotMetadataReturnsAnEmptySlotAfterAuthentication() {
+        val card = Peer().apply {
+            slotMetadata = "02020301030100".hexBytes()
+            certificateAbsent = true
+        }
+        val (session, context) = establish(card)
+        val slot = PivClient(session, context).readSlot(0x9c)
+        assertEquals(0x9c, slot.slot)
+        assertNull(slot.metadata)
+        assertNull(slot.certificate)
+        assertEquals(3, card.protectedCommands)
+        assertEquals(0, card.pinTries)
+        assertEquals(Effect.NONE, session.effect)
+    }
+
+    @Test fun protectedMalformedEmptyAndPartialMetadataRemainRejected() {
+        for (encoded in listOf("02020301030102", "01011102020301030100", "020203010301000400")) {
+            val card = Peer().apply { slotMetadata = encoded.hexBytes() }
+            val (session, context) = establish(card)
+            val exception = failure { PivClient(session, context).readSlot(0x9c) }
+            assertEquals(FailureCode.MALFORMED_RESPONSE, (exception as CardFailure).code)
+            assertEquals(2, card.protectedCommands)
+            assertEquals(Effect.NONE, session.effect)
+        }
+    }
+
     @Test fun confirmationAndPairingFailuresNeverSendPin() {
         for (tamper in listOf(true, false)) {
             val card = Peer().apply { badConfirmation = tamper; pairingStatus = 0x6300 }
@@ -394,6 +420,8 @@ class PivSecureContextTest {
         var pinTries = 0
         var pinStatus = 0x63c5
         var pairingStatus = 0x9000
+        var slotMetadata: ByteArray? = null
+        var certificateAbsent = false
         var badConfirmation = false
         var failure: String? = null
         var lastProtected = byteArrayOf()
@@ -456,12 +484,12 @@ class PivSecureContextTest {
                             0x9b -> PivTlv.encode(1, byteArrayOf(0x0c)) + PivTlv.encode(5, byteArrayOf(1))
                             0x80, 0x81 -> PivTlv.encode(5, byteArrayOf(if (p2 == 0x80) 1 else 0)) +
                                 PivTlv.encode(6, byteArrayOf(5, if (p2 == 0x80) 4 else 3))
-                            else -> metadata()
+                            else -> slotMetadata ?: metadata()
                         }
                     }
                 }
                 0x87 -> PivTlv.encode(0x7c, PivTlv.encode(0x82, privateOperation(input)))
-                0xcb -> ByteArray(256) { it.toByte() }
+                0xcb -> if (certificateAbsent) { status = 0x6a82; byteArrayOf() } else ByteArray(256) { it.toByte() }
                 else -> error("Unexpected protected command")
             }
             if (failure == "outer") return "9000".hexBytes()
