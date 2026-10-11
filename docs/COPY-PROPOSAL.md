@@ -11,3 +11,5 @@ Results distinguish a command that was not dispatched, an unavailable result, an
 The application displays the verification scope alongside cryptographic diagnostic results. FIDO applet reinstallation remains a separate desktop provisioning operation; the Android app exposes no CTAP reset control.
 
 On 2026-10-11, the Owner approved and activated six additional Android strings: NFC unavailable/disabled, capacity exceeded, recovery required, card rejected, and raw-key Large Blob overwrite confirmation. Every raw-key blob write requires confirmation, including writes without a PIN. Recovery wording covers both unmet operation prerequisites and mismatched readback. The raw-key warning applies only to this manager flow; it does not replace the separate credential-bound Large Blob recovery warning in descendant work.
+
+On 2026-10-11, the Owner approved the Android UV retry row: label `UV 剩余重试次数`, value `N 次`. It appears only when the authenticator returns a UV retry count; an absent value remains absent, while a returned zero is displayed as `0 次`. This wording does not change UV capability or retry behavior.

@@ -73,7 +73,10 @@ class ProviderExtensionsTest {
             else -> error("unexpected")
         } }
         val result = (performCreate(channel, create("""{"credProps":true,"credBlob":"AA","uvm":true,"prf":{},"minPinLength":true,"largeBlob":{}}""")) as OperationResult.Completed).value
-        val output = JsonParser.parseString(ResponseEncoder.create(result, data)).asJsonObject["clientExtensionResults"].asJsonObject
+        val envelope = JsonParser.parseString(ResponseEncoder.create(result, data)).asJsonObject
+        assertEquals("cross-platform", envelope["authenticatorAttachment"].asString)
+        assertEquals(listOf("nfc", "usb"), envelope["response"].asJsonObject["transports"].asJsonArray.map { it.asString })
+        val output = envelope["clientExtensionResults"].asJsonObject
         assertTrue(output["credProps"].asJsonObject["rk"].asBoolean)
         assertFalse(output["prf"].asJsonObject["enabled"].asBoolean)
         assertFalse(output["largeBlob"].asJsonObject["supported"].asBoolean)
@@ -136,7 +139,9 @@ class ProviderExtensionsTest {
                 assertNull(credential.assertion.hmacSecret)
                 assertNull(credential.assertion.largeBlobKey)
                 assertArrayEquals(ByteArray(64) { (i + 1).toByte() }, credential.extensions.prfResult)
-                val json = JsonParser.parseString(ResponseEncoder.get(credential, data)).asJsonObject["clientExtensionResults"].asJsonObject
+                val envelope = JsonParser.parseString(ResponseEncoder.get(credential, data)).asJsonObject
+                assertEquals("cross-platform", envelope["authenticatorAttachment"].asString)
+                val json = envelope["clientExtensionResults"].asJsonObject
                 assertEquals(setOf("prf", "uvm"), json.keySet())
                 assertFalse(json["prf"].asJsonObject.has("enabled"))
                 assertTrue(json["prf"].asJsonObject["results"].asJsonObject.has("second"))
