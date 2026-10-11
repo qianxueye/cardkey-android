@@ -159,6 +159,7 @@ class ProviderRequestExtractionTest {
                     activity.recreate()
                 }
                 assertTrue("Recreated provider must finish", destroyed.await(10, TimeUnit.SECONDS))
+                instrumentation.waitForIdleSync()
                 assertNotNull(recreated.get())
                 assertNotSame(original, recreated.get())
                 assertTrue("Recreation must carry saved state", restored.get())
