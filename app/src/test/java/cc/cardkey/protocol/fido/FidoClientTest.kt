@@ -170,7 +170,7 @@ class FidoClientTest {
         assertEquals(Effect.APPLIED, result.effect)
     }
 
-    internal class PinServer(private val version: Int) {
+    internal class PinServer(private val version: Int, private val expectedPin: ByteArray = "1234".toByteArray()) {
         private val pair = KeyPairGenerator.getInstance("EC").run { initialize(ECGenParameterSpec("secp256r1")); generateKeyPair() }
         private val pub = pair.public as ECPublicKey
         val cose = cborMap(1 to 2.cbor(), 3 to (-25).cbor(), -1 to 1.cbor(),
@@ -189,7 +189,7 @@ class FidoClientTest {
             assertEquals(expectedRp, map[10]?.text())
             val key = keyFor(map[3].map())
             try {
-                assertArrayEquals(sha256("1234".toByteArray()).copyOf(16), PinProtocol.decrypt(version, key, map[6].bytes()))
+                assertArrayEquals(sha256(expectedPin).copyOf(16), PinProtocol.decrypt(version, key, map[6].bytes()))
                 return success(cborMap(2 to PinProtocol.encrypt(version, key, token).cbor()))
             } finally { key.fill(0) }
         }

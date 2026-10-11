@@ -35,4 +35,27 @@ class PinProtocolTest {
         assertThrows(CardFailure::class.java) { pinBytes(CharArray(64) { 'a' }, 4) }
         assertThrows(IllegalArgumentException::class.java) { pinBytes(charArrayOf('a', 'b', 'c', '\u0000'), 4) }
     }
+    @Test fun canonicalPinFormsHaveIdenticalBytesAndCallerRetainsOriginalOwnership() {
+        val composed = "é1234".toCharArray()
+        val decomposed = "e\u03011234".toCharArray()
+        val before = decomposed.copyOf()
+        val first = pinBytes(composed, 4); val second = pinBytes(decomposed, 4)
+        try {
+            assertArrayEquals("é1234".toByteArray(), first)
+            assertArrayEquals(first, second)
+            assertArrayEquals(before, decomposed)
+        } finally { first.fill(0); second.fill(0) }
+    }
+    @Test fun normalizedCodePointCountCanFallBelowMinimum() {
+        assertThrows(IllegalArgumentException::class.java) { pinBytes("e\u0301ab".toCharArray(), 4) }
+    }
+    @Test fun normalizationCanReduceUtf8ToThe63ByteBoundary() {
+        val atLimit = pinBytes(("e\u0301".repeat(30) + "abc").toCharArray(), 4)
+        try { assertEquals(63, atLimit.size); assertArrayEquals(("é".repeat(30) + "abc").toByteArray(), atLimit) }
+        finally { atLimit.fill(0) }
+    }
+    @Test fun normalizationCanExpandUtf8PastThe63ByteBoundary() {
+        assertThrows(CardFailure::class.java) { pinBytes(("\u0344".repeat(31) + "a").toCharArray(), 4) }
+    }
+
 }

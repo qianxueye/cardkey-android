@@ -4,6 +4,7 @@ import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.FailureCode
 import java.io.Closeable
 import java.math.BigInteger
+import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
 import java.security.AlgorithmParameters
@@ -11,6 +12,7 @@ import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.text.Normalizer
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.ECParameterSpec
@@ -104,13 +106,22 @@ internal class PinProtocol(val version: Int, peer: Cbor.Map) : Closeable {
 }
 
 internal fun pinBytes(pin: CharArray, minimum: Int): ByteArray {
-    require(pin.none { it == '\u0000' } && Character.codePointCount(pin, 0, pin.size) >= minimum)
-    val buffer = try { Charsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPORT).encode(CharBuffer.wrap(pin)) }
-    catch (_: java.nio.charset.CharacterCodingException) { throw CardFailure(FailureCode.INVALID_INPUT) }
-    val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
-    if (buffer.hasArray()) buffer.array().fill(0)
-    if (bytes.size > 63) { bytes.fill(0); throw CardFailure(FailureCode.INVALID_INPUT) }
-    return bytes
+    val normalized = Normalizer.normalize(CharBuffer.wrap(pin), Normalizer.Form.NFC).toCharArray()
+    val buffer = ByteBuffer.allocate(63)
+    try {
+        require(normalized.none { it == '\u0000' } && Character.codePointCount(normalized, 0, normalized.size) >= minimum)
+        val encoder = Charsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPORT)
+        try {
+            val encoded = encoder.encode(CharBuffer.wrap(normalized), buffer, true)
+            if (encoded.isOverflow) throw CardFailure(FailureCode.INVALID_INPUT)
+            if (encoded.isError) encoded.throwException()
+            val flushed = encoder.flush(buffer)
+            if (flushed.isOverflow) throw CardFailure(FailureCode.INVALID_INPUT)
+            if (flushed.isError) flushed.throwException()
+        } catch (_: java.nio.charset.CharacterCodingException) { throw CardFailure(FailureCode.INVALID_INPUT) }
+        buffer.flip()
+        return ByteArray(buffer.remaining()).also { buffer.get(it) }
+    } finally { normalized.fill('\u0000'); buffer.array().fill(0) }
 }
 
 internal class PinToken(val version: Int, private val value: ByteArray) : Closeable {
