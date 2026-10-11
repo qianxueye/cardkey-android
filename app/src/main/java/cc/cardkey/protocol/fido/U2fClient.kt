@@ -1,5 +1,6 @@
 package cc.cardkey.protocol.fido
 
+import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.Apdu
 import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.CardSession
@@ -15,37 +16,48 @@ data class U2fAuthentication(val presence: Int, val counter: Long, val signature
 
 class U2fClient(private val session: CardSession) {
     private var selected = false
-    fun select() { FidoClient(session).select(); selected = true }
+    fun select() {
+        if (session.wire == CardWire.CTAP) {
+            if (!session.supportsCtap1) throw CardFailure(FailureCode.UNSUPPORTED)
+        } else FidoClient(session).select()
+        selected = true
+    }
     fun version(): String {
         check(selected)
-        val data = session.exchange(Apdu(ins = 3)).requireSuccess()
+        val data = session.exchangeCtap1(Apdu(ins = 3)).requireSuccess()
         if (!data.contentEquals("U2F_V2".toByteArray(Charsets.US_ASCII))) malformed()
         return "U2F_V2"
     }
     private fun exchange(ins: Int, p1: Int, data: ByteArray): ByteArray {
         check(selected)
-        val response = session.exchange(Apdu(ins = ins, p1 = p1, data = data), effectful = true)
+        val response = session.exchangeCtap1(Apdu(ins = ins, p1 = p1, data = data), effectful = true)
+        if (response.status == 0x6f00) session.securityStateUncertain()
         if (response.status == 0x6985) throw CardFailure(FailureCode.PHYSICAL_ACTION_REQUIRED, response.status)
         val bytes = response.requireSuccess()
         session.applied()
         return bytes
     }
+    private fun malformedWriteResponse(): Nothing {
+        session.securityStateUncertain()
+        malformed()
+    }
+
     fun register(challenge: ByteArray, application: ByteArray): U2fRegistration {
         require(challenge.size == 32 && application.size == 32)
         val response = exchange(1, 0, challenge + application)
-        if (response.size < 68 || response[0] != 5.toByte() || response[1] != 4.toByte()) malformed()
+        if (response.size < 68 || response[0] != 5.toByte() || response[1] != 4.toByte()) malformedWriteResponse()
         val key = cborMap(1 to 2.cbor(), 3 to (-7).cbor(), -1 to 1.cbor(),
             -2 to response.copyOfRange(2, 34).cbor(), -3 to response.copyOfRange(34, 66).cbor())
         coseEcPublic(key, -7)
         val handleLength = response[66].toInt() and 255
-        if (handleLength == 0 || response.size <= 67 + handleLength) malformed()
+        if (handleLength == 0 || response.size <= 67 + handleLength) malformedWriteResponse()
         val handle = response.copyOfRange(67, 67 + handleLength)
         val certificateStart = 67 + handleLength
         val input = ByteArrayInputStream(response, certificateStart, response.size - certificateStart)
         val certificate = try { CertificateFactory.getInstance("X.509").generateCertificate(input) as X509Certificate }
-        catch (_: java.security.cert.CertificateException) { malformed() }
+        catch (_: java.security.cert.CertificateException) { malformedWriteResponse() }
         val certificateEnd = response.size - input.available()
-        if (certificateEnd >= response.size) malformed()
+        if (certificateEnd >= response.size) malformedWriteResponse()
         val signature = response.copyOfRange(certificateEnd, response.size)
         val signed = byteArrayOf(0) + application + challenge + handle + response.copyOfRange(1, 66)
         return U2fRegistration(handle, key, response.copyOfRange(certificateStart, certificateEnd), signature,
@@ -57,7 +69,7 @@ class U2fClient(private val session: CardSession) {
         require(previousCounter == null || previousCounter in 0..0xffffffffL)
         val key = coseEcPublic(publicKey, -7)
         val response = exchange(2, 3, challenge + application + byteArrayOf(keyHandle.size.toByte()) + keyHandle)
-        if (response.size < 6 || response[0] != 1.toByte()) malformed()
+        if (response.size < 6 || response[0] != 1.toByte()) malformedWriteResponse()
         var counter = 0L
         for (i in 1..4) counter = (counter shl 8) or (response[i].toLong() and 255)
         val signed = application + response.copyOfRange(0, 5) + challenge

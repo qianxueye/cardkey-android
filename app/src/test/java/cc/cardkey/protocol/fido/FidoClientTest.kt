@@ -9,6 +9,94 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FidoClientTest {
+    @Test fun advertisedLimitRejectsOversizedRegistrationBeforeMutationDispatch() {
+        for (wire in CardWire.entries) {
+            val apdu = FidoChannel { code, _ ->
+                assertEquals(4, code)
+                success(info(extra = cborMap(5 to 256.cbor())))
+            }
+            var typedCount = 0
+            val channel = if (wire == CardWire.APDU) apdu else object : CardChannel {
+                override val wire = CardWire.CTAP
+                override val medium = Medium.CONTACT
+                override val maxCommandBytes = 7609
+                override val supportsCtap2 = true
+                override fun transmit(command: ByteArray): ByteArray = error("Unexpected APDU")
+                override fun exchangeCtap2(command: ByteArray): ByteArray {
+                    typedCount++
+                    assertArrayEquals(byteArrayOf(4), command)
+                    return success(info(extra = cborMap(5 to 256.cbor())))
+                }
+                override fun close() = Unit
+            }
+            val request = MakeCredentialRequest("example.test", "example", FidoUser(byteArrayOf(1), null, null),
+                ByteArray(32), residentKey = false, excludeIds = listOf(ByteArray(512)))
+            val result = CardSession(channel).run { FidoClient(it).apply { select() }.makeCredential(request) }
+            assertEquals(OperationResult.Failed(FailureCode.CAPACITY_EXCEEDED, Effect.NONE), result)
+            assertEquals(1, if (wire == CardWire.APDU) apdu.commands.size else typedCount)
+        }
+    }
+
+    @Test fun sessionKeepsDefaultLimitAndAdvertisedLargerLimitAcrossClients() {
+        val channel = FidoChannel { code, _ -> if (code == 4) success(info(extra = cborMap(5 to 2048.cbor()))) else success() }
+        val session = CardSession(channel)
+        val client = FidoClient(session).apply { select() }
+        val parameters = cborMap(1 to ByteArray(1100).cbor())
+        try { client.command(6, parameters); fail("Default maximum must reject oversized command") }
+        catch (failure: CardFailure) { assertEquals(FailureCode.CAPACITY_EXCEEDED, failure.code) }
+        assertTrue(channel.commands.isEmpty())
+        client.getInfo()
+        FidoClient(session).apply { select() }.command(6, parameters)
+        assertEquals(listOf(4, 6), channel.commands.map { it.first })
+        session.close()
+    }
+
+    @Test fun typedFidoSelectUsesCapabilityAndNoSyntheticSelect() {
+        for (supported in listOf(false, true)) {
+            var count = 0
+            val channel = object : CardChannel {
+                override val wire = CardWire.CTAP
+                override val medium = Medium.CONTACT
+                override val maxCommandBytes = 7609
+                override val supportsCtap2 = supported
+                override fun transmit(command: ByteArray): ByteArray = error("Unexpected APDU SELECT")
+                override fun exchangeCtap2(command: ByteArray): ByteArray {
+                    count++
+                    assertArrayEquals(byteArrayOf(4), command)
+                    return byteArrayOf(0) + CborCodec.encode(info())
+                }
+                override fun close() = Unit
+            }
+            val result = CardSession(channel).run { FidoClient(it).apply { select() }.getInfo() }
+            if (supported) assertTrue(result is OperationResult.Completed)
+            else assertEquals(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE), result)
+            assertEquals(if (supported) 1 else 0, count)
+        }
+    }
+
+    @Test fun ambiguousTerminalWriteStatusesPreserveUnknownEffectAndEarlierAcceptedWrite() {
+        for (status in listOf(0x7f, 0x2d)) {
+            val channel = FidoChannel { _, _ -> byteArrayOf(status.toByte()) }
+            val result = CardSession(channel).run { session ->
+                val client = FidoClient(session).apply { select() }
+                session.applied()
+                client.command(0x0d, effectful = true, applied = true)
+            } as OperationResult.Failed
+            assertEquals(Effect.UNKNOWN, result.effect)
+            assertTrue(result.writeAccepted)
+            assertEquals(status, result.status)
+        }
+    }
+
+    @Test fun malformedEffectfulCborPreservesUnknownEffect() {
+        val channel = FidoChannel { _, _ -> byteArrayOf(0, 0xff.toByte()) }
+        val result = CardSession(channel).run { session ->
+            FidoClient(session).apply { select() }.command(6, effectful = true)
+        } as OperationResult.Failed
+        assertEquals(FailureCode.MALFORMED_RESPONSE, result.code)
+        assertEquals(Effect.UNKNOWN, result.effect)
+    }
+
     @Test fun userPresenceErrorReleasesSessionWithoutReconnectOrReplay() {
         val channel = FidoChannel { _, _ -> byteArrayOf(0x3b) }
         val result = CardSession(channel).run { session -> FidoClient(session).apply { select() }.getInfo() }

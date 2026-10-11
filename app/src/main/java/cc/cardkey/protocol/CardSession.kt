@@ -22,11 +22,16 @@ data class ApduResponse(val data: ByteArray, val status: Int) {
 
 class CardSession(private val channel: CardChannel) : Closeable {
     val medium get() = channel.medium
+    val wire get() = channel.wire
+    val supportsCtap2 get() = channel.supportsCtap2
+    val supportsCtap1 get() = channel.supportsCtap1
     var effect = Effect.NONE
         private set
     private var finished = false
     private var running = false
     private var writeAccepted = false
+    val hasAcceptedWrite get() = writeAccepted
+    private var maxCtap2CommandBytes = 1024
 
     fun requireContact() {
         if (medium != Medium.CONTACT) throw CardFailure(FailureCode.CONTACT_REQUIRED)
@@ -62,8 +67,58 @@ class CardSession(private val channel: CardChannel) : Closeable {
         return exchangeWire(apdu, effectful)
     }
 
+    @Synchronized internal fun setCtap2MaxCommandBytes(maximum: Int) {
+        if (maximum <= 0) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+        maxCtap2CommandBytes = maximum
+    }
+
+    @Synchronized fun exchangeCtap2(command: ByteArray, effectful: Boolean = false): ByteArray {
+        check(!finished)
+        if (command.size > maxCtap2CommandBytes) throw CardFailure(FailureCode.CAPACITY_EXCEEDED)
+        if (wire == CardWire.APDU) return exchange(Apdu(cla = 0x80, ins = 0x10, data = command), effectful).requireSuccess()
+        if (!supportsCtap2) throw CardFailure(FailureCode.UNSUPPORTED)
+        require(command.isNotEmpty())
+        invalidateSecure()
+        val response = exchangeTyped(command, effectful, channel::exchangeCtap2)
+        if (response.isEmpty()) {
+            if (effectful) securityStateUncertain()
+            throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+        }
+        return response
+    }
+
+    @Synchronized fun exchangeCtap1(apdu: Apdu, effectful: Boolean = false): ApduResponse {
+        check(!finished)
+        if (wire == CardWire.APDU) return exchange(apdu, effectful)
+        if (!supportsCtap1) throw CardFailure(FailureCode.UNSUPPORTED)
+        require(apdu.data.size <= 65535 && apdu.le in listOf(null, 256))
+        invalidateSecure()
+        val command = byteArrayOf(apdu.cla.toByte(), apdu.ins.toByte(), apdu.p1.toByte(), apdu.p2.toByte(),
+            0, (apdu.data.size ushr 8).toByte(), apdu.data.size.toByte()) + apdu.data +
+            (if (apdu.le == null) byteArrayOf() else byteArrayOf(0, 0))
+        val response = parseResponse(exchangeTyped(command, effectful, channel::exchangeCtap1), effectful)
+        if (effectful && response.status == 0x6f00) securityStateUncertain()
+        return response
+    }
+
+    private fun exchangeTyped(command: ByteArray, effectful: Boolean, exchange: (ByteArray) -> ByteArray): ByteArray {
+        if (command.size > channel.maxCommandBytes) throw CardFailure(FailureCode.CAPACITY_EXCEEDED)
+        return try { exchange(command) }
+        catch (e: TransportException) {
+            if (effectful && e.dispatch == Dispatch.RESPONSE_UNAVAILABLE) securityStateUncertain()
+            throw e
+        } catch (e: IOException) {
+            if (effectful) securityStateUncertain()
+            throw TransportException(Dispatch.RESPONSE_UNAVAILABLE, e)
+        } catch (e: CardFailure) {
+            if (effectful && e.code == FailureCode.MALFORMED_RESPONSE) securityStateUncertain()
+            throw e
+        }
+    }
+
     private fun exchangeWire(apdu: Apdu, effectful: Boolean, finalDispatch: (() -> Unit)? = null): ApduResponse {
         check(!finished)
+        if (wire != CardWire.APDU) throw CardFailure(FailureCode.UNSUPPORTED)
         require(apdu.data.size <= 65535 && apdu.le in listOf(null, 256))
         val chunkSize = minOf(255, channel.maxCommandBytes - 6)
         if (chunkSize < 1) throw CardFailure(FailureCode.UNSUPPORTED)
@@ -107,6 +162,10 @@ class CardSession(private val channel: CardChannel) : Closeable {
             if (effectful) effect = Effect.UNKNOWN
             throw TransportException(Dispatch.RESPONSE_UNAVAILABLE, e)
         }
+        return parseResponse(bytes, effectful)
+    }
+
+    private fun parseResponse(bytes: ByteArray, effectful: Boolean): ApduResponse {
         if (bytes.size < 2) {
             if (effectful) effect = Effect.UNKNOWN
             throw CardFailure(FailureCode.MALFORMED_RESPONSE)

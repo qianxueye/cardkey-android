@@ -3,12 +3,20 @@ package cc.cardkey.protocol
 import java.io.Closeable
 import java.io.IOException
 
+enum class CardWire { APDU, CTAP }
+
 enum class Medium { CONTACT, NFC, UNKNOWN }
 
 interface CardChannel : Closeable {
+    val wire: CardWire get() = CardWire.APDU
+    val supportsCtap2: Boolean get() = false
+    val supportsCtap1: Boolean get() = false
     val medium: Medium
     val maxCommandBytes: Int
     fun transmit(command: ByteArray): ByteArray
+    fun exchangeCtap2(command: ByteArray): ByteArray = throw CardFailure(FailureCode.UNSUPPORTED)
+    fun exchangeCtap1(command: ByteArray): ByteArray = throw CardFailure(FailureCode.UNSUPPORTED)
+    fun cancel() = close()
 }
 
 enum class Dispatch { NOT_DISPATCHED, RESPONSE_UNAVAILABLE }

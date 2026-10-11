@@ -5,6 +5,39 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CancellableCardChannelTest {
+    @Test fun typedCancellationGuardsBothRoutesBeforeAndAfterDispatch() {
+        for (ctap1 in listOf(false, true)) for (before in listOf(false, true)) {
+            var cancelled = before
+            var dispatches = 0
+            var cancellations = 0
+            val response = "009000".hexBytes()
+            val delegate = object : CardChannel {
+                override val wire = CardWire.CTAP
+                override val supportsCtap1 = true
+                override val supportsCtap2 = true
+                override val medium = Medium.CONTACT
+                override val maxCommandBytes = 7609
+                override fun transmit(command: ByteArray): ByteArray = error("Unexpected APDU")
+                override fun exchangeCtap2(command: ByteArray): ByteArray { dispatches++; cancelled = true; return response }
+                override fun exchangeCtap1(command: ByteArray): ByteArray { dispatches++; cancelled = true; return response }
+                override fun cancel() { cancellations++ }
+                override fun close() = Unit
+            }
+            val channel = CancellableCardChannel(delegate) { cancelled }
+            val result = CardSession(channel).run {
+                if (ctap1) it.exchangeCtap1(Apdu(ins = 1), effectful = true)
+                else it.exchangeCtap2(byteArrayOf(1), effectful = true)
+            } as OperationResult.Failed
+            assertEquals(FailureCode.CANCELLED, result.code)
+            assertEquals(if (before) Effect.NONE else Effect.UNKNOWN, result.effect)
+            assertEquals(if (before) Dispatch.NOT_DISPATCHED else Dispatch.RESPONSE_UNAVAILABLE, result.dispatch)
+            assertEquals(if (before) 0 else 1, dispatches)
+            if (!before) assertArrayEquals(ByteArray(3), response)
+            channel.cancel()
+            assertEquals(1, cancellations)
+        }
+    }
+
     @Test fun knownCardResponseSurvivesCancellationDuringTransmit() {
         var cancelled = false
         lateinit var channel: CancellableCardChannel

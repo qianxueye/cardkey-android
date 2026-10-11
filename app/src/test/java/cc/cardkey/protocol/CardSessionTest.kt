@@ -4,6 +4,89 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CardSessionTest {
+    @Test fun acceptedWriteIsDistinctFromSecurityStateEffect() {
+        val session = CardSession(TypedChannel())
+        session.securityStateChanged()
+        assertEquals(Effect.APPLIED, session.effect)
+        assertFalse(session.hasAcceptedWrite)
+        session.applied()
+        session.securityStateUncertain()
+        assertTrue(session.hasAcceptedWrite)
+        session.close()
+    }
+
+    private class TypedChannel(val answer: () -> ByteArray = { byteArrayOf(0) }) : CardChannel {
+        override val wire = CardWire.CTAP
+        override val medium = Medium.CONTACT
+        override val maxCommandBytes = 7609
+        override val supportsCtap2 = true
+        override val supportsCtap1 = true
+        val commands = mutableListOf<Pair<Int, ByteArray>>()
+        override fun transmit(command: ByteArray): ByteArray = error("APDU sent to CTAP channel")
+        override fun exchangeCtap2(command: ByteArray): ByteArray { commands += 2 to command; return answer() }
+        override fun exchangeCtap1(command: ByteArray): ByteArray { commands += 1 to command; return answer() }
+        override fun close() = Unit
+    }
+
+    @Test fun ctapWireRejectsPivAndGlobalPlatformBeforeDispatch() {
+        for (ins in listOf(0xa4, 0xcb, 0x50, 0x82)) {
+            val channel = TypedChannel()
+            val result = CardSession(channel).run { it.exchange(Apdu(ins = ins), effectful = true) }
+            assertEquals(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE), result)
+            assertTrue(channel.commands.isEmpty())
+        }
+    }
+
+    @Test fun nativeCtap2KeepsStatusWithoutSyntheticApduStatus() {
+        val channel = TypedChannel { "00a0".hexBytes() }
+        val result = CardSession(channel).run { it.exchangeCtap2(byteArrayOf(4)) } as OperationResult.Completed
+        assertArrayEquals("00a0".hexBytes(), result.value)
+        assertEquals(2, channel.commands.single().first)
+        assertArrayEquals(byteArrayOf(4), channel.commands.single().second)
+    }
+
+    @Test fun apduCtap2RetainsEnvelopeAndResponseStatusHandling() {
+        val channel = FakeChannel(mutableListOf("00a09000".hexBytes()))
+        val result = CardSession(channel).run { it.exchangeCtap2(byteArrayOf(4)) } as OperationResult.Completed
+        assertArrayEquals("00a0".hexBytes(), result.value)
+        assertArrayEquals("80100000010400".hexBytes(), channel.commands.single())
+    }
+
+    @Test fun ctap1UsesFullExtendedHeaderForEmptyVersionAndLongAuthentication() {
+        val channel = TypedChannel { "5532465f56329000".hexBytes() }
+        val session = CardSession(channel)
+        session.exchangeCtap1(Apdu(ins = 3))
+        session.exchangeCtap1(Apdu(ins = 2, p1 = 3, data = ByteArray(320) { 7 }))
+        assertArrayEquals("000300000000000000".hexBytes(), channel.commands[0].second)
+        assertArrayEquals("00020300000140".hexBytes() + ByteArray(320) { 7 } + byteArrayOf(0, 0), channel.commands[1].second)
+        assertEquals(2, channel.commands.size)
+        session.close()
+    }
+
+    @Test fun typedFailuresPreserveDispatchAndAcceptedWriteEvidence() {
+        for (ctap1 in listOf(false, true)) for (dispatch in Dispatch.entries) {
+            val channel = TypedChannel { throw TransportException(dispatch) }
+            val result = CardSession(channel).run {
+                it.applied()
+                if (ctap1) it.exchangeCtap1(Apdu(ins = 1), effectful = true)
+                else it.exchangeCtap2(byteArrayOf(1), effectful = true)
+            } as OperationResult.Failed
+            assertEquals(if (dispatch == Dispatch.NOT_DISPATCHED) Effect.APPLIED else Effect.UNKNOWN, result.effect)
+            assertTrue(result.writeAccepted)
+            assertEquals(dispatch, result.dispatch)
+            assertEquals(1, channel.commands.size)
+        }
+    }
+
+    @Test fun ctap1BridgeFailureAndMalformedRepliesLeaveWriteUnknown() {
+        for (reply in listOf("6f00".hexBytes(), byteArrayOf(0))) {
+            val channel = TypedChannel { reply }
+            val result = CardSession(channel).run { it.exchangeCtap1(Apdu(ins = 1), effectful = true).requireSuccess() } as OperationResult.Failed
+            assertEquals(Effect.UNKNOWN, result.effect)
+            assertEquals(1, channel.commands.size)
+        }
+    }
+
     private class FakeChannel(val answers: MutableList<Any>, override val medium: Medium = Medium.CONTACT) : CardChannel {
         override val maxCommandBytes = 261
         val commands = mutableListOf<ByteArray>()
