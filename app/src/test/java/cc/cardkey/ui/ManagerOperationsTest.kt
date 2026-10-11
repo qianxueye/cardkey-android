@@ -77,6 +77,16 @@ class ManagerOperationsTest {
         }
     }
 
+    @Test fun hidPowerCycleStateDoesNotDisplayApduRemovalInstruction() {
+        val channel = ManagerTestChannel(CardWire.CTAP) { code, _ -> when (code) {
+            4 -> success(info())
+            6 -> success(cborMap(3 to 5.cbor(), 4 to true.cbor()))
+            else -> error("Unexpected command")
+        } }
+        val result = CardSession(channel).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.FIDO_RETRIES)) }
+        assertEquals(listOf(ResultRow("PIN 剩余重试次数", "5 次")), (result as OperationResult.Completed).value.rows)
+    }
+
     @Test fun uvRetriesUseApprovedUnitsOnlyForReturnedValues() {
         for (count in listOf(null, 0, 3, 8)) {
             val channel = FidoChannel { code, parameters -> when (code) {

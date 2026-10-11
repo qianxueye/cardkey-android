@@ -68,7 +68,10 @@ object ConfirmationPolicy {
             }
             val reason = when (result.code) {
                 FailureCode.CONTACT_REQUIRED -> R.string.error_contactRequired
-                FailureCode.PHYSICAL_ACTION_REQUIRED -> R.string.error_physicalActionRequired
+                FailureCode.PHYSICAL_ACTION_REQUIRED -> if (wire == CardWire.CTAP) {
+                    if (result.effect == Effect.UNKNOWN || result.writeAccepted) R.string.error_recoveryRequired
+                    else R.string.error_cardRejected
+                } else R.string.error_physicalActionRequired
                 FailureCode.PIN_INVALID -> R.string.error_pinInvalid
                 FailureCode.PIN_BLOCKED -> R.string.error_pinBlocked
                 FailureCode.AUTHORIZATION_DENIED -> R.string.error_authorization
