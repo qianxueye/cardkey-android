@@ -157,7 +157,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.PIV_SLOT -> piv.readSlot(input.slot).let {
                 ManagerReport(listOfNotNull(it.metadata?.let { metadata -> ResultRow("算法", metadata.algorithm.name) },
                     it.certificate?.let { cert -> ResultRow("证书", cert.subjectX500Principal.name) },
-                    it.metadata?.let { metadata -> ResultRow("公钥", Base64.getEncoder().encodeToString(metadata.publicKey.encoded)) }),
+                    it.metadata?.publicKey?.let { key -> ResultRow("公钥", Base64.getEncoder().encodeToString(key.encoded)) }),
                     it.certificate?.encoded, "piv-${input.slot.toString(16)}.cer")
             }
             ManagerOperation.PIV_CHANGE_PIN -> { piv.changePin(input.pin, input.newPin); empty() }
@@ -168,7 +168,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             }
             ManagerOperation.PIV_GENERATE -> piv.generateKey(input.slot, input.algorithm, input.pinPolicy,
                 input.managementAlgorithm, input.adminKey).let {
-                ManagerReport(listOf(ResultRow("算法", it.algorithm.name), ResultRow("公钥", Base64.getEncoder().encodeToString(it.publicKey.encoded))))
+                ManagerReport(listOfNotNull(ResultRow("算法", it.algorithm.name), it.publicKey?.let { key -> ResultRow("公钥", Base64.getEncoder().encodeToString(key.encoded)) }))
             }
             ManagerOperation.PIV_CSR -> piv.createCsr(input.slot, input.pin, input.text).let {
                 ManagerReport(listOf(ResultRow("CSR", input.text)), pem("CERTIFICATE REQUEST", it), "piv-${input.slot.toString(16)}.csr")

@@ -165,12 +165,60 @@ class PivClientTest {
         assertEquals(Effect.NONE, session.effect)
     }
 
+    @Test fun importedSlotsWithoutPublicKeysRemainPopulatedOnContact() {
+        for (algorithm in listOf(KeyAlgorithm.P256, KeyAlgorithm.RSA2048)) {
+            val card = FakeCard().apply {
+                slotMetadata = PivTlv.encode(1, byteArrayOf(algorithm.code.toByte())) + "02020201030101".hexBytes()
+            }
+            val slot = PivClient(CardSession(card)).readSlot(0x9c)
+            assertEquals(algorithm, slot.metadata!!.algorithm)
+            assertEquals(2, slot.metadata.pinPolicy)
+            assertEquals(1, slot.metadata.touchPolicy)
+            assertFalse(slot.metadata.generated)
+            assertNull(slot.metadata.publicKey)
+            assertNull(slot.certificate)
+        }
+    }
+
+    @Test fun importedSlotsWithoutPublicKeysRejectProofOperationsBeforeMutation() {
+        val cert = certificate(FakeCard().keyPair)
+        val operations: List<(PivClient, CharArray, ByteArray) -> Unit> = listOf(
+            { client, pin, _ -> client.createCsr(0x9c, pin, "CN=Synthetic") },
+            { client, pin, _ -> client.verifySignature(0x9c, pin) },
+            { client, pin, _ -> client.verifyKeyAgreement(0x9c, pin) },
+            { client, pin, _ -> client.verifyRsaDecryption(0x9c, pin) },
+            { client, _, admin -> client.importCertificate(0x9c, cert, ManagementAlgorithm.TDES, admin) }
+        )
+        for (operation in operations) {
+            val card = FakeCard().apply { slotMetadata = "01011102020201030101".hexBytes() }
+            val pin = pin()
+            val admin = card.managementKey.copyOf()
+            val result = CardSession(card).run { operation(PivClient(it), pin, admin) }
+            assertEquals(FailureCode.UNSUPPORTED, (result as OperationResult.Failed).code)
+            assertEquals(Effect.NONE, result.effect)
+            assertEquals(listOf(0xa4, 0xf7), card.commands.map { it.ins })
+        }
+    }
+
+    @Test fun generatedKeyReadbackStillRequiresPublicKey() {
+        val card = FakeCard().apply { slotMetadata = "01011102020201030101".hexBytes() }
+        val result = CardSession(card).run {
+            PivClient(it).generateKey(0x9c, KeyAlgorithm.P256, PinPolicy.ONCE, ManagementAlgorithm.TDES, card.managementKey)
+        }
+        assertEquals(FailureCode.MALFORMED_RESPONSE, (result as OperationResult.Failed).code)
+        assertEquals(Effect.APPLIED, result.effect)
+        assertTrue(result.writeAccepted)
+        assertEquals(1, card.commands.count { it.ins == 0x47 })
+    }
+
     @Test fun malformedEmptyAndPartialSlotMetadataRemainRejected() {
         val malformed = listOf(
             "", "02020301", "030100", "020103030100", "0203030101030100",
             "02020001030100", "02020401030100", "02020300030100", "02020304030100",
             "020203010300", "0202030103020000", "02020301030102",
-            "01011102020301030100", "020203010301000400", "02020301030100050100"
+            "01011102020301030100", "020203010301000400", "02020301030100050100",
+            "01011102020201030101050100", "0102110002020201030101", "010111030101",
+            "01011102020201030102", "010111020202010301000400"
         )
         for (encoded in malformed) {
             val card = FakeCard().apply { slotMetadata = encoded.hexBytes() }

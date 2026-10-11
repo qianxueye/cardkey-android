@@ -138,6 +138,45 @@ class PivSecureContextTest {
         assertEquals(Effect.NONE, session.effect)
     }
 
+    @Test fun protectedImportedSlotsWithoutPublicKeysRemainPopulated() {
+        for (algorithm in listOf(KeyAlgorithm.P256, KeyAlgorithm.RSA2048)) {
+            val card = Peer().apply {
+                slotMetadata = PivTlv.encode(1, byteArrayOf(algorithm.code.toByte())) + "02020201030101".hexBytes()
+                certificateAbsent = true
+            }
+            val (session, context) = establish(card)
+            val slot = PivClient(session, context).readSlot(0x9c)
+            assertEquals(algorithm, slot.metadata!!.algorithm)
+            assertFalse(slot.metadata.generated)
+            assertEquals(2, slot.metadata.pinPolicy)
+            assertEquals(1, slot.metadata.touchPolicy)
+            assertNull(slot.metadata.publicKey)
+            assertNull(slot.certificate)
+            assertEquals(3, card.protectedCommands)
+            assertEquals(Effect.NONE, session.effect)
+        }
+    }
+
+    @Test fun protectedImportedSlotsWithoutPublicKeysRejectProofBeforePinOrPrivateCommands() {
+        val operations: List<(PivClient, CharArray) -> Unit> = listOf(
+            { client, pin -> client.createCsr(0x9c, pin, "CN=Synthetic") },
+            { client, pin -> client.verifySignature(0x9c, pin) },
+            { client, pin -> client.verifyKeyAgreement(0x9c, pin) },
+            { client, pin -> client.verifyRsaDecryption(0x9c, pin) }
+        )
+        for (operation in operations) {
+            val card = Peer().apply { slotMetadata = "01011102020201030101".hexBytes() }
+            val (session, context) = establish(card)
+            val pin = "123456".toCharArray()
+            val exception = failure { operation(PivClient(session, context), pin) }
+            assertEquals(FailureCode.UNSUPPORTED, (exception as CardFailure).code)
+            assertEquals(2, card.protectedCommands)
+            assertEquals(0, card.pinTries)
+            assertEquals(Effect.NONE, session.effect)
+            assertTrue(pin.all { it == '\u0000' })
+        }
+    }
+
     @Test fun protectedMalformedEmptyAndPartialMetadataRemainRejected() {
         for (encoded in listOf("02020301030102", "01011102020301030100", "020203010301000400")) {
             val card = Peer().apply { slotMetadata = encoded.hexBytes() }
