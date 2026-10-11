@@ -12,7 +12,7 @@ Original Kotlin protocol and reader implementations were written for this reposi
 | AndroidX Activity Compose | 1.11.0 | Apache-2.0 |
 | AndroidX Lifecycle | 2.9.4 | Apache-2.0 |
 | Kotlin Coroutines Android | 1.10.2 | Apache-2.0 |
-| Bouncy Castle PKIX/provider/util | 1.83 | Bouncy Castle MIT-style license; CSR ASN.1 and JCA support |
+| Bouncy Castle PKIX/provider/util | 1.83 | Bouncy Castle MIT-style license; CSR/CICC ASN.1, JCA support and CS7 AES-CMAC |
 | AndroidX Credentials | 1.6.0 | Apache-2.0; Android 14+ provider APIs |
 | AndroidX Fragment constraint | 1.8.9 | Apache-2.0; compatible Activity Result dependency for Credentials |
 | Gson | 2.13.1 | Apache-2.0; strict bounded JSON parsing and response encoding |
@@ -27,6 +27,9 @@ License texts shipped inside third-party JAR/AAR files remain attached to their 
 
 Primary implementation references:
 
+- [NIST SP 800-73 Part 2, July 2024](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73pt2-5.pdf) — CS7 establishment and secure messaging
+- [NIST SP 800-73 Part 1, July 2024](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73pt1-5.pdf) — PIV objects and access policy
+- [NIST SP 800-78-5, July 2024](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-78-5.pdf) — cryptographic algorithms
 - [CTAP 2.1](https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html)
 - [USB CCID 1.1](https://www.usb.org/sites/default/files/DWG_Smart-Card_CCID_Rev110.pdf)
 - [Android IsoDep](https://developer.android.com/reference/android/nfc/tech/IsoDep)

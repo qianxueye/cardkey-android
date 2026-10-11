@@ -276,6 +276,89 @@ class PivSecureContextTest {
         assertEquals(count, card.commands.size)
     }
 
+    @Test fun dataFreePinStatusHasNoEncryptedPayloadOrMutationEffect() {
+        val card = Peer().apply { pinStatus = 0x9000 }
+        val (session, context) = establish(card)
+        assertEquals(PivPinStatus(true, null, false), PivClient(session, context).pinStatus())
+        assertEquals(listOf(0x8e), PivTlv.parse(card.lastProtected).keys.toList())
+        assertEquals(Effect.NONE, session.effect)
+        assertEquals(0, card.pinTries)
+    }
+
+    @Test fun cipherRejectsWrongClaAndOuterErrorsWithoutExposingInnerSuccess() {
+        val cipher = Cs7Cipher(keys())
+        failure { cipher.protect(Apdu(cla = 0x1c, ins = 0x20)) }
+        cipher.protect(Apdu(ins = 0x20, le = null))
+        val response = fixture["exchanges"].asJsonArray[0].asJsonObject["response"].asString.hexBytes()
+        val error = failure { cipher.unprotect(ApduResponse(response, 0x6988)) } as CardFailure
+        assertEquals(0x6988, error.status)
+        failure { cipher.protect(Apdu(ins = 0x20)) }
+    }
+
+    @Test fun authenticatedMalformedEncryptionObjectsAndPaddingAreRejected() {
+        val enc = keys().copyOfRange(64, 96)
+        for (kind in listOf("indicator", "size", "zero", "marker", "overpadding")) {
+            val cipher = Cs7Cipher(keys())
+            cipher.protect(Apdu(ins = 0x20, le = null))
+            val plain = when (kind) {
+                "marker" -> ByteArray(16).also { it[15] = 1 }
+                "overpadding" -> ByteArray(32).also { it[0] = 0x80.toByte() }
+                else -> ByteArray(16)
+            }
+            val encrypted = Cipher.getInstance("AES/CBC/NoPadding").run {
+                init(Cipher.ENCRYPT_MODE, SecretKeySpec(enc, "AES"), IvParameterSpec(cipher.iv(true))); doFinal(plain)
+            }
+            val value = when (kind) {
+                "indicator" -> byteArrayOf(2) + encrypted
+                "size" -> byteArrayOf(1, 0)
+                else -> byteArrayOf(1) + encrypted
+            }
+            val objects = PivTlv.encode(0x87, value) + "99029000".hexBytes()
+            val mac = Cs7.mac(keys().copyOfRange(96, 128), ByteArray(16) + objects)
+            failure { cipher.unprotect(ApduResponse(objects + PivTlv.encode(0x8e, mac.copyOf(8)), 0x9000)) }
+            failure { cipher.protect(Apdu(ins = 0x20)) }
+        }
+    }
+
+    @Test fun counterExhaustionCannotWrapOrReturnSuccess() {
+        val cipher = Cs7Cipher(keys())
+        val field = Cs7Cipher::class.java.getDeclaredField("counter").apply { isAccessible = true }
+        val counter = field.get(cipher) as ByteArray
+        counter.fill(0xff.toByte()); counter[0] = 0x7f
+        cipher.protect(Apdu(ins = 0x20, le = null))
+        val objects = "99029000".hexBytes()
+        val mac = Cs7.mac(keys().copyOfRange(96, 128), ByteArray(16) + objects)
+        failure { cipher.unprotect(ApduResponse(objects + PivTlv.encode(0x8e, mac.copyOf(8)), 0x9000)) }
+        failure { cipher.protect(Apdu(ins = 0x20)) }
+    }
+
+    @Test fun protectWholeLogicalDataBeforeFragmentingAt255And256() {
+        for (size in listOf(255, 256)) {
+            val card = Peer()
+            val (session, context) = establish(card)
+            val body = ByteArray(size) { it.toByte() }
+            val result = context.exchange(Apdu(ins = 0xcb, p1 = 0x3f, p2 = 0xff, data = body))
+            assertArrayEquals(ByteArray(256) { it.toByte() }, result.data)
+            val fragments = card.commands.filter { it[0] == 0x1c.toByte() }
+            assertEquals(1, fragments.size)
+            assertEquals(255, fragments.single()[4].toInt() and 255)
+            assertEquals(Effect.NONE, session.effect)
+        }
+    }
+
+    @Test fun fragmentAcknowledgmentCannotAcceptMutationOrUnlockPin() {
+        val card = Peer()
+        val (session, context) = establish(card)
+        card.failure = "lost"
+        val result = session.run {
+            context.exchange(Apdu(ins = 0x87, p1 = 7, p2 = 0x9d, data = ByteArray(256)), true)
+        } as OperationResult.Failed
+        assertEquals(Effect.UNKNOWN, result.effect)
+        assertFalse(result.writeAccepted)
+        assertEquals(0, card.pinTries)
+        assertEquals(1, card.commands.count { it[0] == 0x1c.toByte() })
+    }
+
     private fun establish(card: Peer): Pair<CardSession, PivSecureContext> {
         val session = CardSession(card)
         return session to PivSecureContext.establish(session, identity(), "12345678".toCharArray(), SecureRandom(), host(), bytes("host_id"))
@@ -331,6 +414,7 @@ class PivSecureContextTest {
                 while (plain[end] == 0.toByte()) end--
                 assertEquals(0x80.toByte(), plain[end]); plain.copyOf(end)
             } ?: byteArrayOf()
+            if (failure == "lost") throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
             val p2 = command[3].toInt() and 255
             var status = 0x9000
             val reply = when (ins) {
@@ -344,7 +428,6 @@ class PivSecureContextTest {
                 0xcb -> ByteArray(256) { it.toByte() }
                 else -> error("Unexpected protected command")
             }
-            if (failure == "lost") throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
             if (failure == "outer") return "9000".hexBytes()
             if (failure == "short") return byteArrayOf(0)
             val encrypted = if (failure == "padding") PivTlv.encode(0x87, byteArrayOf(1) + crypt(ByteArray(16), true, Cipher.ENCRYPT_MODE))

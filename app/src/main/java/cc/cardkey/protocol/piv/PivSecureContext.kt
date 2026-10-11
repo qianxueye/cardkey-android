@@ -167,7 +167,8 @@ internal object Cs7 {
         if (bits.size < 2 || bits[0] != 0.toByte()) malformed()
         val der = bits.copyOfRange(1, bits.size)
         // ECDSA contains two INTEGERs, so the general unique-tag parser does not apply.
-        val sequence = org.bouncycastle.asn1.ASN1Sequence.getInstance(der)
+        val sequence = try { org.bouncycastle.asn1.ASN1Sequence.getInstance(der) }
+            catch (_: IllegalArgumentException) { malformed() }
         if (!sequence.getEncoded("DER").contentEquals(der) || sequence.size() != 2) malformed()
         for (item in sequence) {
             val integer = item as? org.bouncycastle.asn1.ASN1Integer ?: malformed()

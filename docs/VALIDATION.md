@@ -41,3 +41,11 @@ Nine Android instrumentation tests compile into `app/build/outputs/apk/androidTe
 The packaged application manifest includes NFC, Internet and AndroidX's signature-scoped internal receiver permission. Unused biometric permissions from the Credentials dependency are removed. The seven approved provider messages match the reviewed batch, and `app_name` supplies the product display name.
 
 Provider physical acceptance remains separate: root must install both APKs, run instrumentation, verify system provider enablement and picker behavior, validate native DAL and Chrome Stable flows, and qualify real NFC/USB cancellation, presence, PIN and account operations. The implementation does not claim any of these results from the software gate.
+
+## CS7 protocol software result
+
+On 2026-10-10, `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest` passed in 46 seconds using cached public dependencies. All 201 JVM tests passed with 7.481 seconds of summed test execution: the 176 existing tests, 24 CS7 tests and one transport-continuation regression. The tests include the independent public fixture and protected P-256/P-384/RSA operations. Instrumentation tests compiled; no device tests were executed by this package.
+
+The CS7 gate produced zero lint errors and two warnings (the existing Bouncy Castle TLS helper and optional Fragment KTX recommendation). No lint suppression or baseline was added.
+
+The CS7 API is available to an enrolled-identity consumer. Existing manager screens retain their contact-only workflow. No enrollment UI, issuer storage, permissions or approved Chinese UI wording changed. Synthetic test success does not establish physical interoperability, deployment, issuer enrollment or PIN recovery acceptance. The [CS7 contract and API](CS7-WIRE.md) describe trust inputs, scope and lifetime.
