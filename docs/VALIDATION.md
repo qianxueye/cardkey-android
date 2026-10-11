@@ -86,3 +86,19 @@ The genuine red run against unchanged runtime produced seven failures among 12 P
 On 2026-10-11, the complete manager review candidate passed `testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest` in one invocation: 29 seconds reported by Gradle, 29.88 seconds wall time. All 137 JVM tests across 21 suites passed with no failures, errors, or skipped tests; summed test execution time was 2.714 seconds. Lint reported zero errors and 11 warnings: nine dependency/tool-version notices, the existing unused Bouncy Castle TLS helper, and the existing base monochrome-icon warning. No gate, lint baseline, or suppression was weakened. Both debug APKs were built; no instrumentation tests, device installation, or physical card acceptance were performed.
 
 The approved six-string Android batch is active. Regression tests require blob overwrite confirmation with and without a PIN, distinct capacity/recovery/rejection reasons, and distinct NFC unavailable/disabled reasons alongside the no-dispatch result.
+
+## Completed approved-parent stack integration
+
+The approved parent has been normally merged through the existing unmerged Android branches. Each stage passed `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --offline --no-watch-fs` independently. The local results are:
+
+| Stage | Verified runtime commit | JVM tests | Summed test seconds | Gate seconds | Lint errors / warnings / hints |
+| --- | --- | ---: | ---: | ---: | --- |
+| PR2 provider | 56217ccc | 196 | 4.275 | 11 | 0 / 14 / 1 |
+| PR3 status copy | 06113684 | 200 | 3.041 | 15 | 0 / 14 / 1 |
+| PR4 signature verification | c92e34c6 | 200 | 2.472 | 18 | 0 / 14 / 1 |
+| PR5 provider extensions | 6ec5268f | 218 | 2.611 | 13 | 0 / 1 / 0 |
+| PR6 FIDO profile | 47db3ea6 | 254 | 3.003 | 9 | 0 / 14 / 1 |
+
+Every stage had zero test failures, errors and skipped tests. Both APK targets compiled at every stage; instrumentation was not executed on a device. No lint baseline, suppression or gate was weakened. The parent raw-key overwrite warning applies to its lower raw-key management stages. PR6 retains the separately approved credential-bound corruption/recovery warning and secret-read/PIN consent. The final PR6 source includes the approved NFC/capacity/recovery/rejection mappings, username-only manager updates, immutable user-ID and same-token readback checks, reusable input ownership, Unicode PIN normalization, private provider outputs and origin verification, and known/unknown cancellation effects.
+
+The final parent-copy integration gate is complete; earlier preparation notes about deferring that gate are historical. Remote publication/checks and physical phone/card/account acceptance remain separate. No private applet source or CAP artifact is needed by these Android gates.
