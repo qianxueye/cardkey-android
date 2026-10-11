@@ -4,6 +4,8 @@ import cc.cardkey.protocol.Apdu
 import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.CardSession
 import cc.cardkey.protocol.FailureCode
+import cc.cardkey.protocol.Dispatch
+import cc.cardkey.protocol.TransportException
 
 class FidoClient(private val session: CardSession) {
     private var selected = false
@@ -254,13 +256,15 @@ class FidoClient(private val session: CardSession) {
             val result = command(1, params, effectful = true, applied = true)
             val response = MakeCredentialResult(result[1].text(), result[2].bytes(), result[3].map(),
                 result[5]?.bytes(), result[4]?.bool())
-            val authData = AuthenticatorData.parse(response.authData)
-            if (authData.credentialId == null || !authData.rpIdHash.contentEquals(sha256(request.rpId.toByteArray(Charsets.UTF_8))) ||
-                !authData.userPresent || (request.requireUv && !authData.userVerified) ||
-                authData.publicKey?.get(3)?.number()?.toInt() !in request.algorithms) malformed()
-            if (response.largeBlobKey != null && (!request.extensions.largeBlobKey || response.largeBlobKey.size != 32)) malformed()
-            validateMakeExtensions(request.extensions, authData.extensions)
-            return response
+            try {
+                val authData = AuthenticatorData.parse(response.authData)
+                if (authData.credentialId == null || !authData.rpIdHash.contentEquals(sha256(request.rpId.toByteArray(Charsets.UTF_8))) ||
+                    !authData.userPresent || (request.requireUv && !authData.userVerified) ||
+                    authData.publicKey?.get(3)?.number()?.toInt() !in request.algorithms) malformed()
+                if (response.largeBlobKey != null && (!request.extensions.largeBlobKey || response.largeBlobKey.size != 32)) malformed()
+                validateMakeExtensions(request.extensions, authData.extensions)
+                return response
+            } catch (failure: Exception) { response.largeBlobKey?.fill(0); throw failure }
         }
         if (pin != null) withToken(pin, 1, request.rpId, info, ::execute) else execute(null)
     } finally { pin?.fill('\u0000') }
@@ -273,6 +277,7 @@ class FidoClient(private val session: CardSession) {
             if (name !in info.extensions) throw CardFailure(FailureCode.UNSUPPORTED)
             extensionPairs[Cbor.Text(name)] = value
         }
+        if (request.extensions.uvm) addExtension("uvm", true.cbor())
         if (request.extensions.credentialBlob) addExtension("credBlob", true.cbor())
         if (request.extensions.largeBlobKey) addExtension("largeBlobKey", true.cbor())
         val salts = request.extensions.hmacSalts
@@ -289,32 +294,43 @@ class FidoClient(private val session: CardSession) {
             val params = cborMap(1 to request.rpId.cbor(), 2 to request.clientDataHash.cbor(),
                 3 to request.allowIds.takeIf { it.isNotEmpty() }?.let { Cbor.Array(it.map(::descriptor)) },
                 4 to Cbor.Map(extensionPairs).takeIf { it.value.isNotEmpty() },
-                5 to textMap("up" to true.cbor(), "uv" to if (pin == null) request.requireUv.cbor() else null))
+                5 to textMap("up" to request.userPresence.cbor(), "uv" to if (pin == null) request.requireUv.cbor() else null))
             fun execute(token: PinToken?): List<Assertion> {
                 val authenticated = Cbor.Map(params.value + if (token == null) emptyMap() else cborMap(
                     6 to token.authenticate(request.clientDataHash).cbor(), 7 to token.version.cbor()).value)
                 val first = command(2, authenticated, effectful = true, applied = true)
                 val count = first[5]?.count() ?: 1
-                if (count == 0) malformed()
-                return List(count) { index ->
-                    val response = if (index == 0) first else command(8, effectful = true, applied = true)
-                    val id = response[1]?.let(::parseDescriptor) ?: request.allowIds.singleOrNull() ?: malformed()
-                    if (request.allowIds.isNotEmpty() && request.allowIds.none { it.contentEquals(id) }) malformed()
-                    val data = response[2].bytes(); val auth = AuthenticatorData.parse(data)
-                    if (auth.credentialId != null || !auth.rpIdHash.contentEquals(sha256(request.rpId.toByteArray(Charsets.UTF_8))) ||
-                        !auth.userPresent || (request.requireUv && !auth.userVerified)) malformed()
-                    val hmacOutput = auth.extensions?.get("hmac-secret")?.let {
-                        val protocol = hmacProtocol ?: malformed()
-                        protocol.decrypt(it.bytes()).also { plain -> if (plain.size != salts?.size) { plain.fill(0); malformed() } }
+                if (count == 0 || (request.allowIds.isNotEmpty() && count != 1)) malformed()
+                val assertions = mutableListOf<Assertion>()
+                try {
+                    repeat(count) { index ->
+                        val response = if (index == 0) first else command(8, effectful = true, applied = true)
+                        val id = response[1]?.let(::parseDescriptor) ?: request.allowIds.singleOrNull() ?: malformed()
+                        if (request.allowIds.isNotEmpty() && request.allowIds.none { it.contentEquals(id) }) malformed()
+                        val data = response[2].bytes(); val auth = AuthenticatorData.parse(data)
+                        if (auth.credentialId != null || !auth.rpIdHash.contentEquals(sha256(request.rpId.toByteArray(Charsets.UTF_8))) ||
+                            (request.userPresence && !auth.userPresent) || (request.requireUv && !auth.userVerified)) malformed()
+                        val hmacOutput = auth.extensions?.get("hmac-secret")?.let {
+                            val protocol = hmacProtocol ?: malformed()
+                            protocol.decrypt(it.bytes()).also { plain -> if (plain.size != salts?.size) { plain.fill(0); malformed() } }
+                        }
+                        try {
+                            if (salts != null && hmacOutput == null) malformed()
+                            val largeBlobKey = response[7]?.bytes()
+                            if (largeBlobKey != null && (!request.extensions.largeBlobKey || largeBlobKey.size != 32)) malformed()
+                            auth.extensions?.get("credBlob")?.let { value ->
+                                if (!request.extensions.credentialBlob) malformed()
+                                value.bytes()
+                            }
+                            assertions += Assertion(id, data, response[3].bytes(), response[4]?.let(::parseUser), hmacOutput, largeBlobKey)
+                        } catch (failure: Exception) {
+                            hmacOutput?.fill(0); response[7]?.let { (it as? Cbor.Bytes)?.value?.fill(0) }; throw failure
+                        }
                     }
-                    if (salts != null && hmacOutput == null) malformed()
-                    val largeBlobKey = response[7]?.bytes()
-                    if (largeBlobKey != null && (!request.extensions.largeBlobKey || largeBlobKey.size != 32)) malformed()
-                    auth.extensions?.get("credBlob")?.let { value ->
-                        if (!request.extensions.credentialBlob) malformed()
-                        value.bytes()
-                    }
-                    Assertion(id, data, response[3].bytes(), response[4]?.let(::parseUser), hmacOutput, largeBlobKey)
+                    return assertions
+                } catch (failure: Exception) {
+                    assertions.forEach { it.hmacSecret?.fill(0); it.largeBlobKey?.fill(0) }
+                    throw failure
                 }
             }
             if (pin != null) withToken(pin, 2, request.rpId, info, ::execute) else execute(null)
@@ -332,38 +348,51 @@ class FidoClient(private val session: CardSession) {
         plaintext
     } finally { key.fill(0) }
 
-    fun writeLargeBlob(pin: CharArray?, key: ByteArray, plaintext: ByteArray?): Unit = try {
-        require(key.size == 32 && (plaintext == null || plaintext.size <= LargeBlobs.MAX_PLAINTEXT))
-        val info = getInfo()
-        val entries = readLargeBlobArray(info).filter { entry ->
-            val existing = LargeBlobs.decrypt(key, entry)
-            if (existing == null) true else { existing.fill(0); false }
-        }.toMutableList()
-        if (plaintext != null) entries += LargeBlobs.encrypt(key, plaintext)
-        val serialized = LargeBlobs.encode(entries)
-        val capacity = info.raw[11].count(CborCodec.MAX_BYTES)
-        if (serialized.size > capacity) throw CardFailure(FailureCode.CAPACITY_EXCEEDED)
-        fun write(token: PinToken?) {
-            val chunk = largeBlobChunk(info)
-            var offset = 0
-            while (offset < serialized.size) {
-                val fragment = serialized.copyOfRange(offset, minOf(offset + chunk, serialized.size))
-                val authenticated = ByteArray(32) { 0xff.toByte() } + byteArrayOf(0x0c, 0) +
-                    ByteArray(4) { (offset ushr (it * 8)).toByte() } + sha256(fragment)
-                command(0x0c, cborMap(2 to fragment.cbor(), 3 to offset.cbor(),
-                    4 to if (offset == 0) serialized.size.cbor() else null,
-                    5 to token?.authenticate(authenticated)?.cbor(), 6 to token?.version?.cbor()),
-                    effectful = true, applied = offset + fragment.size == serialized.size)
-                offset += fragment.size
+    fun writeLargeBlob(pin: CharArray?, key: ByteArray, plaintext: ByteArray?) {
+        var wroteFragment = false
+        try {
+            require(key.size == 32 && (plaintext == null || plaintext.size <= LargeBlobs.MAX_PLAINTEXT))
+            val info = getInfo()
+            val entries = readLargeBlobArray(info).filter { entry ->
+                val existing = LargeBlobs.decrypt(key, entry)
+                if (existing == null) true else { existing.fill(0); false }
+            }.toMutableList()
+            if (plaintext != null) entries += LargeBlobs.encrypt(key, plaintext)
+            val serialized = LargeBlobs.encode(entries)
+            val capacity = info.raw[11].count(CborCodec.MAX_BYTES)
+            if (serialized.size > capacity) throw CardFailure(FailureCode.CAPACITY_EXCEEDED)
+            fun write(token: PinToken?) {
+                val chunk = largeBlobChunk(info)
+                var offset = 0
+                while (offset < serialized.size) {
+                    val fragment = serialized.copyOfRange(offset, minOf(offset + chunk, serialized.size))
+                    val authenticated = ByteArray(32) { 0xff.toByte() } + byteArrayOf(0x0c, 0) +
+                        ByteArray(4) { (offset ushr (it * 8)).toByte() } + sha256(fragment)
+                    command(0x0c, cborMap(2 to fragment.cbor(), 3 to offset.cbor(),
+                        4 to if (offset == 0) serialized.size.cbor() else null,
+                        5 to token?.authenticate(authenticated)?.cbor(), 6 to token?.version?.cbor()),
+                        effectful = true, applied = offset + fragment.size == serialized.size)
+                    wroteFragment = true
+                    offset += fragment.size
+                }
             }
-        }
-        if (info.options["clientPin"] == true || info.options["uv"] == true || info.options["alwaysUv"] == true) {
-            if (pin == null) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
-            withToken(pin, 16, info = info, block = ::write)
-        } else write(null)
-        if (!LargeBlobs.encode(readLargeBlobArray(info)).contentEquals(serialized)) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
-        Unit
-    } finally { pin?.fill('\u0000'); key.fill(0); plaintext?.fill(0) }
+            if (info.options["clientPin"] == true || info.options["uv"] == true || info.options["alwaysUv"] == true) {
+                if (pin == null) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
+                withToken(pin, 16, info = info, block = ::write)
+            } else write(null)
+            if (!LargeBlobs.encode(readLargeBlobArray(info)).contentEquals(serialized)) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+        } catch (failure: CardFailure) {
+            if (wroteFragment && failure.code in setOf(FailureCode.CAPACITY_EXCEEDED, FailureCode.UNSUPPORTED,
+                    FailureCode.AUTHORIZATION_DENIED, FailureCode.PIN_INVALID, FailureCode.PIN_BLOCKED))
+                throw CardFailure(FailureCode.RECOVERY_REQUIRED, failure.status)
+            throw failure
+        } catch (failure: TransportException) {
+            // A later undispatched fragment or readback does not undo an accepted write.
+            if (wroteFragment && !failure.cancelled && failure.dispatch == Dispatch.NOT_DISPATCHED)
+                throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+            throw failure
+        } finally { pin?.fill('\u0000'); key.fill(0); plaintext?.fill(0) }
+    }
 
     private fun largeBlobChunk(info: FidoInfo): Int {
         val maxMessage = info.raw[5]?.count(CborCodec.MAX_BYTES) ?: 1024
@@ -395,6 +424,7 @@ class FidoClient(private val session: CardSession) {
         extension.credentialBlob?.let {
             require(it.size <= (info.maxCredentialBlobLength ?: 0)); add("credBlob", it.cbor())
         }
+        if (extension.uvm) add("uvm", true.cbor())
         if (extension.hmacSecret) add("hmac-secret", true.cbor())
         if (extension.minPinLength) add("minPinLength", true.cbor())
         if (extension.largeBlobKey) add("largeBlobKey", true.cbor())

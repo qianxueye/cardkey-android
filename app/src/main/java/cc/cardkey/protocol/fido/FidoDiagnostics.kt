@@ -92,9 +92,9 @@ object FidoDiagnostics {
     }
 
     fun verifyAssertion(assertion: Assertion, credentialPublicKey: Cbor.Map, rpId: String,
-        clientDataHash: ByteArray, previousCounter: Long? = null, requireUv: Boolean = true): AssertionDiagnostic {
+        clientDataHash: ByteArray, previousCounter: Long? = null, requireUv: Boolean = true, requireUp: Boolean = true): AssertionDiagnostic {
         require(clientDataHash.size == 32 && (previousCounter == null || previousCounter in 0..0xffffffffL))
-        val auth = AuthenticatorData.parse(assertion.authData); checkAuth(auth, rpId, requireUv)
+        val auth = AuthenticatorData.parse(assertion.authData); checkAuth(auth, rpId, requireUv, requireUp)
         if (auth.credentialId != null) malformed()
         val signature = verify(publicKey(credentialPublicKey), credentialPublicKey[3].number(),
             assertion.authData + clientDataHash, assertion.signature)
@@ -102,8 +102,8 @@ object FidoDiagnostics {
         return AssertionDiagnostic(signature, advanced, auth.counter)
     }
 
-    private fun checkAuth(auth: AuthenticatorData, rpId: String, requireUv: Boolean) {
-        if (!auth.rpIdHash.contentEquals(sha256(rpId.toByteArray(Charsets.UTF_8))) || !auth.userPresent ||
+    private fun checkAuth(auth: AuthenticatorData, rpId: String, requireUv: Boolean, requireUp: Boolean = true) {
+        if (!auth.rpIdHash.contentEquals(sha256(rpId.toByteArray(Charsets.UTF_8))) || (requireUp && !auth.userPresent) ||
             (requireUv && !auth.userVerified)) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
     }
 

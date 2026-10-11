@@ -36,6 +36,22 @@ class FidoDiagnosticsTest {
         val noUv = auth.copyOf().also { it[32] = 1 }
         assertThrows(CardFailure::class.java) { FidoDiagnostics.verifyAssertion(assertion.copy(authData = noUv), key, rp, hash) }
     }
+    @Test fun explicitNoPresenceVerificationStillChecksUvRpSignatureAndCounter() {
+        val auth = sha256(rp.toByteArray()) + byteArrayOf(4, 0, 0, 0, 4)
+        val assertion = Assertion(id, auth, sign(auth + hash), null, null, null)
+        assertThrows(CardFailure::class.java) { FidoDiagnostics.verifyAssertion(assertion, key, rp, hash) }
+        assertEquals(AssertionDiagnostic(true, true, 4),
+            FidoDiagnostics.verifyAssertion(assertion, key, rp, hash, 3, requireUp = false))
+        assertFalse(FidoDiagnostics.verifyAssertion(assertion, key, rp, ByteArray(32), requireUp = false).signatureValid)
+        assertThrows(CardFailure::class.java) {
+            FidoDiagnostics.verifyAssertion(assertion, key, "wrong.example", hash, requireUp = false)
+        }
+        val noUv = auth.copyOf().also { it[32] = 0 }
+        assertThrows(CardFailure::class.java) {
+            FidoDiagnostics.verifyAssertion(assertion.copy(authData = noUv), key, rp, hash, requireUp = false)
+        }
+    }
+
     @Test fun authDataRejectsTruncatedKeyAndTrailingData() {
         val base = sha256(rp.toByteArray()) + byteArrayOf(5, 0, 0, 0, 4)
         assertThrows(CardFailure::class.java) { AuthenticatorData.parse(base + byteArrayOf(0)) }

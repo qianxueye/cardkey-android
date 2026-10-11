@@ -17,29 +17,32 @@ object ResponseEncoder {
         val response = response(clientData)
         response.addProperty("attestationObject", encode(attestation))
         response.add("transports", JsonArray().apply { add("nfc"); add("usb") })
-        return envelope(credential.credentialId, response).toString()
+        return envelope(credential.credentialId, response, credential.extensions).toString()
     }
 
-    fun get(assertion: Assertion, clientData: ClientData): String {
+    fun get(credential: ProvidedAssertion, clientData: ClientData): String {
+        val assertion = credential.assertion
         validateClientData(clientData)
         val response = response(clientData)
         response.addProperty("authenticatorData", encode(assertion.authData))
         response.addProperty("signature", encode(assertion.signature))
         response.addProperty("userHandle", assertion.user?.id?.let(::encode))
-        return envelope(assertion.credentialId, response).toString()
+        return envelope(assertion.credentialId, response, credential.extensions).toString()
     }
+
+    fun get(assertion: Assertion, clientData: ClientData): String = get(ProvidedAssertion(assertion), clientData)
 
     private fun response(clientData: ClientData) = JsonObject().apply {
         if (!clientData.browserDelegated) addProperty("clientDataJSON", encode(clientData.json))
     }
 
-    private fun envelope(id: ByteArray, response: JsonObject) = JsonObject().apply {
+    private fun envelope(id: ByteArray, response: JsonObject, extensions: ClientExtensionOutputs) = JsonObject().apply {
         addProperty("id", encode(id))
         addProperty("rawId", encode(id))
         addProperty("type", "public-key")
         addProperty("authenticatorAttachment", "cross-platform")
         add("response", response)
-        add("clientExtensionResults", JsonObject())
+        add("clientExtensionResults", extensions.json())
     }
 
     private fun encode(value: ByteArray) = Base64.getUrlEncoder().withoutPadding().encodeToString(value)

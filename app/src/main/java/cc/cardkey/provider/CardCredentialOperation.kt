@@ -3,10 +3,13 @@ package cc.cardkey.provider
 import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.CardSession
 import cc.cardkey.protocol.FailureCode
+import cc.cardkey.protocol.Dispatch
+import cc.cardkey.protocol.TransportException
 import cc.cardkey.protocol.fido.*
 import java.math.BigInteger
 
-data class CreatedCredential(val result: MakeCredentialResult, val credentialId: ByteArray, val residentKey: Boolean)
+data class CreatedCredential(val result: MakeCredentialResult, val credentialId: ByteArray, val residentKey: Boolean,
+    val extensions: ClientExtensionOutputs = ClientExtensionOutputs())
 
 object CardCredentialOperation {
     fun create(session: CardSession, request: ParsedCreate, clientData: ClientData,
@@ -24,50 +27,164 @@ object CardCredentialOperation {
             ResidentKeyRequirement.DISCOURAGED -> false
         }
         val requireUv = requireUv(request.userVerification, info, pin)
+        val extensions = request.extensions.forCard(info, resident)
         val result = client.makeCredential(MakeCredentialRequest(
             request.rpId, request.rpName, request.user, clientData.hash, listOf(-7), resident,
-            requireUv, request.excludeIds), pin)
-        val auth = validateAuth(result.authData, request.rpId, requireUv)
-        val id = auth.credentialId ?: malformed()
-        if (request.excludeIds.any { it.contentEquals(id) }) malformed()
-        val key = auth.publicKey ?: malformed()
-        if (key[3].number() != -7L || key[-4] != null) malformed()
-        FidoDiagnostics.publicKey(key)
-        if (result.enterpriseAttestation == true || result.largeBlobKey != null) malformed()
-        val verified = FidoDiagnostics.verifyRegistration(result, request.rpId, clientData.hash, requireUv)
-        if (verified.signatureValid == false) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
-        val output = when (request.attestation) {
-            AttestationPreference.NONE, AttestationPreference.INDIRECT -> {
-                val privateData = result.authData.copyOf()
-                privateData.fill(0, 37, 53)
-                result.copy(format = "none", authData = privateData, statement = cborMap())
+            requireUv, request.excludeIds, extensions), pin)
+        try {
+            val auth = validateAuth(result.authData, request.rpId, requireUv)
+            val id = auth.credentialId ?: malformed()
+            if (request.excludeIds.any { it.contentEquals(id) }) malformed()
+            val key = auth.publicKey ?: malformed()
+            if (key[3].number() != -7L || key[-4] != null) malformed()
+            FidoDiagnostics.publicKey(key)
+            if (result.enterpriseAttestation == true) malformed()
+            validateCreateExtensionOutput(auth, extensions)
+            val extensionOutputs = ClientExtensionOutputs(
+                residentKey = resident.takeIf { request.extensions.credProps },
+                prfEnabled = (auth.extensions?.get("hmac-secret")?.bool() ?: false).takeIf { request.extensions.prf },
+                prfRequested = request.extensions.prf,
+                largeBlobSupported = (result.largeBlobKey != null).takeIf { request.extensions.largeBlobSupport != null },
+                largeBlobRequested = request.extensions.largeBlobSupport != null,
+                uvm = uvmOutput(auth, extensions.uvm))
+            result.largeBlobKey?.fill(0)
+            if (request.extensions.largeBlobSupport == "required" && extensionOutputs.largeBlobSupported != true)
+                throw CardFailure(FailureCode.UNSUPPORTED)
+            val verified = FidoDiagnostics.verifyRegistration(result, request.rpId, clientData.hash, requireUv)
+            if (verified.signatureValid == false) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
+            val output = when (request.attestation) {
+                AttestationPreference.NONE, AttestationPreference.INDIRECT -> {
+                    val privateData = result.authData.copyOf()
+                    privateData.fill(0, 37, 53)
+                    result.copy(format = "none", authData = privateData, statement = cborMap())
+                }
+                AttestationPreference.DIRECT -> result
             }
-            AttestationPreference.DIRECT -> result
-        }
-        CreatedCredential(output, id.copyOf(), resident)
-    } finally { pin?.fill('\u0000') }
+            CreatedCredential(output.copy(largeBlobKey = null), id.copyOf(), resident, extensionOutputs)
+        } finally { result.largeBlobKey?.fill(0) }
+    } finally { pin?.fill('\u0000'); request.extensions.close() }
 
     fun get(session: CardSession, request: ParsedGet, clientData: ClientData,
-        pin: CharArray? = null): List<Assertion> = try {
-        validateClientData(clientData)
-        val client = FidoClient(session)
-        client.select()
-        val requireUv = requireUv(request.userVerification, client.getInfo(), pin)
-        val results = client.getAssertion(GetAssertionRequest(request.rpId, clientData.hash,
-            request.allowIds, requireUv), pin)
-        val seen = mutableSetOf<Cbor.Bytes>()
-        for (result in results) {
-            val auth = validateAuth(result.authData, request.rpId, requireUv)
-            if (auth.credentialId != null || result.credentialId.size !in 1..4096 ||
-                !seen.add(Cbor.Bytes(result.credentialId)) ||
-                (request.allowIds.isNotEmpty() && request.allowIds.none { it.contentEquals(result.credentialId) }) ||
-                (request.allowIds.isEmpty() && result.user == null) ||
-                (result.user != null && result.user.id.size !in 1..64) ||
-                result.hmacSecret != null || result.largeBlobKey != null) malformed()
-            validateSignature(result.signature)
+        pin: CharArray? = null): List<ProvidedAssertion> {
+        val completed = mutableListOf<ProvidedAssertion>()
+        var results: List<Assertion> = emptyList()
+        try {
+            validateClientData(clientData)
+            val client = FidoClient(session)
+            client.select()
+            val info = client.getInfo()
+            val input = request.extensions
+            val effectiveInputs = if (request.allowIds.isEmpty()) listOf(input.prfInputs)
+                else request.allowIds.map(input::inputsFor)
+            val initialInputs = effectiveInputs.first()
+            var prfInputs = initialInputs
+            val supportsPrf = "hmac-secret" in info.extensions
+            val requireUv = requireUv(if (supportsPrf && effectiveInputs.any { it != null })
+                UserVerificationRequirement.REQUIRED else request.userVerification, info, pin)
+            var allowIds = request.allowIds
+            var selected: Assertion? = null
+            if (supportsPrf && effectiveInputs.any { if (initialInputs == null) it != null else !initialInputs.sameAs(it) }) {
+                val preflight = client.getAssertion(GetAssertionRequest(request.rpId, clientData.hash,
+                    allowIds, requireUv = true, userPresence = false), pin?.copyOf()).singleOrNull() ?: malformed()
+                val auth = validateAuth(preflight.authData, request.rpId, requireUv = true, requireUp = false)
+                val builtInUv = pin == null && info.options["uv"] == true
+                if ((auth.userPresent && !builtInUv) || auth.credentialId != null || auth.extensions?.value?.isNotEmpty() == true ||
+                    allowIds.none { it.contentEquals(preflight.credentialId) } ||
+                    (preflight.user != null && preflight.user.id.size !in 1..64)) malformed()
+                validateSignature(preflight.signature)
+                selected = preflight
+                allowIds = listOf(preflight.credentialId)
+                prfInputs = input.inputsFor(preflight.credentialId)
+            }
+            val extensions = AssertionExtensions(
+                input.getCredBlob && "credBlob" in info.extensions,
+                prfInputs?.takeIf { supportsPrf }?.salts(),
+                (input.largeBlobRead || input.largeBlobWrite != null) && info.supportsLargeBlob(),
+                input.uvm && "uvm" in info.extensions)
+            results = client.getAssertion(GetAssertionRequest(request.rpId, clientData.hash,
+                allowIds, requireUv, extensions), pin?.copyOf())
+            if (selected != null) {
+                val final = results.singleOrNull() ?: malformed()
+                if (!final.credentialId.contentEquals(selected.credentialId) ||
+                    (selected.user != null && final.user != null && !selected.user.id.contentEquals(final.user.id))) malformed()
+            }
+            val seen = mutableSetOf<Cbor.Bytes>()
+            // Validate every account before issuing any large-blob write.
+            for (result in results) {
+                val auth = validateAuth(result.authData, request.rpId, requireUv)
+                if (auth.credentialId != null || result.credentialId.size !in 1..4096 ||
+                    !seen.add(Cbor.Bytes(result.credentialId)) ||
+                    (request.allowIds.isNotEmpty() && request.allowIds.none { it.contentEquals(result.credentialId) }) ||
+                    (request.allowIds.isEmpty() && result.user == null) ||
+                    (result.user != null && result.user.id.size !in 1..64)) malformed()
+                validateSignature(result.signature)
+                validateAssertionExtensionOutput(auth, extensions, info)
+            }
+            for (result in results) {
+                var blob: ByteArray? = null
+                try {
+                    if (input.largeBlobRead && result.largeBlobKey != null) {
+                        try {
+                            blob = client.readLargeBlob(result.largeBlobKey.copyOf())
+                            if (blob != null && blob.size > MAX_PROVIDER_BLOB) { blob.fill(0); blob = null }
+                        } catch (failure: CardFailure) {
+                            if (failure.code == FailureCode.CANCELLED) throw failure
+                        } catch (failure: TransportException) {
+                            if (failure.cancelled) throw failure
+                        } catch (_: java.security.GeneralSecurityException) {
+                            blob = null
+                        } catch (_: IllegalArgumentException) {
+                            blob = null
+                        }
+                    }
+                    val written = if (input.largeBlobWrite == null) null else if (result.largeBlobKey == null) false else {
+                        try {
+                            client.writeLargeBlob(pin?.copyOf(), result.largeBlobKey.copyOf(), input.largeBlobWrite.copyOf())
+                            true
+                        } catch (failure: CardFailure) {
+                            if (failure.code !in setOf(FailureCode.CAPACITY_EXCEEDED, FailureCode.UNSUPPORTED,
+                                    FailureCode.AUTHORIZATION_DENIED, FailureCode.PIN_INVALID, FailureCode.PIN_BLOCKED)) throw failure
+                            false
+                        } catch (failure: TransportException) {
+                            if (failure.cancelled || failure.dispatch != Dispatch.NOT_DISPATCHED) throw failure
+                            false
+                        }
+                    }
+                    val outputs = ClientExtensionOutputs(prfRequested = input.prf,
+                        prfResult = result.hmacSecret?.copyOf(),
+                        largeBlobRequested = input.largeBlobRead || input.largeBlobWrite != null,
+                        largeBlob = blob, largeBlobWritten = written,
+                        uvm = uvmOutput(AuthenticatorData.parse(result.authData), extensions.uvm))
+                    completed += ProvidedAssertion(result.copy(hmacSecret = null, largeBlobKey = null), outputs)
+                    blob = null
+                } finally { blob?.fill(0) }
+            }
+            return completed
+        } catch (failure: Exception) {
+            completed.forEach { it.close() }
+            throw failure
+        } finally {
+            results.forEach { it.hmacSecret?.fill(0); it.largeBlobKey?.fill(0) }
+            pin?.fill('\u0000')
+            request.extensions.close()
         }
-        results
-    } finally { pin?.fill('\u0000') }
+    }
+
+    private fun validateCreateExtensionOutput(auth: AuthenticatorData, request: MakeExtensions) {
+        auth.extensions?.get("credBlob")?.let { if (request.credentialBlob == null) malformed(); it.bool() }
+        auth.extensions?.get("hmac-secret")?.let { if (!request.hmacSecret) malformed(); it.bool() }
+        auth.extensions?.get("minPinLength")?.let { if (!request.minPinLength) malformed(); it.count(63) }
+        if (auth.extensions?.get("largeBlobKey") != null) malformed()
+    }
+
+    private fun validateAssertionExtensionOutput(auth: AuthenticatorData, request: AssertionExtensions, info: FidoInfo) {
+        auth.extensions?.get("credBlob")?.let {
+            if (!request.credentialBlob || it.bytes().size > (info.maxCredentialBlobLength ?: 0)) malformed()
+        }
+        if (auth.extensions?.get("minPinLength") != null || auth.extensions?.get("largeBlobKey") != null ||
+            auth.extensions?.get("credProtect") != null) malformed()
+        uvmOutput(auth, request.uvm)
+    }
 
     private fun requireUv(requirement: UserVerificationRequirement, info: FidoInfo, pin: CharArray?): Boolean {
         val available = pin != null || info.options["uv"] == true
@@ -77,10 +194,10 @@ object CardCredentialOperation {
             (requirement == UserVerificationRequirement.PREFERRED && available)
     }
 
-    private fun validateAuth(data: ByteArray, rpId: String, requireUv: Boolean): AuthenticatorData {
+    private fun validateAuth(data: ByteArray, rpId: String, requireUv: Boolean, requireUp: Boolean = true): AuthenticatorData {
         val auth = AuthenticatorData.parse(data)
         if (!auth.rpIdHash.contentEquals(sha256(rpId.toByteArray(Charsets.UTF_8))) ||
-            !auth.userPresent || (requireUv && !auth.userVerified))
+            (requireUp && !auth.userPresent) || (requireUv && !auth.userVerified))
             throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
         if (auth.flags and 0x18 != 0) malformed()
         return auth
