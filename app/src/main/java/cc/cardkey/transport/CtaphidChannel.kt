@@ -35,6 +35,9 @@ internal class CtaphidChannel(
     private val cancelled = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private var retired = false
+    private val presenceLock = Any()
+    private var presenceListener: ((Boolean) -> Unit)? = null
+    private var userPresenceRequired = false
     private var initialized = false
     private var cid = BROADCAST_CID
     private var deadline = 0L
@@ -64,6 +67,21 @@ internal class CtaphidChannel(
                 } finally { reply.fill(0) }
             }
         } finally { challenge.fill(0) }
+    }
+
+    override fun setUserPresenceListener(listener: ((Boolean) -> Unit)?) {
+        synchronized(presenceLock) {
+            if (closed.get() || cancelled.get()) return
+            presenceListener = listener
+            listener?.invoke(userPresenceRequired)
+        }
+    }
+
+    private fun reportUserPresence(required: Boolean) {
+        synchronized(presenceLock) {
+            userPresenceRequired = required && !closed.get() && !cancelled.get()
+            presenceListener?.invoke(userPresenceRequired)
+        }
     }
 
     override fun transmit(command: ByteArray): ByteArray = throw CardFailure(FailureCode.UNSUPPORTED)
@@ -108,7 +126,7 @@ internal class CtaphidChannel(
             close()
             throw TransportException(if (dispatched) Dispatch.RESPONSE_UNAVAILABLE else Dispatch.NOT_DISPATCHED,
                 failure, cancelled.get())
-        }
+        } finally { reportUserPresence(false) }
     }
 
     private fun send(command: Int, payload: ByteArray) {
@@ -144,6 +162,7 @@ internal class CtaphidChannel(
                 require(length <= MAX_MESSAGE_BYTES)
                 if (receivedCommand == KEEPALIVE) {
                     require(command != INIT && length == 1 && u8(report[7]) in 1..2)
+                    reportUserPresence(u8(report[7]) == 2)
                     continue
                 }
                 if (receivedCommand == ERROR) {
@@ -185,13 +204,19 @@ internal class CtaphidChannel(
     }
 
     override fun cancel() {
-        cancelled.set(true)
+        synchronized(presenceLock) { cancelled.set(true) }
         io.interrupt()
         close()
     }
 
     override fun close() {
-        closed.set(true)
+        synchronized(presenceLock) {
+            closed.set(true)
+            userPresenceRequired = false
+            val listener = presenceListener
+            presenceListener = null
+            listener?.invoke(false)
+        }
         io.interrupt()
         synchronized(this) {
             if (!retired) { retired = true; io.close() }

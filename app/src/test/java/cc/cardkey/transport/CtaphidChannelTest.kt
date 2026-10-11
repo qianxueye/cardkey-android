@@ -94,6 +94,50 @@ class CtaphidChannelTest {
         assertEquals(1, io.closes)
     }
 
+    @Test fun userPresenceProgressTracksUpNeededProcessingAndTerminalResponse() {
+        val io = FakeIo(init() + frames(0x3b, byteArrayOf(2)) + frames(0x3b, byteArrayOf(1)) + frames(0x10, byteArrayOf(0)))
+        val channel = ready(io)
+        val progress = mutableListOf<Boolean>()
+        channel.setUserPresenceListener { progress += it }
+        channel.exchangeCtap2(byteArrayOf(4))
+        assertEquals(listOf(false, true, false, false), progress)
+        channel.close()
+        assertEquals(false, progress.last())
+        channel.setUserPresenceListener { fail("Closed channel retained a listener") }
+    }
+
+    @Test fun userPresenceProgressClearsOnMalformedTerminalResponse() {
+        val io = FakeIo(init() + frames(0x3b, byteArrayOf(2)) + frames(3, byteArrayOf(0)))
+        val channel = ready(io)
+        val progress = mutableListOf<Boolean>()
+        channel.setUserPresenceListener { progress += it }
+        failure { channel.exchangeCtap2(byteArrayOf(4)) }
+        assertEquals(listOf(false, true, false), progress)
+    }
+
+    @Test fun cancellationClearsProgressAndRejectsLateUpNeeded() {
+        val io = FakeIo(init() + frames(0x3b, byteArrayOf(2)))
+        val channel = ready(io)
+        val progress = java.util.Collections.synchronizedList(mutableListOf<Boolean>())
+        channel.setUserPresenceListener { progress += it }
+        val readEntered = CountDownLatch(1)
+        val readReleased = CountDownLatch(1)
+        io.afterRead = { readEntered.countDown(); check(readReleased.await(5, TimeUnit.SECONDS)) }
+        io.onInterrupt = { readReleased.countDown() }
+        val outcome = AtomicReference<TransportException>()
+        val worker = Thread { outcome.set(failure { channel.exchangeCtap2(byteArrayOf(4)) }) }
+        worker.start()
+        assertTrue(readEntered.await(5, TimeUnit.SECONDS))
+        channel.cancel()
+        worker.join(5000)
+        assertFalse(worker.isAlive)
+        assertTrue(outcome.get().cancelled)
+        assertTrue(progress.isNotEmpty() && progress.none { it })
+        val count = progress.size
+        channel.close()
+        assertEquals(count, progress.size)
+    }
+
     @Test fun keepaliveCanPrecedeSuccessfulCborResponse() {
         val io = FakeIo(init() + frames(0x3b, byteArrayOf(1)) + frames(0x3b, byteArrayOf(2)) + frames(0x10, byteArrayOf(0)))
         assertArrayEquals(byteArrayOf(0), ready(io).exchangeCtap2(byteArrayOf(4)))

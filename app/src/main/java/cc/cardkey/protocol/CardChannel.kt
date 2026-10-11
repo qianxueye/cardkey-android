@@ -16,6 +16,7 @@ interface CardChannel : Closeable {
     fun transmit(command: ByteArray): ByteArray
     fun exchangeCtap2(command: ByteArray): ByteArray = throw CardFailure(FailureCode.UNSUPPORTED)
     fun exchangeCtap1(command: ByteArray): ByteArray = throw CardFailure(FailureCode.UNSUPPORTED)
+    fun setUserPresenceListener(listener: ((Boolean) -> Unit)?) = Unit
     fun cancel() = close()
 }
 
