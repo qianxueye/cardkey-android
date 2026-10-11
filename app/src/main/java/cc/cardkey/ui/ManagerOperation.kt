@@ -60,13 +60,17 @@ class ManagerOperations {
         return when (input.operation) {
             ManagerOperation.FIDO_INFO -> info(fido.getInfo())
             ManagerOperation.FIDO_RETRIES -> fido.retries().let {
-                ManagerReport(listOf(ResultRow("PIN", it.pin.toString())) +
-                    listOfNotNull(it.uv?.let { count -> ResultRow("UV", count.toString()) }))
+                ManagerReport(listOf(ResultRow("PIN 剩余重试次数", "${it.pin} 次")) +
+                    listOfNotNull(it.uv?.let { count -> ResultRow("UV 剩余重试次数", "$count 次") },
+                        it.powerCycleState?.takeIf { required -> required }?.let {
+                            ResultRow("", "请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。")
+                        }))
             }
             ManagerOperation.FIDO_SET_PIN -> { fido.setPin(input.newPin); empty() }
             ManagerOperation.FIDO_CHANGE_PIN -> { fido.changePin(input.pin, input.newPin); empty() }
             ManagerOperation.FIDO_CAPACITY -> fido.capacity(input.pin).let {
-                ManagerReport(listOf(ResultRow("已用", it.existing.toString()), ResultRow("剩余", it.remaining.toString())))
+                ManagerReport(listOf(ResultRow("已存储凭据", "${it.existing} 个"),
+                    ResultRow("剩余凭据容量（估算）", "${it.remaining} 个")))
             }
             ManagerOperation.FIDO_RPS -> ManagerReport(fido.enumerateRelyingParties(input.pin).flatMap {
                 listOf(ResultRow("RP", it.id), ResultRow("RP SHA-256", it.idHash.hex()))
@@ -85,7 +89,7 @@ class ManagerOperations {
             ManagerOperation.FIDO_REGISTER, ManagerOperation.FIDO_ASSERT -> diagnostic(fido, input)
             ManagerOperation.U2F_INFO -> {
                 val client = U2fClient(session); client.select()
-                ManagerReport(listOf(ResultRow("版本", client.version())))
+                ManagerReport(listOf(ResultRow("支持的协议", client.version())))
             }
             ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT -> u2fDiagnostic(session, input)
             ManagerOperation.FIDO_BLOB_READ -> {
@@ -97,8 +101,8 @@ class ManagerOperations {
             }
             ManagerOperation.PIV_INFO -> piv.readInfo().let {
                 ManagerReport(listOf(ResultRow("版本", it.version), ResultRow("序列号", it.serial.toString()),
-                    ResultRow("PIN · 重试次数", "${it.pin.remaining} / ${it.pin.total}"),
-                    ResultRow("PUK · 重试次数", "${it.puk.remaining} / ${it.puk.total}"),
+                    ResultRow("PIN 剩余重试次数", "剩余 ${it.pin.remaining} 次（共 ${it.pin.total} 次）"),
+                    ResultRow("PUK 剩余重试次数", "剩余 ${it.puk.remaining} 次（共 ${it.puk.total} 次）"),
                     ResultRow("管理密钥", it.managementAlgorithm.name)))
             }
             ManagerOperation.PIV_SLOT -> piv.readSlot(input.slot).let {
@@ -131,10 +135,14 @@ class ManagerOperations {
     }
 
     private fun info(info: FidoInfo) = ManagerReport(
-        listOf(ResultRow("版本", info.versions.joinToString()), ResultRow("扩展", info.extensions.joinToString()),
-            ResultRow("PIN · 最短长度", info.minPinLength.toString()),
+        listOf(ResultRow("支持的协议", info.versions.joinToString()),
+            ResultRow("支持的扩展", info.extensions.joinToString().ifEmpty { "无" }),
             ResultRow("PIN · 协议", info.pinProtocols.joinToString())) +
-            info.options.map { ResultRow(it.key, it.value.toString()) })
+            listOfNotNull(
+                info.options["clientPin"]?.let { ResultRow("PIN", if (it) "已设置" else "未设置") },
+                info.options["alwaysUv"]?.let { ResultRow("始终验证", if (it) "开启" else "关闭") },
+                info.options["ep"]?.let { ResultRow("企业证明", if (it) "开启" else "关闭") },
+                info.raw[13]?.let { ResultRow("最短 PIN 长度", "${it.number()} 个字符") }))
 
     private fun diagnostic(fido: FidoClient, input: OperationInput): ManagerReport {
         val rpId = "cardkey.example"
