@@ -204,7 +204,7 @@ class CardCredentialOperationTest {
         val original = assertion(account = null)
         val channel = assertions(listOf(original))
         val result = getWith(channel, get.copy(allowIds = listOf(id))) as OperationResult.Completed
-        val response = result.value.single()
+        val response = result.value.single().assertion
         assertArrayEquals(original.authData, response.authData)
         assertArrayEquals(original.signature, response.signature)
         assertTrue(FidoDiagnostics.verifyAssertion(response, key, rp, data.hash).signatureValid)
@@ -216,8 +216,8 @@ class CardCredentialOperationTest {
         val original = assertion()
         val wrongChallenge = original.copy(signature = sign(original.authData + ByteArray(32)))
         val result = getWith(assertions(listOf(wrongChallenge))) as OperationResult.Completed
-        assertArrayEquals(wrongChallenge.signature, result.value.single().signature)
-        assertFalse(FidoDiagnostics.verifyAssertion(result.value.single(), key, rp, data.hash).signatureValid)
+        assertArrayEquals(wrongChallenge.signature, result.value.single().assertion.signature)
+        assertFalse(FidoDiagnostics.verifyAssertion(result.value.single().assertion, key, rp, data.hash).signatureValid)
     }
 
     @Test fun multipleAccountsAreRetrievedContiguouslyBeforeSelection() {
@@ -226,7 +226,7 @@ class CardCredentialOperationTest {
         val result = getWith(channel) as OperationResult.Completed
         assertEquals(2, result.value.size)
         assertEquals(listOf(4, 4, 2, 8), channel.commands.map { it.first })
-        for (response in result.value) assertTrue(FidoDiagnostics.verifyAssertion(response, key, rp, data.hash).signatureValid)
+        for (response in result.value.map { it.assertion }) assertTrue(FidoDiagnostics.verifyAssertion(response, key, rp, data.hash).signatureValid)
         assertEquals(1, channel.selectCount)
     }
 

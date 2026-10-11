@@ -48,7 +48,7 @@ object RequestParser {
             else -> invalidRequest()
         }
         commonFields(root)
-        validateExtensions(root.optional("extensions"), true)
+        val extensions = ExtensionParser.create(root.optional("extensions"))
         ParsedCreate(
             rpId = validateRpId(rp.required("id").stringValue()),
             rpName = rp.required("name").stringValue().boundedText(),
@@ -62,16 +62,18 @@ object RequestParser {
             userVerification = verification(selection?.optional("userVerification")),
             excludeIds = descriptors(root.optional("excludeCredentials")),
             attestation = attestation,
+            extensions = extensions,
         )
     }
 
     fun parseGet(json: String): ParsedGet = parseRequest {
         val root = StrictJson.parse(json).objectValue()
         commonFields(root)
-        validateExtensions(root.optional("extensions"), false)
+        val allowIds = descriptors(root.optional("allowCredentials"))
+        val extensions = ExtensionParser.get(root.optional("extensions"), allowIds)
         ParsedGet(
             validateRpId(root.required("rpId").stringValue()), challenge(root),
-            descriptors(root.optional("allowCredentials")), verification(root.optional("userVerification")),
+            allowIds, verification(root.optional("userVerification")), extensions,
         )
     }
 
@@ -106,24 +108,7 @@ object RequestParser {
         }
     }
 
-    private fun validateExtensions(value: JsonElement?, create: Boolean) {
-        if (value == null) return
-        val extensions = value.objectValue()
-        extensions.optional("enforceCredentialProtectionPolicy")?.let {
-            if (it.booleanValue()) unsupportedRequest()
-        }
-        extensions.optional("largeBlob")?.objectValue()?.let { blob ->
-            blob.optional("support")?.stringValue()?.let {
-                if (it == "required") unsupportedRequest()
-                if (it != "preferred") invalidRequest()
-            }
-            blob.optional("read")?.let { if (it.booleanValue()) unsupportedRequest() }
-            if (blob.has("write")) unsupportedRequest()
-        }
-        if (!create && extensions.has("appid")) unsupportedRequest()
-        if (create && extensions.has("appidExclude")) unsupportedRequest()
-        if (extensions.has("payment")) unsupportedRequest()
-    }
+
 }
 
 internal fun validateRpId(value: String): String {
@@ -192,7 +177,7 @@ internal fun JsonElement.integerValue(): Long {
 }
 private fun String.boundedText(): String = also { if (length > 1024) invalidRequest() }
 internal fun invalidRequest(): Nothing = throw ProviderRequestException()
-private fun unsupportedRequest(): Nothing = throw ProviderRequestException(true)
+internal fun unsupportedRequest(): Nothing = throw ProviderRequestException(true)
 private inline fun <T> parseRequest(block: () -> T): T = try { block() } catch (failure: ProviderRequestException) {
     throw failure
 } catch (_: Exception) { invalidRequest() }
