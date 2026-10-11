@@ -130,15 +130,20 @@ class PivSecureContextTest {
         assertEquals(1, card.pinTries)
     }
 
-    @Test fun protectedPinFloorPreservesCardDecisionAndDoesNotMarkRetryChange() {
-        val card = Peer().apply { pinStatus = 0x6983 }
-        val (session, context) = establish(card)
-        val client = PivClient(session, context)
-        assertEquals(PivPinStatus(false, null, true), client.pinStatus())
-        val result = session.run { client.verifyPin("123456".toCharArray()) } as OperationResult.Failed
-        assertEquals(FailureCode.PIN_BLOCKED, result.code)
-        assertEquals(Effect.NONE, result.effect)
-        assertFalse(result.writeAccepted)
+    @Test fun protectedPinFloorRequestsContactOnlyOnNfcAndPreservesBlockedStatus() {
+        for (transport in listOf(Medium.NFC, Medium.CONTACT)) {
+            val card = Peer().apply { pinStatus = 0x6983; medium = transport }
+            val (session, context) = establish(card)
+            val client = PivClient(session, context)
+            assertEquals(PivPinStatus(false, null, transport == Medium.NFC), client.pinStatus())
+            assertEquals(0, card.pinTries)
+            assertEquals(Effect.NONE, session.effect)
+            val result = session.run { client.verifyPin("123456".toCharArray()) } as OperationResult.Failed
+            assertEquals(FailureCode.PIN_BLOCKED, result.code)
+            assertEquals(0x6983, result.status)
+            assertEquals(Effect.NONE, result.effect)
+            assertFalse(result.writeAccepted)
+        }
     }
 
     @Test fun protectedPinSuccessRequiresAuthenticatedReply() {

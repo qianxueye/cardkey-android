@@ -78,7 +78,7 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         return when {
             response.status == 0x9000 -> PivPinStatus(true, null, false)
             response.status and 0xfff0 == 0x63c0 -> PivPinStatus(false, response.status and 15, false)
-            response.status == 0x6983 -> PivPinStatus(false, null, secure != null)
+            response.status == 0x6983 -> PivPinStatus(false, null, session.medium == Medium.NFC)
             else -> { response.requireSuccess(); malformed() }
         }
     }
