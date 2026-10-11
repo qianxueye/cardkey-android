@@ -237,6 +237,29 @@ class ProviderLifecycleTest {
         assertFalse(CardOperationGate.isRemovalRequired(reader))
     }
 
+    @Test fun `refusing blob write confirmation prevents credential proof and write before card connection`() {
+        for (plaintext in listOf(byteArrayOf(), byteArrayOf(9))) {
+            val runner = ProviderOperationRunner()
+            val request = ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.REQUIRED,
+                extensions = GetExtensionInputs(largeBlobWrite = plaintext))
+            var connections = 0; var apdus = 0
+            val pin = "123456".toCharArray()
+            runner.cancel()
+            val result = runner.execute(null, request, ClientData(byteArrayOf(), ByteArray(32), true), pin) {
+                connections++
+                object : CardChannel {
+                    override val medium = Medium.CONTACT
+                    override val maxCommandBytes = 261
+                    override fun transmit(command: ByteArray): ByteArray { apdus++; error("Refused request reached the card") }
+                    override fun close() = Unit
+                }
+            }
+            assertEquals(OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED), result)
+            assertEquals(0, connections); assertEquals(0, apdus)
+            assertArrayEquals(CharArray(6), pin)
+        }
+    }
+
     @Test fun cancellationDoesNotWipeInputsUntilActiveConsumerExits() {
         val entered = CountDownLatch(1)
         val resume = CountDownLatch(1)

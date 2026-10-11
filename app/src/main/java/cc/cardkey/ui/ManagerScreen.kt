@@ -45,6 +45,7 @@ fun ManagerScreen(
     onSecureChange: (Boolean) -> Unit,
     onProviderSettings: () -> Unit,
 ) {
+    val displayName = stringResource(R.string.app_name)
     var tab by remember { mutableIntStateOf(0) }
     var operation by remember { mutableStateOf(ManagerOperation.FIDO_INFO) }
     var pin by remember { mutableStateOf("") }
@@ -56,6 +57,12 @@ fun ManagerScreen(
     var enabled by remember { mutableStateOf(false) }
     var extensionNames by remember { mutableStateOf(setOf<String>()) }
     var extensionValue by remember { mutableStateOf("") }
+    var disclosureRps by remember { mutableStateOf("") }
+    var enterpriseMode by remember { mutableIntStateOf(0) }
+    var protection by remember { mutableIntStateOf(3) }
+    var showSecretConfirmation by remember { mutableStateOf(false) }
+    var showSecrets by remember { mutableStateOf(false) }
+    var exportConfirmation by remember { mutableStateOf<ManagerReport?>(null) }
     var slot by remember { mutableIntStateOf(0x9a) }
     var algorithm by remember { mutableStateOf(KeyAlgorithm.P256) }
     var pinPolicy by remember { mutableStateOf(PinPolicy.ONCE) }
@@ -63,16 +70,17 @@ fun ManagerScreen(
     var newAdminAlgorithm by remember { mutableStateOf(ManagementAlgorithm.AES256) }
     var invalid by remember { mutableStateOf(false) }
     var confirmation by remember { mutableStateOf<PendingOperation?>(null) }
-    val secretResult = (state.result as? OperationResult.Completed)?.value?.rows?.any {
-        it.label in setOf("largeBlobKey", "hmac-secret")
-    } == true
+    val report = (state.result as? OperationResult.Completed)?.value
+    val secretResult = report?.secrets != null || report?.protectedExport == true
     val secretForm = tab != 2 && (needsPin(operation) || operation in setOf(
         ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE,
         ManagerOperation.PIV_IMPORT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE))
     SideEffect { onSecureChange(secretForm || secretResult || state.lastRetry != null) }
+    LaunchedEffect(state.result) { showSecrets = false; showSecretConfirmation = false; exportConfirmation = null }
     LaunchedEffect(clearInputs, operation) {
-        pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; invalid = false
+        pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""; invalid = false
         confirmation?.close(); confirmation = null
+        showSecrets = false; showSecretConfirmation = false; exportConfirmation = null
     }
     DisposableEffect(Unit) { onDispose { confirmation?.close() } }
     confirmation?.let { input ->
@@ -84,6 +92,14 @@ fun ManagerScreen(
             confirmButton = { TextButton(onClick = { confirmation = null; input.dispatch(onSubmit) }) { Text("确认") } },
             dismissButton = { TextButton(onClick = { input.close(); confirmation = null }) { Text("取消") } })
     }
+    if (showSecretConfirmation) AlertDialog(onDismissRequest = { showSecretConfirmation = false },
+        title = { Text(stringResource(R.string.secret_view)) }, text = { Text(stringResource(R.string.confirm_secretShow)) },
+        confirmButton = { TextButton(onClick = { showSecretConfirmation = false; showSecrets = true }) { Text("确认") } },
+        dismissButton = { TextButton(onClick = { showSecretConfirmation = false }) { Text("取消") } })
+    exportConfirmation?.let { pending -> AlertDialog(onDismissRequest = { exportConfirmation = null },
+        title = { Text("导出") }, text = { Text(stringResource(R.string.confirm_blobExport)) },
+        confirmButton = { TextButton(onClick = { exportConfirmation = null; onExport(pending) }) { Text("确认") } },
+        dismissButton = { TextButton(onClick = { exportConfirmation = null }) { Text("取消") } }) }
     state.lastRetry?.let { (current, other) ->
         AlertDialog(onDismissRequest = { onLastRetry(false) },
             title = { Text(state.operation?.title ?: "PIV") },
@@ -146,7 +162,7 @@ fun ManagerScreen(
                         SecretField("管理密钥 · HEX", adminKey, !state.busy) { adminKey = it }
                     }
                     if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
-                        SecretField("largeBlobKey · HEX", adminKey, !state.busy) { adminKey = it }
+                        Text(stringResource(R.string.blob_help))
                         if (op == ManagerOperation.FIDO_BLOB_WRITE) {
                             OutlinedButton(onClick = onImport, enabled = !state.busy) { Text("导入") }
                             imported?.let { Text("${it.size} bytes", style = MaterialTheme.typography.bodySmall) }
@@ -170,7 +186,13 @@ fun ManagerScreen(
                         }
                         OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
                     }
+                    if (op == ManagerOperation.FIDO_MIN_PIN) {
+                        OutlinedTextField(disclosureRps, { disclosureRps = it }, label = { Text(stringResource(R.string.minPin_rps)) },
+                            enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+                        Text(stringResource(R.string.minPin_rpsHelp))
+                    }
                     if (op == ManagerOperation.FIDO_UPDATE) {
+                        Text(stringResource(R.string.user_updateHelp))
                         OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
                     }
                     if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {
@@ -180,16 +202,20 @@ fun ManagerScreen(
                         }
                     }
                     if (op == ManagerOperation.FIDO_REGISTER || op == ManagerOperation.FIDO_ASSERT) {
+                        if (op == ManagerOperation.FIDO_REGISTER) Choice(stringResource(R.string.enterprise_mode), enterpriseMode,
+                            listOf(0, 1, 2), { when (it) { 1 -> "厂商预设（1）"; 2 -> "平台管理（2）"; else -> "不请求" } }, !state.busy) { enterpriseMode = it }
                         Text("扩展", style = MaterialTheme.typography.labelLarge)
                         val names = if (op == ManagerOperation.FIDO_REGISTER)
-                            listOf("hmac-secret", "largeBlobKey", "minPinLength", "credBlob", "credProtect")
-                        else listOf("hmac-secret", "largeBlobKey", "credBlob")
+                            listOf("hmac-secret", "largeBlobKey", "minPinLength", "credBlob", "credProtect", "uvm")
+                        else listOf("hmac-secret", "largeBlobKey", "credBlob", "uvm")
                         names.forEach { name ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(name in extensionNames, { checked -> extensionNames = if (checked) extensionNames + name else extensionNames - name }, enabled = !state.busy)
-                                Text(name)
+                                Text(if (name == "uvm") "用户验证方法" else name)
                             }
                         }
+                        if ("credProtect" in extensionNames && op == ManagerOperation.FIDO_REGISTER)
+                            Choice("credProtect", protection, listOf(1, 2, 3), { it.toString() }, !state.busy) { protection = it }
                         if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER || "hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) {
                             SecretField(if (op == ManagerOperation.FIDO_REGISTER) "credBlob · HEX" else "hmac-secret · salt · HEX", extensionValue, !state.busy) { extensionValue = it }
                         }
@@ -202,15 +228,18 @@ fun ManagerScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = {
                             try {
+                                require(op != ManagerOperation.FIDO_BLOB_WRITE || imported != null)
                                 val input = OperationInput(op, pin.toCharArray(), newPin.toCharArray(), adminKey.hexBytes(), newAdminKey.hexBytes(),
                                     adminAlgorithm, newAdminAlgorithm, slot, algorithm, pinPolicy, text, secondary, enabled,
-                                    imported ?: byteArrayOf(),
-                                    makeExtensions = MakeExtensions(if ("credProtect" in extensionNames) 3 else null,
+                                    imported?.copyOf() ?: byteArrayOf(),
+                                    makeExtensions = MakeExtensions(if ("credProtect" in extensionNames) protection else null,
                                         if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER) extensionValue.hexBytes() else null,
-                                        "hmac-secret" in extensionNames, "minPinLength" in extensionNames, "largeBlobKey" in extensionNames),
+                                        "hmac-secret" in extensionNames, "minPinLength" in extensionNames, "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
                                     assertionExtensions = AssertionExtensions("credBlob" in extensionNames,
                                         if ("hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) extensionValue.hexBytes() else null,
-                                        "largeBlobKey" in extensionNames))
+                                        "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
+                                    rpIds = if (op == ManagerOperation.FIDO_MIN_PIN) parseDisclosureRps(disclosureRps) else emptyList(),
+                                    enterpriseMode = enterpriseMode.takeIf { it != 0 }, displayName = displayName)
                                 pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
                                 if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                 else confirmation = PendingOperation(input)
@@ -234,7 +263,17 @@ fun ManagerScreen(
                                 SelectionContainer { Text(row.value, style = MaterialTheme.typography.bodyMedium) }
                             }
                         } }
-                        if (result.value.export != null) OutlinedButton(onClick = { onExport(result.value) }) { Text("导出") }
+                        result.value.secrets?.let { outputs ->
+                            OutlinedButton(onClick = { showSecretConfirmation = true }) { Text(stringResource(R.string.secret_view)) }
+                            if (showSecrets) {
+                                outputs.hmac?.let { Text("hmac-secret: " + it.hex()) }
+                                outputs.blobKey?.let { Text("largeBlobKey: " + it.hex()) }
+                                outputs.credBlob?.let { Text("credBlob: " + it.hex()) }
+                            }
+                        }
+                        if (result.value.export != null) OutlinedButton(onClick = {
+                            if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
+                        }) { Text("导出") }
                     }
                     is OperationResult.Failed -> {
                         OutlinedCard(Modifier.fillMaxWidth()) {
@@ -274,7 +313,7 @@ private fun <T> Choice(label: String, value: T, values: List<T>, title: (T) -> S
 
 private fun needsPin(op: ManagerOperation): Boolean = op !in setOf(
     ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_SET_PIN,
-    ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT, ManagerOperation.FIDO_BLOB_READ,
+    ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT,
     ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT, ManagerOperation.PIV_ADMIN,
     ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET,
 )

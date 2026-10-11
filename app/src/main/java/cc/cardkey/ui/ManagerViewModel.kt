@@ -37,7 +37,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val usb = application.getSystemService(UsbManager::class.java)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
-    private val operations = ManagerOperations()
+    private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
     private var inProgress = false
     @Volatile private var cancelled = false
@@ -51,6 +51,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val selected = mutable.value.selectedReader?.let { prior -> readers.firstOrNull {
             it.device.deviceName == prior.device.deviceName && it.interfaceId == prior.interfaceId
         } }
+        if (mutable.value.selectedReader != null && selected == null) cancel()
         if (presenceBlockedReader != null && readers.none { it.device.deviceName == presenceBlockedReader }) {
             CardOperationGate.observedRemoval(requireNotNull(presenceBlockedReader))
             presenceBlockedReader = null
@@ -65,6 +66,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
+        retireResult()
+        operations.clearSession()
         mutable.value = mutable.value.copy(selectedReader = reader, nfc = reader == null, result = null)
     }
 
@@ -74,6 +77,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             input.close(); return
         }
         cancelled = false
+        retireResult()
         mutable.value = mutable.value.copy(busy = true, result = null, operation = input.operation)
         if (mutable.value.nfc) {
             pending = input
@@ -177,8 +181,23 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 presenceBlockedReader?.let(CardOperationGate::requireRemoval)
                 mutable.value.selectedReader?.let(::observeCardRemoval)
             }
-            finish(result)
+            if (cancelled) {
+                operations.clearSession()
+                (result as? OperationResult.Completed)?.value?.let { report ->
+                    report.secrets?.close()
+                    if (report.protectedExport) report.export?.fill(0)
+                }
+            }
+            finish(if (cancelled && result is OperationResult.Completed) result.copy(value = result.value.copy(
+                secrets = null, export = result.value.export.takeUnless { result.value.protectedExport })) else result)
         }
+    }
+
+    private fun retireResult(next: OperationResult<ManagerReport>? = null) {
+        val previous = (mutable.value.result as? OperationResult.Completed)?.value ?: return
+        val incoming = (next as? OperationResult.Completed)?.value
+        if (previous.secrets !== incoming?.secrets) previous.secrets?.close()
+        if (previous.protectedExport && previous.export !== incoming?.export) previous.export?.fill(0)
     }
 
     private fun finish(result: OperationResult<ManagerReport>) {
@@ -188,6 +207,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             result is OperationResult.Completed && previous.operation?.let(ConfirmationPolicy::canInspect) == true -> false
             else -> previous.requiresInspection
         }
+        retireResult(result)
         mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null,
             result = result, requiresInspection = requiresInspection)
     }
@@ -210,6 +230,9 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun cancel() {
         cancelled = true
+        operations.clearSession()
+        retireResult()
+        mutable.value = mutable.value.copy(result = null)
         retryApproval?.complete(false)
         presenceWatch?.cancel()
         pending?.close()

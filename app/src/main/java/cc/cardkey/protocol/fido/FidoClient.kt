@@ -184,7 +184,7 @@ class FidoClient(private val session: CardSession) {
         val user = existing.user.copy(name = name, displayName = displayName)
         management(7, cborMap(2 to descriptor(id), 3 to user.encode()), token, true)
         val updated = credentials(token, rp.idHash).singleOrNull { it.id.contentEquals(id) }?.user
-        if (updated == null || !updated.id.contentEquals(user.id) || updated.name != name || updated.displayName != displayName)
+        if (updated == null || !updated.id.contentEquals(user.id) || updated.name.orEmpty() != name.orEmpty() || updated.displayName.orEmpty() != displayName.orEmpty())
             throw CardFailure(FailureCode.RECOVERY_REQUIRED)
     }
 
@@ -339,7 +339,7 @@ class FidoClient(private val session: CardSession) {
 
     fun readLargeBlob(key: ByteArray): ByteArray? = try {
         require(key.size == 32)
-        val entries = readLargeBlobArray(getInfo())
+        val entries = LargeBlobs.decode(readLargeBlobBytes(getInfo()))
         var plaintext: ByteArray? = null
         for (entry in entries) {
             plaintext = LargeBlobs.decrypt(key, entry)
@@ -353,7 +353,7 @@ class FidoClient(private val session: CardSession) {
         try {
             require(key.size == 32 && (plaintext == null || plaintext.size <= LargeBlobs.MAX_PLAINTEXT))
             val info = getInfo()
-            val entries = readLargeBlobArray(info).filter { entry ->
+            val entries = LargeBlobs.decode(readLargeBlobBytes(info)).filter { entry ->
                 val existing = LargeBlobs.decrypt(key, entry)
                 if (existing == null) true else { existing.fill(0); false }
             }.toMutableList()
@@ -380,7 +380,7 @@ class FidoClient(private val session: CardSession) {
                 if (pin == null) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
                 withToken(pin, 16, info = info, block = ::write)
             } else write(null)
-            if (!LargeBlobs.encode(readLargeBlobArray(info)).contentEquals(serialized)) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+            if (!readLargeBlobBytes(info).contentEquals(serialized)) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
         } catch (failure: CardFailure) {
             if (wroteFragment && failure.code in setOf(FailureCode.CAPACITY_EXCEEDED, FailureCode.UNSUPPORTED,
                     FailureCode.AUTHORIZATION_DENIED, FailureCode.PIN_INVALID, FailureCode.PIN_BLOCKED))
@@ -400,7 +400,7 @@ class FidoClient(private val session: CardSession) {
         return minOf(1024, maxMessage - 64)
     }
 
-    private fun readLargeBlobArray(info: FidoInfo): List<Cbor.Map> {
+    private fun readLargeBlobBytes(info: FidoInfo): ByteArray {
         info.requireOption("largeBlobs")
         val capacity = info.raw[11].count(CborCodec.MAX_BYTES)
         val chunk = largeBlobChunk(info)
@@ -411,7 +411,7 @@ class FidoClient(private val session: CardSession) {
             result.write(part)
             if (part.size < chunk) break
         }
-        return LargeBlobs.decode(result.toByteArray())
+        return result.toByteArray()
     }
 
     private fun makeExtensions(extension: MakeExtensions, info: FidoInfo): Cbor.Map {

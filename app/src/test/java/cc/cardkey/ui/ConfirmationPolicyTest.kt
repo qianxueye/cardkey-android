@@ -9,9 +9,9 @@ import org.junit.Test
 class ConfirmationPolicyTest {
     @Test fun blobOverwriteAlwaysRequiresConfirmationWithoutPin() {
         val messages = ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_WRITE))
-        assertEquals(listOf(R.string.confirm_blobWrite), messages)
+        assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead), messages)
         OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "1234".toCharArray()).use {
-            assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_authenticate), ConfirmationPolicy.messages(it))
+            assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead, R.string.confirm_authenticate), ConfirmationPolicy.messages(it))
         }
     }
 
@@ -108,4 +108,34 @@ class ConfirmationPolicyTest {
         assertFalse(ConfirmationPolicy.canInspect(ManagerOperation.FIDO_DELETE))
         assertFalse(ConfirmationPolicy.canInspect(ManagerOperation.PIV_GENERATE))
     }
+    @Test fun secretReadsRequireSeparateApprovedConfirmation() {
+        assertEquals(listOf(R.string.confirm_secretRead), ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_READ)))
+        assertTrue(ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_WRITE)).contains(R.string.confirm_secretRead))
+        assertTrue(ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_ASSERT,
+            assertionExtensions = cc.cardkey.protocol.fido.AssertionExtensions(hmacSalts = ByteArray(32))))
+            .contains(R.string.confirm_secretRead))
+        assertTrue(ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_REGISTER,
+            makeExtensions = cc.cardkey.protocol.fido.MakeExtensions(largeBlobKey = true)))
+            .contains(R.string.confirm_secretRead))
+    }
+
+    @Test fun blobWriteConsentRetainsSecretAndPinConsequencesWhileReadDoesNotAskToWrite() {
+        assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead, R.string.confirm_authenticate),
+            ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "123456".toCharArray())))
+        assertEquals(listOf(R.string.confirm_secretRead),
+            ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_READ)))
+    }
+
+    @Test fun credentialBlobReadRequiresExistingSecretConsent() {
+        assertTrue(ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_ASSERT,
+            assertionExtensions = cc.cardkey.protocol.fido.AssertionExtensions(credentialBlob = true)))
+            .contains(R.string.confirm_secretRead))
+    }
+
+    @Test fun storingCredentialBlobRetainsRegistrationConsentWithoutClaimingSecretRead() {
+        val input = OperationInput(ManagerOperation.FIDO_REGISTER,
+            makeExtensions = cc.cardkey.protocol.fido.MakeExtensions(credentialBlob = byteArrayOf(9)))
+        input.use { assertEquals(listOf(R.string.confirm_registration), ConfirmationPolicy.messages(it)) }
+    }
+
 }

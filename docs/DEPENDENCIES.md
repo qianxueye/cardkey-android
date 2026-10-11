@@ -25,8 +25,6 @@ Original Kotlin protocol and reader implementations were written for this reposi
 
 AndroidX, Kotlin standard library, JetBrains annotations and JSpecify transitives use their published public Maven metadata. The build resolves only Google Maven, Maven Central and the public Gradle Plugin Portal. Pinned tool and library versions are visible in the Gradle scripts; network permission is used only for native-app Digital Asset Links HTTPS verification.
 
-Robolectric resolves its public Android framework test artifacts from Maven Central. These test dependencies are not packaged into the application.
-
 License texts shipped inside third-party JAR/AAR files remain attached to their respective artifacts. The Bouncy Castle notice is also retained under `licenses/BOUNCY-CASTLE.txt`.
 
 Primary implementation references:
@@ -47,3 +45,5 @@ The chosen library set stays within the verified AGP 8.13.2 / API 36 toolchain. 
 Credentials brings Fragment transitively. Its version is constrained to 1.8.9 because versions below 1.3.0 do not support the Activity Result API contract used by the app. [Official Fragment releases](https://developer.android.com/jetpack/androidx/releases/fragment#1.8.9)
 
 The Credentials library brings biometric support transitively, but this hardware provider does not invoke it. The manifest removes its unused biometric permissions; it never substitutes a phone biometric result for on-card UV.
+
+Robolectric and Kotlin Coroutines Test are JVM-only dependencies for NFC and ViewModel lifecycle regressions. They are not packaged in the application.
