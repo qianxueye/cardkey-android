@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                             length += read
                         }
                         val bytes = buffer.copyOf(length)
-                        require(bytes.size in 1..65536)
+                        require(bytes.size in 0..65536)
                         if (bytes.take(27).toByteArray().toString(Charsets.US_ASCII).startsWith("-----BEGIN CERTIFICATE-----")) {
                             val text = bytes.toString(Charsets.US_ASCII)
                             require(text.trim().endsWith("-----END CERTIFICATE-----"))
@@ -73,8 +73,10 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private val exporter = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val report = export
         export = null
+        if (uri == null && report?.protectedExport == true) report.export?.fill(0)
         if (uri != null && report?.export != null) lifecycleScope.launch(Dispatchers.IO) {
-            runCatching { contentResolver.openOutputStream(uri)?.use { it.write(report.export) } }
+            try { runCatching { contentResolver.openOutputStream(uri)?.use { it.write(report.export) } } }
+            finally { if (report.protectedExport) report.export.fill(0) }
         }
     }
 
@@ -112,7 +114,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             CardKeyTheme {
                 ManagerScreen(state, clearInputs, ::selectReader, model::refreshReaders, model::submit, model::cancel,
                     { importer.launch(arrayOf("*/*")) }, imported,
-                    { report -> export = report; exporter.launch(report.fileName ?: "cardkey.der") }, model::approveLastRetry,
+                    { report -> export = if (report.protectedExport) report.copy(export = report.export?.copyOf()) else report; exporter.launch(report.fileName ?: "cardkey.der") }, model::approveLastRetry,
                     { secure -> if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
                         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) },
                     { showProviderSettings = true })
@@ -158,5 +160,9 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     override fun onTagDiscovered(tag: android.nfc.Tag) {
         runOnUiThread { lastNfcTag = tag; model.onTag(tag) }
     }
-    override fun onDestroy() { unregisterReceiver(receiver); super.onDestroy() }
+    override fun onDestroy() {
+        if (export?.protectedExport == true) export?.export?.fill(0)
+        export = null
+        unregisterReceiver(receiver); super.onDestroy()
+    }
 }

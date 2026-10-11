@@ -84,4 +84,13 @@ class ConfirmationPolicyTest {
         assertFalse(ConfirmationPolicy.canInspect(ManagerOperation.FIDO_DELETE))
         assertFalse(ConfirmationPolicy.canInspect(ManagerOperation.PIV_GENERATE))
     }
+    @Test fun secretReadsRequireSeparateApprovedConfirmation() {
+        assertTrue(ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_ASSERT,
+            assertionExtensions = cc.cardkey.protocol.fido.AssertionExtensions(hmacSalts = ByteArray(32))))
+            .contains(R.string.confirm_secretRead))
+        assertTrue(ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_REGISTER,
+            makeExtensions = cc.cardkey.protocol.fido.MakeExtensions(largeBlobKey = true)))
+            .contains(R.string.confirm_secretRead))
+    }
+
 }

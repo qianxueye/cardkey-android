@@ -32,4 +32,17 @@ class PendingOperationTest {
         assertTrue(input.pin.all { it == '\u0000' })
         assertFalse(request.dispatch { fail("Failed handoff retried") })
     }
+    @Test fun cancellingSecretOrBlobOperationWipesInputsWithoutDispatch() {
+        val plaintext = byteArrayOf(1, 2, 3)
+        val salts = ByteArray(32) { 7 }
+        val blob = PendingOperation(OperationInput(ManagerOperation.FIDO_BLOB_WRITE, bytes = plaintext))
+        val secret = PendingOperation(OperationInput(ManagerOperation.FIDO_ASSERT,
+            assertionExtensions = cc.cardkey.protocol.fido.AssertionExtensions(hmacSalts = salts)))
+        blob.close(); secret.close()
+        assertArrayEquals(ByteArray(3), plaintext)
+        assertArrayEquals(ByteArray(32), salts)
+        assertFalse(blob.dispatch { fail("Cancelled blob operation dispatched") })
+        assertFalse(secret.dispatch { fail("Cancelled secret operation dispatched") })
+    }
+
 }

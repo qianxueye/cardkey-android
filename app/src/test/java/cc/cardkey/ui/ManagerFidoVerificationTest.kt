@@ -38,15 +38,18 @@ class ManagerFidoVerificationTest {
     private fun execute(operation: ManagerOperation, channel: CardChannel) =
         CardSession(channel).run { manager.execute(it, OperationInput(operation)) }
 
-    private fun registration(credentialId: ByteArray = id, valid: Boolean = true, none: Boolean = false): FidoChannel =
+    private fun registration(credentialId: ByteArray = id, valid: Boolean = true, none: Boolean = false, blobKey: ByteArray? = null, enterprise: Int? = null, protection: Int? = null): FidoChannel =
         FidoChannel { code, parameters -> when (code) {
-            4 -> success(info())
+            4 -> success(info(mapOf("ep" to true, "rk" to true), extensions = listOf("largeBlobKey", "credProtect")))
             1 -> {
-                val auth = rpHash + byteArrayOf(0x41, 0, 0, 0, 0) + ByteArray(16) +
-                    byteArrayOf(0, credentialId.size.toByte()) + credentialId + CborCodec.encode(key)
+                assertEquals(enterprise?.toLong(), parameters!![10]?.number())
+                assertEquals(protection?.toLong(), parameters[6]?.map()?.get("credProtect")?.number())
+                val auth = rpHash + byteArrayOf((if (protection == null) 0x41 else 0xc1).toByte(), 0, 0, 0, 0) + ByteArray(16) +
+                    byteArrayOf(0, credentialId.size.toByte()) + credentialId + CborCodec.encode(key) +
+                    (protection?.let { CborCodec.encode(textMap("credProtect" to it.cbor())) } ?: byteArrayOf())
                 success(cborMap(1 to (if (none) "none" else "packed").cbor(), 2 to auth.cbor(),
                     3 to if (none) textMap() else textMap("alg" to (-7).cbor(),
-                        "sig" to sign(auth + parameters!![1].bytes(), valid).cbor())))
+                        "sig" to sign(auth + parameters[1].bytes(), valid).cbor()), 5 to blobKey?.cbor()))
             }
             else -> error("Unexpected CTAP command $code")
         } }
@@ -61,6 +64,15 @@ class ManagerFidoVerificationTest {
         }
         else -> error("Unexpected CTAP command $code")
     } }
+
+    private fun blobProof(params: Cbor.Map, valid: Boolean = true, returnedKey: ByteArray = ByteArray(32) { 7 }): ByteArray {
+        assertFalse(params[5].map()["up"].bool())
+        assertTrue(params[5].map()["uv"].bool())
+        assertArrayEquals(id, params[3].array().single().map()["id"].bytes())
+        val auth = rpHash + byteArrayOf(4, 0, 0, 0, 1)
+        return success(cborMap(1 to textMap("type" to "public-key".cbor(), "id" to id.cbor()),
+            2 to auth.cbor(), 3 to sign(auth + params[2].bytes(), valid).cbor(), 7 to returnedKey.cbor()))
+    }
 
     private class U2fChannel(val respond: (ByteArray) -> ByteArray) : CardChannel {
         override val medium = Medium.CONTACT
@@ -139,4 +151,127 @@ class ManagerFidoVerificationTest {
         assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), execute(ManagerOperation.FIDO_ASSERT, untouched))
         assertTrue(untouched.commands.isEmpty())
     }
+    @Test fun secretOutputsNeverBecomeOrdinaryRowsAndAreWipedOnSessionClear() {
+        val input = OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true,
+            makeExtensions = MakeExtensions(largeBlobKey = true), enterpriseMode = 2)
+        val channel = registration(blobKey = ByteArray(32) { 7 }, enterprise = 2)
+        val result = CardSession(channel).run { manager.execute(it, input) } as OperationResult.Completed
+        assertFalse(result.value.rows.any { it.label == "largeBlobKey" || it.value == "07".repeat(32) })
+        assertNull(result.value.export)
+        assertFalse(result.value.toString().contains("07".repeat(32)))
+        val output = result.value.secrets!!.blobKey!!
+        assertArrayEquals(ByteArray(32) { 7 }, output)
+        manager.clearSession()
+        assertArrayEquals(ByteArray(32), output)
+        val untouched = assertion(true, 1)
+        assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), execute(ManagerOperation.FIDO_ASSERT, untouched))
+    }
+    @Test fun blobVerifiesCredentialOnCurrentSessionAndNeverReusesCachedKey() {
+        val input = OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true, makeExtensions = MakeExtensions(largeBlobKey = true))
+        CardSession(registration(blobKey = ByteArray(32) { 7 })).run { manager.execute(it, input) }
+        val encoded = LargeBlobs.encode(listOf(LargeBlobs.encrypt(ByteArray(32) { 7 }, byteArrayOf())))
+        val channel = FidoChannel { code, params -> when(code) {
+            4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
+            2 -> blobProof(params!!)
+            12 -> success(cborMap(1 to encoded.cbor()))
+            else -> error("Unexpected command")
+        } }
+        val result = execute(ManagerOperation.FIDO_BLOB_READ, channel) as OperationResult.Completed
+        assertArrayEquals(byteArrayOf(), result.value.export)
+        assertTrue(result.value.protectedExport)
+        assertFalse(result.value.toString().contains("export=["))
+        val unused = FidoChannel { code, _ -> check(code == 4); success(info()) }
+        assertEquals(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE), execute(ManagerOperation.FIDO_BLOB_READ, unused))
+        assertEquals(listOf(4), unused.commands.map { it.first })
+    }
+    @Test fun disclosureListIsExplicitAndBounded() {
+        assertEquals(emptyList<String>(), parseDisclosureRps("  "))
+        assertEquals(listOf("a.example", "b.example"), parseDisclosureRps("a.example\nb.example"))
+        assertThrows(IllegalArgumentException::class.java) { parseDisclosureRps("a\na") }
+        assertThrows(IllegalArgumentException::class.java) { parseDisclosureRps("a\nb\nc") }
+    }
+
+    @Test fun minimumPinPassesReplacementListAndForcePolicy() {
+        var changed = false
+        val channel = FidoChannel { code, params -> when (code) {
+            4 -> success(info(mapOf("setMinPINLength" to true, "authnrCfg" to true), extensions = listOf("minPinLength"),
+                extra = cborMap(13 to (if (changed) 6 else 4).cbor(), 16 to 2.cbor(), 12 to changed.cbor())))
+            13 -> {
+                assertEquals(3L, params!![1].number())
+                assertEquals(6L, params[2].map()[1].number())
+                assertEquals(listOf("a.example", "b.example"), params[2].map()[2].array().map { it.text() })
+                assertTrue(params[2].map()[3].bool()); changed = true; success()
+            }
+            else -> error("Unexpected command")
+        } }
+        val result = CardSession(channel).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_MIN_PIN,
+            text = "6", enabled = true, rpIds = listOf("a.example", "b.example"))) }
+        assertTrue(result is OperationResult.Completed)
+    }
+    @Test fun emptyReplacementListIsSentAndLowerPinLengthIsRejected() {
+        var writes = 0
+        val channel = FidoChannel { code, params -> when(code) {
+            4 -> success(info(mapOf("setMinPINLength" to true, "authnrCfg" to true), extensions = listOf("minPinLength"),
+                extra = cborMap(16 to 2.cbor())))
+            13 -> { assertTrue(params!![2].map()[2].array().isEmpty()); writes++; success() }
+            else -> error("Unexpected command")
+        } }
+        assertTrue(CardSession(channel).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_MIN_PIN, text = "4")) } is OperationResult.Completed)
+        assertEquals(1, writes)
+        val lower = FidoChannel { _, _ -> success(info(mapOf("setMinPINLength" to true))) }
+        assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE),
+            CardSession(lower).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_MIN_PIN, text = "3")) })
+        assertEquals(listOf(4), lower.commands.map { it.first })
+    }
+
+    @Test fun blobDeletionUsesNullAndEmptyWriteRemainsEncryptedEntry() {
+        for (delete in listOf(false, true)) {
+            CardSession(registration(blobKey = ByteArray(32) { 7 })).run {
+                manager.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true,
+                    makeExtensions = MakeExtensions(largeBlobKey = true)))
+            }
+            var stored = LargeBlobs.encode(listOf(LargeBlobs.encrypt(ByteArray(32) { 7 }, byteArrayOf(9))))
+            val channel = FidoChannel { code, params -> when(code) {
+                4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
+                2 -> blobProof(params!!)
+                12 -> if (params!![1] != null) success(cborMap(1 to stored.cbor())) else {
+                    assertEquals(0L, params[3].number()); stored = params[2].bytes(); success()
+                }
+                else -> error("Unexpected command")
+            } }
+            assertTrue(CardSession(channel).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_BLOB_WRITE,
+                bytes = byteArrayOf(), deleteBlob = delete)) } is OperationResult.Completed)
+            val entries = LargeBlobs.decode(stored)
+            assertEquals(if (delete) 0 else 1, entries.size)
+            if (!delete) assertArrayEquals(byteArrayOf(), LargeBlobs.decrypt(ByteArray(32) { 7 }, entries.single()))
+        }
+    }
+
+    @Test fun allCredentialProtectionPoliciesReachRegistration() {
+        for (policy in 1..3) {
+            assertTrue(CardSession(registration(protection = policy)).run {
+                manager.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER,
+                    makeExtensions = MakeExtensions(credentialProtection = policy)))
+            } is OperationResult.Completed)
+        }
+    }
+
+    @Test fun swappedCardAndMismatchedFreshBlobKeyCannotReadOrWriteBlob() {
+        for (valid in listOf(false, true)) {
+            CardSession(registration(blobKey = ByteArray(32) { 7 })).run {
+                manager.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true,
+                    makeExtensions = MakeExtensions(largeBlobKey = true)))
+            }
+            val channel = FidoChannel { code, params -> when (code) {
+                4 -> success(info(extensions = listOf("largeBlobKey")))
+                2 -> blobProof(params!!, valid = valid, returnedKey = ByteArray(32) { 8 })
+                else -> error("Unverified card must not receive a blob operation")
+            } }
+            val result = execute(ManagerOperation.FIDO_BLOB_READ, channel)
+            assertTrue(result is OperationResult.Failed)
+            assertEquals(listOf(4, 2), channel.commands.map { it.first })
+            assertNull((result as? OperationResult.Completed)?.value?.export)
+        }
+    }
+
 }

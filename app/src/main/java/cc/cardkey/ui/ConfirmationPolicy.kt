@@ -24,7 +24,10 @@ object ConfirmationPolicy {
         val pinWarning = input.pin.isNotEmpty() && primary != R.string.confirm_pinChange &&
             input.operation !in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN,
                 ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET)
-        return listOfNotNull(primary) + if (pinWarning) listOf(R.string.confirm_authenticate) else emptyList()
+        val secretWarning = input.operation == ManagerOperation.FIDO_ASSERT &&
+            (input.assertionExtensions.hmacSalts != null || input.assertionExtensions.largeBlobKey) ||
+            input.operation == ManagerOperation.FIDO_REGISTER && input.makeExtensions.largeBlobKey
+        return listOfNotNull(primary) + (if (secretWarning) listOf(R.string.confirm_secretRead) else emptyList()) + if (pinWarning) listOf(R.string.confirm_authenticate) else emptyList()
     }
 
     fun pivVerificationReference(operation: ManagerOperation): String? = when (operation) {

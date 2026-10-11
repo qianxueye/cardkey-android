@@ -50,6 +50,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val selected = mutable.value.selectedReader?.let { prior -> readers.firstOrNull {
             it.device.deviceName == prior.device.deviceName && it.interfaceId == prior.interfaceId
         } }
+        if (mutable.value.selectedReader != null && selected == null) cancel()
         if (presenceBlockedReader != null && readers.none { it.device.deviceName == presenceBlockedReader }) {
             CardOperationGate.observedRemoval(requireNotNull(presenceBlockedReader))
             presenceBlockedReader = null
@@ -64,6 +65,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
+        operations.clearSession()
         mutable.value = mutable.value.copy(selectedReader = reader, nfc = reader == null, result = null)
     }
 
@@ -162,7 +164,17 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 presenceBlockedReader?.let(CardOperationGate::requireRemoval)
                 mutable.value.selectedReader?.let(::observeCardRemoval)
             }
-            finish(if (cancelled && result is OperationResult.Failed) result.copy(code = FailureCode.CANCELLED) else result)
+            if (cancelled) {
+                operations.clearSession()
+                (result as? OperationResult.Completed)?.value?.let { report ->
+                    report.secrets?.close()
+                    if (report.protectedExport) report.export?.fill(0)
+                }
+            }
+            finish(if (cancelled) when (result) {
+                is OperationResult.Failed -> result.copy(code = FailureCode.CANCELLED)
+                is OperationResult.Completed -> OperationResult.Failed(FailureCode.CANCELLED, result.effect)
+            } else result)
         }
     }
 
@@ -195,6 +207,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun cancel() {
         cancelled = true
+        operations.clearSession()
+        (mutable.value.result as? OperationResult.Completed)?.value?.export?.takeIf {
+            (mutable.value.result as? OperationResult.Completed)?.value?.protectedExport == true
+        }?.fill(0)
+        mutable.value = mutable.value.copy(result = null)
         retryApproval?.complete(false)
         presenceWatch?.cancel()
         pending?.close()
