@@ -12,6 +12,7 @@ object ConfirmationPolicy {
             ManagerOperation.PIV_ADMIN -> R.string.confirm_adminChange
             ManagerOperation.FIDO_DELETE -> R.string.confirm_credentialDelete
             ManagerOperation.FIDO_UPDATE -> R.string.confirm_credentialUpdate
+            ManagerOperation.FIDO_BLOB_WRITE -> R.string.confirm_blobWrite
             ManagerOperation.FIDO_ALWAYS_UV -> if (input.enabled) R.string.confirm_alwaysUvEnable else R.string.confirm_alwaysUvDisable
             ManagerOperation.FIDO_MIN_PIN -> R.string.confirm_minPin
             ManagerOperation.FIDO_ENTERPRISE -> R.string.confirm_enterprise
@@ -72,6 +73,11 @@ object ConfirmationPolicy {
                 FailureCode.INVALID_INPUT -> R.string.error_invalidInput
                 FailureCode.TRANSPORT_FAILURE, FailureCode.BUSY -> R.string.error_transport
                 FailureCode.CANCELLED -> R.string.error_cancelled
+                FailureCode.NFC_UNAVAILABLE -> R.string.error_nfcUnavailable
+                FailureCode.NFC_DISABLED -> R.string.error_nfcDisabled
+                FailureCode.CAPACITY_EXCEEDED -> R.string.error_capacityExceeded
+                FailureCode.RECOVERY_REQUIRED -> R.string.error_recoveryRequired
+                FailureCode.CARD_REJECTED -> R.string.error_cardRejected
                 else -> R.string.error_unsupported
             }
             listOfNotNull(effect, reason).distinct()

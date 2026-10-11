@@ -18,10 +18,14 @@ Original Kotlin protocol and reader implementations were written for this reposi
 | Gson | 2.13.1 | Apache-2.0; strict bounded JSON parsing and response encoding |
 | OkHttp | 4.12.0 | Apache-2.0; native DAL HTTPS only |
 | AndroidX Test runner / core / JUnit extension | 1.6.2 / 1.6.1 / 1.2.1 | Apache-2.0; scripted instrumentation only |
+| Robolectric | 4.16 | MIT; JVM Android framework simulation, tests only |
+| Kotlin Coroutines Test | 1.10.2 | Apache-2.0; ViewModel dispatcher control, tests only |
 | JUnit | 4.13.2 | EPL-1.0; tests only |
 | Hamcrest Core | 1.3 (JUnit transitive) | BSD-3-Clause; tests only |
 
 AndroidX, Kotlin standard library, JetBrains annotations and JSpecify transitives use their published public Maven metadata. The build resolves only Google Maven, Maven Central and the public Gradle Plugin Portal. Pinned tool and library versions are visible in the Gradle scripts; network permission is used only for native-app Digital Asset Links HTTPS verification.
+
+Robolectric resolves its public Android framework test artifacts from Maven Central. These test dependencies are not packaged into the application.
 
 License texts shipped inside third-party JAR/AAR files remain attached to their respective artifacts. The Bouncy Castle notice is also retained under `licenses/BOUNCY-CASTLE.txt`.
 
