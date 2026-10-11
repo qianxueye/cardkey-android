@@ -66,6 +66,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
+        retireResult()
         operations.clearSession()
         mutable.value = mutable.value.copy(selectedReader = reader, nfc = reader == null, result = null)
     }
@@ -76,6 +77,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             input.close(); return
         }
         cancelled = false
+        retireResult()
         mutable.value = mutable.value.copy(busy = true, result = null, operation = input.operation)
         if (mutable.value.nfc) {
             pending = input
@@ -191,6 +193,13 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun retireResult(next: OperationResult<ManagerReport>? = null) {
+        val previous = (mutable.value.result as? OperationResult.Completed)?.value ?: return
+        val incoming = (next as? OperationResult.Completed)?.value
+        if (previous.secrets !== incoming?.secrets) previous.secrets?.close()
+        if (previous.protectedExport && previous.export !== incoming?.export) previous.export?.fill(0)
+    }
+
     private fun finish(result: OperationResult<ManagerReport>) {
         val previous = mutable.value
         val requiresInspection = when {
@@ -198,6 +207,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             result is OperationResult.Completed && previous.operation?.let(ConfirmationPolicy::canInspect) == true -> false
             else -> previous.requiresInspection
         }
+        retireResult(result)
         mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null,
             result = result, requiresInspection = requiresInspection)
     }
@@ -221,9 +231,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun cancel() {
         cancelled = true
         operations.clearSession()
-        (mutable.value.result as? OperationResult.Completed)?.value?.export?.takeIf {
-            (mutable.value.result as? OperationResult.Completed)?.value?.protectedExport == true
-        }?.fill(0)
+        retireResult()
         mutable.value = mutable.value.copy(result = null)
         retryApproval?.complete(false)
         presenceWatch?.cancel()

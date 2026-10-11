@@ -65,4 +65,23 @@ class PendingOperationTest {
         assertArrayEquals(byteArrayOf(0), input.bytes)
     }
 
+    @Test fun refusingCredentialBlobConsentSendsNoCardCommands() {
+        val input = OperationInput(ManagerOperation.FIDO_ASSERT,
+            assertionExtensions = cc.cardkey.protocol.fido.AssertionExtensions(credentialBlob = true))
+        val confirmation = PendingOperation(input)
+        assertTrue(confirmation.messages.contains(cc.cardkey.R.string.confirm_secretRead))
+        var apdus = 0
+        val channel = object : cc.cardkey.protocol.CardChannel {
+            override val medium = cc.cardkey.protocol.Medium.CONTACT
+            override val maxCommandBytes = 261
+            override fun transmit(command: ByteArray): ByteArray { apdus++; error("Refused secret request reached the card") }
+            override fun close() = Unit
+        }
+        confirmation.close()
+        assertFalse(confirmation.dispatch { actual ->
+            cc.cardkey.protocol.CardSession(channel).run { ManagerOperations().execute(it, actual) }
+        })
+        assertEquals(0, apdus)
+    }
+
 }

@@ -268,6 +268,7 @@ fun ManagerScreen(
                             if (showSecrets) {
                                 outputs.hmac?.let { Text("hmac-secret: " + it.hex()) }
                                 outputs.blobKey?.let { Text("largeBlobKey: " + it.hex()) }
+                                outputs.credBlob?.let { Text("credBlob: " + it.hex()) }
                             }
                         }
                         if (result.value.export != null) OutlinedButton(onClick = {
