@@ -330,4 +330,57 @@ class ManagerFidoVerificationTest {
         assertEquals(1, writes)
     }
 
+    @Test fun importedBytesSurviveSuccessfulAndFailedAttempts() {
+        val imported = "reusable imported contents".toByteArray()
+        val expected = imported.copyOf()
+        val key = ByteArray(32) { 7 }
+        for (failWrite in listOf(false, true, false)) {
+            CardSession(registration()).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER)) }
+            var stored = LargeBlobs.encode(emptyList())
+            val channel = FidoChannel { code, params -> when (code) {
+                4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
+                2 -> blobProof(params!!)
+                12 -> if (params!![1] != null) success(cborMap(1 to stored.cbor())) else {
+                    if (failWrite) throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+                    stored = params[2].bytes(); success()
+                }
+                else -> error("Unexpected command")
+            } }
+            val input = OperationInput(ManagerOperation.FIDO_BLOB_WRITE, bytes = imported.copyOf())
+            val result = input.use { CardSession(channel).run { manager.execute(it, input) } }
+            assertArrayEquals(expected, imported)
+            assertArrayEquals(ByteArray(expected.size), input.bytes)
+            if (failWrite) assertTrue(result is OperationResult.Failed) else {
+                assertTrue(result is OperationResult.Completed)
+                assertArrayEquals(expected, LargeBlobs.decrypt(key, LargeBlobs.decode(stored).single()))
+            }
+        }
+    }
+
+    @Test fun unknownMatchingCredentialMutationInvalidatesDiagnosticContextWithoutExtraPinAttempts() {
+        for (operation in listOf(ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE)) {
+            execute(ManagerOperation.FIDO_REGISTER, registration())
+            val server = FidoClientTest.PinServer(2)
+            val channel = FidoChannel { code, params -> when(code) {
+                4 -> success(info(mapOf("credMgmt" to true, "pinUvAuthToken" to true)))
+                6 -> server.respond(params!!, 4, null)
+                10 -> when(params!![1].number()) {
+                    2L -> success(cborMap(3 to textMap("id" to "cardkey.example".cbor()), 4 to rpHash.cbor(), 5 to 1.cbor()))
+                    4L -> success(cborMap(6 to FidoUser(byteArrayOf(1), "old", null).encode(),
+                        7 to descriptor(id), 8 to key, 9 to 1.cbor()))
+                    6L, 7L -> throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+                    else -> error("Unexpected command")
+                }
+                else -> error("Unexpected command")
+            } }
+            val result = CardSession(channel).run { manager.execute(it, OperationInput(operation,
+                pin = "1234".toCharArray(), text = id.hex(), secondary = "new")) }
+            assertEquals(Effect.UNKNOWN, (result as OperationResult.Failed).effect)
+            assertEquals(1, server.tokenRequests)
+            val untouched = assertion(true, 1)
+            assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), execute(ManagerOperation.FIDO_ASSERT, untouched))
+            assertTrue(untouched.commands.isEmpty())
+        }
+    }
+
 }

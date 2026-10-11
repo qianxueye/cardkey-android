@@ -32,6 +32,34 @@ class FidoExtensionsTest {
             assertArrayEquals(ByteArray(64), salts)
         }
     }
+    @Test fun requestedHmacSecretMustBeReturnedForEveryAssertion() {
+        for (missingIndex in 0..1) {
+            val server = FidoClientTest.PinServer(2)
+            val salts = ByteArray(32) { 1 }
+            var secret: ByteArray? = null
+            var index = 0
+            val channel = FidoChannel { code, map -> when (code) {
+                4 -> success(info(protocols = listOf(2), extensions = listOf("hmac-secret")))
+                6 -> success(cborMap(1 to server.cose))
+                2, 8 -> {
+                    if (code == 2) secret = server.keyFor(map!![4].map()["hmac-secret"].map()[1].map())
+                    val missing = index++ == missingIndex
+                    val auth = sha256("cardkey.example".toByteArray()) +
+                        byteArrayOf(if (missing) 1 else 0x81.toByte(), 0, 0, 0, 1) +
+                        if (missing) byteArrayOf() else CborCodec.encode(textMap("hmac-secret" to
+                            PinProtocol.encrypt(2, secret!!, ByteArray(32) { 2 }).cbor()))
+                    success(cborMap(1 to descriptor(byteArrayOf(index.toByte())), 2 to auth.cbor(),
+                        3 to byteArrayOf(1).cbor(), 5 to if (code == 2) 2.cbor() else null))
+                }
+                else -> error("Unexpected command")
+            } }
+            val result = CardSession(channel).run { FidoClient(it).apply { select() }.getAssertion(
+                GetAssertionRequest("cardkey.example", ByteArray(32), requireUv = false,
+                    extensions = AssertionExtensions(hmacSalts = salts))) }
+            assertEquals(FailureCode.MALFORMED_RESPONSE, (result as OperationResult.Failed).code)
+            assertArrayEquals(ByteArray(32), salts)
+        }
+    }
     @Test fun unsupportedExtensionIsRejectedBeforeCredentialMutationAndSaltsAreWiped() {
         val salts = ByteArray(32) { 5 }
         val channel = FidoChannel { code, _ -> assertEquals(4, code); success(info()) }

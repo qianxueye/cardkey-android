@@ -130,12 +130,14 @@ class FidoClient(private val session: CardSession) {
         CredentialCapacity(map[1].count(), map[2].count())
     }
 
-    fun enumerateRelyingParties(pin: CharArray): List<RelyingParty> = managed(pin) { token ->
+    fun enumerateRelyingParties(pin: CharArray): List<RelyingParty> = managed(pin, ::relyingParties)
+
+    private fun relyingParties(token: PinToken): List<RelyingParty> {
         val first = try { management(2, token = token) } catch (failure: CardFailure) {
-            if (failure.status == 0x2e) return@managed emptyList() else throw failure
+            if (failure.status == 0x2e) return emptyList() else throw failure
         }
         val count = first[5].count(); if (count == 0) malformed()
-        List(count) { index ->
+        return List(count) { index ->
             val map = if (index == 0) first else management(3)
             val rp = map[3].map(); val hash = map[4].bytes()
             if (hash.size != 32) malformed()
@@ -145,29 +147,44 @@ class FidoClient(private val session: CardSession) {
 
     fun enumerateCredentials(pin: CharArray, rpIdHash: ByteArray): List<Credential> = try {
         require(rpIdHash.size == 32)
-        managed(pin) { token ->
-            val first = try { management(4, cborMap(1 to rpIdHash.cbor()), token) } catch (failure: CardFailure) {
-                if (failure.status == 0x2e) return@managed emptyList() else throw failure
-            }
-            val count = first[9].count(); if (count == 0) malformed()
-            List(count) { index ->
-                val map = if (index == 0) first else management(5)
-                // Large-blob keys are intentionally not retained during enumeration.
-                map[11]?.bytes()?.fill(0)
-                Credential(parseDescriptor(map[7]), parseUser(map[6]), map[8].map(), map[10]?.count(3))
-            }
+        managed(pin) { credentials(it, rpIdHash) }
+    } finally { pin.fill('\u0000') }
+
+    private fun credentials(token: PinToken, rpIdHash: ByteArray): List<Credential> {
+        val first = try { management(4, cborMap(1 to rpIdHash.cbor()), token) } catch (failure: CardFailure) {
+            if (failure.status == 0x2e) return emptyList() else throw failure
         }
-    } finally { pin.fill('\u0000') }
+        val count = first[9].count(); if (count == 0) malformed()
+        return List(count) { index ->
+            val map = if (index == 0) first else management(5)
+            // Large-blob keys are intentionally not retained during enumeration.
+            map[11]?.bytes()?.fill(0)
+            Credential(parseDescriptor(map[7]), parseUser(map[6]), map[8].map(), map[10]?.count(3))
+        }
+    }
 
-    fun deleteCredential(pin: CharArray, id: ByteArray) = try {
-        val params = cborMap(2 to descriptor(id))
-        managed(pin) { token -> management(6, params, token, true); Unit }
-    } finally { pin.fill('\u0000') }
+    private fun credential(token: PinToken, id: ByteArray): Pair<RelyingParty, Credential> {
+        require(id.isNotEmpty())
+        for (rp in relyingParties(token)) {
+            credentials(token, rp.idHash).firstOrNull { it.id.contentEquals(id) }?.let { return rp to it }
+        }
+        throw CardFailure(FailureCode.INVALID_INPUT)
+    }
 
-    fun updateUser(pin: CharArray, id: ByteArray, user: FidoUser) = try {
-        val params = cborMap(2 to descriptor(id), 3 to user.encode())
-        managed(pin) { token -> management(7, params, token, true); Unit }
-    } finally { pin.fill('\u0000') }
+    fun deleteCredential(pin: CharArray, id: ByteArray) = managed(pin) { token ->
+        val (rp, _) = credential(token, id)
+        management(6, cborMap(2 to descriptor(id)), token, true)
+        if (credentials(token, rp.idHash).any { it.id.contentEquals(id) }) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+    }
+
+    fun updateUser(pin: CharArray, id: ByteArray, name: String?, displayName: String?) = managed(pin) { token ->
+        val (rp, existing) = credential(token, id)
+        val user = existing.user.copy(name = name, displayName = displayName)
+        management(7, cborMap(2 to descriptor(id), 3 to user.encode()), token, true)
+        val updated = credentials(token, rp.idHash).singleOrNull { it.id.contentEquals(id) }?.user
+        if (updated == null || !updated.id.contentEquals(user.id) || updated.name != name || updated.displayName != displayName)
+            throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+    }
 
     private fun configure(subCommand: Int, params: Cbor.Map?, token: PinToken?) {
         val message = ByteArray(32) { 0xff.toByte() } + byteArrayOf(0x0d, subCommand.toByte()) +
@@ -296,6 +313,7 @@ class FidoClient(private val session: CardSession) {
                             protocol.decrypt(it.bytes()).also { plain -> if (plain.size != salts?.size) { plain.fill(0); malformed() } }
                         }
                         try {
+                            if (salts != null && hmacOutput == null) malformed()
                             val largeBlobKey = response[7]?.bytes()
                             if (largeBlobKey != null && (!request.extensions.largeBlobKey || largeBlobKey.size != 32)) malformed()
                             auth.extensions?.get("credBlob")?.let { value ->

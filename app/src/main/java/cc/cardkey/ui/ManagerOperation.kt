@@ -128,9 +128,15 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
                 listOf(ResultRow("凭据 ID", it.id.hex()), ResultRow("用户 ID", it.user.id.hex()),
                     ResultRow("名称", it.user.name.orEmpty()), ResultRow("显示名称", it.user.displayName.orEmpty()))
             })
-            ManagerOperation.FIDO_DELETE -> { fido.deleteCredential(input.pin, input.text.hexBytes()); empty() }
+            ManagerOperation.FIDO_DELETE -> {
+                val id = input.text.hexBytes()
+                if (diagnosticCredential?.credentialId?.contentEquals(id) == true) diagnosticCredential = null
+                fido.deleteCredential(input.pin, id); empty()
+            }
             ManagerOperation.FIDO_UPDATE -> {
-                fido.updateUser(input.pin, input.text.hexBytes(), FidoUser(input.bytes, input.secondary, null)); empty()
+                val id = input.text.hexBytes()
+                if (diagnosticCredential?.credentialId?.contentEquals(id) == true) diagnosticCredential = null
+                fido.updateUser(input.pin, id, input.secondary, null); empty()
             }
             ManagerOperation.FIDO_ALWAYS_UV -> info(fido.setAlwaysUv(input.pin.takeIf { it.isNotEmpty() }, input.enabled))
             ManagerOperation.FIDO_MIN_PIN -> info(fido.setMinPinLength(input.pin.takeIf { it.isNotEmpty() }, input.text.toInt(), rpIds = input.rpIds, forceChange = input.enabled))
@@ -146,7 +152,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
                 ManagerReport(listOf(ResultRow("bytes", (blob?.size ?: 0).toString())), blob, "credential-blob.bin", protectedExport = true)
             }
             ManagerOperation.FIDO_BLOB_WRITE -> {
-                fido.writeLargeBlob(input.pin.takeIf { it.isNotEmpty() }, verifiedBlobKey(fido, input), if (input.deleteBlob) null else input.bytes); empty()
+                fido.writeLargeBlob(input.pin.takeIf { it.isNotEmpty() }, verifiedBlobKey(fido, input), if (input.deleteBlob) null else input.bytes.copyOf()); empty()
             }
             ManagerOperation.PIV_INFO -> piv.readInfo().let {
                 ManagerReport(listOf(ResultRow("版本", it.version), ResultRow("序列号", it.serial.toString()),
