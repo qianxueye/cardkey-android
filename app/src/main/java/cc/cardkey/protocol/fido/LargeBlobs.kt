@@ -20,9 +20,10 @@ internal object LargeBlobs {
         return bytes + sha256(bytes).copyOf(16)
     }
     fun decode(bytes: ByteArray): List<Cbor.Map> {
-        if (bytes.size !in 17..CborCodec.MAX_BYTES) malformed()
+        if (bytes.size > CborCodec.MAX_BYTES) malformed()
+        if (bytes.size < 16) return emptyList()
         val payload = bytes.copyOfRange(0, bytes.size - 16)
-        if (!MessageDigest.isEqual(sha256(payload).copyOf(16), bytes.copyOfRange(bytes.size - 16, bytes.size))) malformed()
+        if (!MessageDigest.isEqual(sha256(payload).copyOf(16), bytes.copyOfRange(bytes.size - 16, bytes.size))) return emptyList()
         return CborCodec.decode(payload).array().map { it.map().also(::validate) }
     }
     private fun validate(map: Cbor.Map) {
