@@ -208,12 +208,12 @@ fun ManagerScreen(
                             listOf(0, 1, 2), { when (it) { 1 -> "厂商预设（1）"; 2 -> "平台管理（2）"; else -> "不请求" } }, !state.busy) { enterpriseMode = it }
                         Text("扩展", style = MaterialTheme.typography.labelLarge)
                         val names = if (op == ManagerOperation.FIDO_REGISTER)
-                            listOf("hmac-secret", "largeBlobKey", "minPinLength", "credBlob", "credProtect")
-                        else listOf("hmac-secret", "largeBlobKey", "credBlob")
+                            listOf("hmac-secret", "largeBlobKey", "minPinLength", "credBlob", "credProtect", "uvm")
+                        else listOf("hmac-secret", "largeBlobKey", "credBlob", "uvm")
                         names.forEach { name ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(name in extensionNames, { checked -> extensionNames = if (checked) extensionNames + name else extensionNames - name }, enabled = !state.busy)
-                                Text(name)
+                                Text(if (name == "uvm") "用户验证方法" else name)
                             }
                         }
                         if ("credProtect" in extensionNames && op == ManagerOperation.FIDO_REGISTER)
@@ -236,10 +236,10 @@ fun ManagerScreen(
                                     if (op == ManagerOperation.FIDO_UPDATE) userId.hexBytes() else imported ?: byteArrayOf(),
                                     makeExtensions = MakeExtensions(if ("credProtect" in extensionNames) protection else null,
                                         if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER) extensionValue.hexBytes() else null,
-                                        "hmac-secret" in extensionNames, "minPinLength" in extensionNames, "largeBlobKey" in extensionNames),
+                                        "hmac-secret" in extensionNames, "minPinLength" in extensionNames, "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
                                     assertionExtensions = AssertionExtensions("credBlob" in extensionNames,
                                         if ("hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) extensionValue.hexBytes() else null,
-                                        "largeBlobKey" in extensionNames),
+                                        "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
                                     rpIds = if (op == ManagerOperation.FIDO_MIN_PIN) parseDisclosureRps(disclosureRps) else emptyList(),
                                     enterpriseMode = enterpriseMode.takeIf { it != 0 }, displayName = displayName)
                                 pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""

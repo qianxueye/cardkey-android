@@ -56,7 +56,7 @@ data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = nul
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
-class ManagerOperations {
+class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
     private var diagnosticCredential: AttestationDiagnostic? = null
     private var u2fCredential: U2fRegistration? = null
     private var u2fCounter: Long? = null
@@ -92,6 +92,7 @@ class ManagerOperations {
             if (expected != null && !java.security.MessageDigest.isEqual(expected, fresh))
                 throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
             diagnosticCredential = proof.copy(counter = verified.counter)
+            if (cancelled()) throw CardFailure(FailureCode.CANCELLED)
             return fresh.copyOf()
         } finally {
             expected?.fill(0)
@@ -204,10 +205,11 @@ class ManagerOperations {
             try {
                 val proof = FidoDiagnostics.verifyRegistration(result, rpId, hash, requireUv = pin != null)
                 if (proof.signatureValid == false) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+                val extensionRows = publicExtensions(result.authData, input.makeExtensions.uvm)
                 diagnosticCredential = proof
                 return ManagerReport(listOf(ResultRow("RP", rpId), ResultRow("凭据 ID", proof.credentialId.hex()),
                     ResultRow("证明", proof.kind.name), ResultRow("计数", proof.counter.toString())) +
-                    publicExtensions(result.authData), secrets = retainSecrets(null, result.largeBlobKey))
+                    extensionRows, secrets = retainSecrets(null, result.largeBlobKey))
             } finally { result.largeBlobKey?.fill(0) }
         }
         val proof = diagnosticCredential ?: throw CardFailure(FailureCode.INVALID_INPUT)
@@ -218,21 +220,22 @@ class ManagerOperations {
             val verified = FidoDiagnostics.verifyAssertion(results.single(), proof.publicKey, rpId, hash, proof.counter, requireUv = pin != null)
             if (!verified.signatureValid) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
             if (verified.counterAdvanced == false) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
+            val extensionRows = publicExtensions(results.single().authData, input.assertionExtensions.uvm)
             diagnosticCredential = proof.copy(counter = verified.counter)
             return ManagerReport(listOf(ResultRow("RP", rpId), ResultRow("计数", verified.counter.toString())) +
-                publicExtensions(results.single().authData), secrets = retainSecrets(results.single().hmacSecret, results.single().largeBlobKey))
+                extensionRows, secrets = retainSecrets(results.single().hmacSecret, results.single().largeBlobKey))
         } finally { results.forEach { it.hmacSecret?.fill(0); it.largeBlobKey?.fill(0) } }
     }
 
-    private fun publicExtensions(authData: ByteArray): List<ResultRow> {
-        val extensions = AuthenticatorData.parse(authData).extensions ?: return emptyList()
+    private fun publicExtensions(authData: ByteArray, requestedUvm: Boolean): List<ResultRow> {
+        val auth = AuthenticatorData.parse(authData)
+        val uvm = cc.cardkey.provider.uvmOutput(auth, requestedUvm)
+        val extensions = auth.extensions ?: return emptyList()
         return listOfNotNull(extensions["credProtect"]?.let { ResultRow("credProtect", it.number().toString()) },
             extensions["minPinLength"]?.let { ResultRow("最短 PIN 长度", "${it.number()} 个字符") },
             extensions["credBlob"]?.let { value ->
             ResultRow("credBlob", if (value is Cbor.Bytes) value.value.hex() else value.bool().toString())
-        }, extensions["uvm"]?.let { value -> ResultRow("用户验证方法", value.array().joinToString("; ") {
-            it.array().joinToString { method -> method.number().toString() }
-        }) })
+        }, uvm?.let { rows -> ResultRow("用户验证方法", rows.joinToString("; ") { it.joinToString() }) })
     }
 
     private fun u2fDiagnostic(session: CardSession, input: OperationInput): ManagerReport {

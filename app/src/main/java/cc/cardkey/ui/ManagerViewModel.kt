@@ -36,7 +36,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val usb = application.getSystemService(UsbManager::class.java)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
-    private val operations = ManagerOperations()
+    private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
     private var inProgress = false
     @Volatile private var cancelled = false
@@ -119,7 +119,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                             if (cancelled) {
                                 channel.close()
                                 OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
-                            } else CardSession(channel).use sessionUse@ { session ->
+                            } else CardSession(object : CardChannel by channel {
+                                override fun transmit(command: ByteArray): ByteArray {
+                                    if (cancelled) throw CardFailure(FailureCode.CANCELLED)
+                                    return channel.transmit(command)
+                                }
+                            }).use sessionUse@ { session ->
                                 if (ConfirmationPolicy.pivVerificationReference(input.operation) != null) {
                                     session.requireContact()
                                     val before = PivClient(session).readInfo()
