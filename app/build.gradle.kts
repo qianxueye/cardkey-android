@@ -9,7 +9,7 @@ android {
     compileSdk = 36
     defaultConfig {
         applicationId = "cc.cardkey.android"
-        minSdk = 28
+        minSdk = 34
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
@@ -35,5 +35,11 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.83")
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("com.google.code.gson:gson:2.13.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:core:1.6.1")
     testImplementation("junit:junit:4.13.2")
 }
