@@ -77,6 +77,27 @@ class ManagerOperationsTest {
         }
     }
 
+    @Test fun uvRetriesUseApprovedUnitsOnlyForReturnedValues() {
+        for (count in listOf(null, 0, 3, 8)) {
+            val channel = FidoChannel { code, parameters -> when (code) {
+                4 -> success(info(mapOf("uv" to true)))
+                6 -> when (parameters!![2].number()) {
+                    1L -> success(cborMap(3 to 5.cbor()))
+                    7L -> success(cborMap(5 to count?.cbor()))
+                    else -> error("Unexpected PIN subcommand")
+                }
+                else -> error("Unexpected command")
+            } }
+            val result = CardSession(channel).run {
+                ManagerOperations().execute(it, OperationInput(ManagerOperation.FIDO_RETRIES))
+            }
+            val rows = (result as OperationResult.Completed).value.rows
+            val expected = listOf(ResultRow("PIN 剩余重试次数", "5 次")) +
+                listOfNotNull(count?.let { ResultRow("UV 剩余重试次数", "$it 次") })
+            assertEquals(expected, rows)
+        }
+    }
+
     @Test fun managerDoesNotSelectPivBeforeSensitiveTransportGuard() {
         var count = 0
         val channel = object : CardChannel {
