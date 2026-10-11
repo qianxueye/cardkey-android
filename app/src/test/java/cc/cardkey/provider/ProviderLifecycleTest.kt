@@ -9,6 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProviderLifecycleTest {
+    private fun getRequest() = ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.DISCOURAGED)
     private fun offer() = OfferedRequest(ProviderRequestKind.GET, "{}", byteArrayOf(1),
         CallerSnapshot("test.package", setOf("certificate"), null), "option-1")
 
@@ -105,7 +106,7 @@ class ProviderLifecycleTest {
         val old = registry.claim(id)
         old.finish(cancelled = true)
         val current = registry.claim(id)
-        val result = ProviderOperationRunner().execute(null, null,
+        val result = ProviderOperationRunner().execute(null, getRequest(),
             ClientData(byteArrayOf(), ByteArray(32), true), null, claim = old) { error("stale worker connected") }
         assertEquals(Dispatch.NOT_DISPATCHED, (result as OperationResult.Failed).dispatch)
         assertTrue(current.reserveTransport())
@@ -120,7 +121,7 @@ class ProviderLifecycleTest {
         val resume = CountDownLatch(1)
         val result = AtomicReference<OperationResult<ProviderOutput>>()
         val worker = Thread {
-            result.set(runner.execute(null, null, ClientData(byteArrayOf(), ByteArray(32), true),
+            result.set(runner.execute(null, getRequest(), ClientData(byteArrayOf(), ByteArray(32), true),
                 null, claim = claim) {
                 connecting.countDown()
                 check(resume.await(5, TimeUnit.SECONDS))
@@ -166,7 +167,7 @@ class ProviderLifecycleTest {
         runner.cancel()
         repeat(2) {
             val pin = "123456".toCharArray()
-            val result = runner.execute(null, null, data, pin) { connections++; error("must not connect") }
+            val result = runner.execute(null, getRequest(), data, pin) { connections++; error("must not connect") }
             assertEquals(FailureCode.CANCELLED, (result as OperationResult.Failed).code)
             assertTrue(pin.all { char -> char == '\u0000' })
         }
@@ -178,10 +179,10 @@ class ProviderLifecycleTest {
         val data = ClientData(byteArrayOf(), ByteArray(32), true)
         val lease = requireNotNull(CardOperationGate.tryAcquire())
         try {
-            val result = runner.execute(null, null, data, null) { error("must not connect") }
+            val result = runner.execute(null, getRequest(), data, null) { error("must not connect") }
             assertEquals(FailureCode.BUSY, (result as OperationResult.Failed).code)
         } finally { lease.close() }
-        assertEquals(FailureCode.CANCELLED, (runner.execute(null, null, data, null) {
+        assertEquals(FailureCode.CANCELLED, (runner.execute(null, getRequest(), data, null) {
             error("must not replay")
         } as OperationResult.Failed).code)
     }

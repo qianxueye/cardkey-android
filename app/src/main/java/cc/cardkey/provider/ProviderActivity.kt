@@ -36,7 +36,7 @@ import androidx.lifecycle.lifecycleScope
 import cc.cardkey.R
 import cc.cardkey.protocol.*
 import cc.cardkey.transport.NfcCardChannel
-import cc.cardkey.transport.UsbCcidReader
+import cc.cardkey.transport.UsbAuthenticatorReader
 import cc.cardkey.transport.UsbReaderDescriptor
 import cc.cardkey.ui.CardKeyTheme
 import cc.cardkey.ui.ConfirmationPolicy
@@ -60,6 +60,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var rejected by mutableStateOf(false)
     private var busy by mutableStateOf(false)
     private var awaitingNfc by mutableStateOf(false)
+    private var failureWire by mutableStateOf(CardWire.APDU)
     private var failure by mutableStateOf<OperationResult.Failed?>(null)
     private var assertions by mutableStateOf<List<ProvidedAssertion>>(emptyList())
     private var readers by mutableStateOf<List<UsbReaderDescriptor>>(emptyList())
@@ -135,7 +136,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     Text(stringResource(R.string.provider_request_rejected))
                     Button(onClick = { finishException(false) }) { Text("关闭") }
                 } else if (failure != null) {
-                    ConfirmationPolicy.resultMessages(requireNotNull(failure)).forEach { Text(stringResource(it)) }
+                    ConfirmationPolicy.resultMessages(requireNotNull(failure), failureWire).forEach { Text(stringResource(it)) }
                     Button(onClick = { finishException(requestCancelled || failure?.code == FailureCode.CANCELLED) }) { Text("关闭") }
                 } else if (assertions.isNotEmpty()) {
                     Text(stringResource(R.string.provider_choose_account, requireNotNull(get).rpId))
@@ -185,11 +186,11 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun refreshReaders() {
-        val current = UsbCcidReader.discover(usb)
-        readers.filter { old -> current.none { it.device.deviceName == old.device.deviceName } }
-            .forEach { CardOperationGate.observedRemoval(it.device.deviceName) }
+        val current = UsbAuthenticatorReader.discover(usb)
+        readers.filter { old -> current.none { it.routeKey == old.routeKey } }
+            .forEach { CardOperationGate.observedRemoval(it.routeKey) }
         selected = selected?.let { prior -> current.firstOrNull {
-            it.device.deviceName == prior.device.deviceName && it.interfaceId == prior.interfaceId
+            it.routeKey == prior.routeKey
         } }
         readers = current
     }
@@ -211,11 +212,11 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             awaitingNfc = true
             nfc?.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, null)
         } else execute {
-            if (CardOperationGate.isRemovalRequired(reader.device.deviceName)) {
-                if (UsbCcidReader.isCardAbsent(usb, reader)) CardOperationGate.observedRemoval(reader.device.deviceName)
+            if (reader.wire == CardWire.APDU && CardOperationGate.isRemovalRequired(reader.routeKey)) {
+                if (UsbAuthenticatorReader.isCardAbsent(usb, reader)) CardOperationGate.observedRemoval(reader.routeKey)
                 throw CardFailure(FailureCode.PHYSICAL_ACTION_REQUIRED)
             }
-            UsbCcidReader.connect(usb, reader, allowInitialPowerOn = true)
+            UsbAuthenticatorReader.connect(usb, reader, allowInitialPowerOn = true)
         }
     }
 
@@ -229,6 +230,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun execute(connect: () -> CardChannel) {
+        val reader = selected
+        failureWire = reader?.wire ?: CardWire.APDU
         val secret = pendingPin
         pendingPin = null
         lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -237,10 +240,13 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             var retained = false
             try {
                 val cardResult = withContext(Dispatchers.IO) {
-                    runner.execute(create, get, requireNotNull(clientData), secret, selected?.device?.deviceName, requireNotNull(extracted).claim, connect).also { pendingOutput = it }
+                    runner.execute(create, get, requireNotNull(clientData), secret, reader?.routeKey, requireNotNull(extracted).claim, connect).also { pendingOutput = it }
                 }
                 val result = if (requestCancelled && cardResult is OperationResult.Completed)
-                    OperationResult.Failed(FailureCode.CANCELLED, cardResult.effect) else cardResult
+                    OperationResult.Failed(FailureCode.CANCELLED, cardResult.effect, writeAccepted = when (val output = cardResult.value) {
+                        is ProviderOutput.Created -> true
+                        is ProviderOutput.Assertions -> output.values.any { it.extensions.largeBlobWritten == true }
+                    }) else cardResult
                 busy = false
                 if (completed || requestCancelled) {
                     if (cardResult is OperationResult.Completed && cardResult.value is ProviderOutput.Assertions)
@@ -258,7 +264,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     is OperationResult.Failed -> {
                         failure = result
                         if (result.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
-                            selected?.let { CardOperationGate.requireRemoval(it.device.deviceName); observeRemoval(it) }
+                            reader?.takeIf { it.wire == CardWire.APDU }?.let { CardOperationGate.requireRemoval(it.routeKey); observeRemoval(it) }
                             lastTag?.let { nfc?.ignore(it, 250, { lastTag = null }, Handler(mainLooper)) }
                         }
                     }
@@ -267,7 +273,11 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 operationOwnsInputs = false
                 closeIdleInputs()
                 val output = (pendingOutput as? OperationResult.Completed)?.value
-                if (!retained && output is ProviderOutput.Assertions) output.values.forEach { it.close() }
+                if (!retained) when (output) {
+                    is ProviderOutput.Created -> output.credential.extensions.close()
+                    is ProviderOutput.Assertions -> output.values.forEach { it.close() }
+                    null -> Unit
+                }
             }
         }
     }
@@ -344,14 +354,14 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun observeRemoval(reader: UsbReaderDescriptor) {
-        if (!CardOperationGate.isRemovalRequired(reader.device.deviceName)) return
+        if (reader.wire != CardWire.APDU || !CardOperationGate.isRemovalRequired(reader.routeKey)) return
         presenceWatch?.cancel()
         presenceWatch = lifecycleScope.launch {
-            while (active && CardOperationGate.isRemovalRequired(reader.device.deviceName)) {
+            while (active && CardOperationGate.isRemovalRequired(reader.routeKey)) {
                 val absent = withContext(Dispatchers.IO) {
-                    CardOperationGate.tryAcquire()?.use { UsbCcidReader.isCardAbsent(usb, reader) } == true
+                    CardOperationGate.tryAcquire()?.use { UsbAuthenticatorReader.isCardAbsent(usb, reader) } == true
                 }
-                if (absent) { CardOperationGate.observedRemoval(reader.device.deviceName); break }
+                if (absent) { CardOperationGate.observedRemoval(reader.routeKey); break }
                 delay(750)
             }
         }
