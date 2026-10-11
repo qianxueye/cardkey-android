@@ -324,7 +324,7 @@ class PivSecureContextTest {
         val cipher = Cs7Cipher(keys())
         val field = Cs7Cipher::class.java.getDeclaredField("counter").apply { isAccessible = true }
         val counter = field.get(cipher) as ByteArray
-        counter.fill(0xff.toByte()); counter[0] = 0x7f
+        counter.fill(0xff.toByte()); counter[0] = 0
         cipher.protect(Apdu(ins = 0x20, le = null))
         val objects = "99029000".hexBytes()
         val mac = Cs7.mac(keys().copyOfRange(96, 128), ByteArray(16) + objects)

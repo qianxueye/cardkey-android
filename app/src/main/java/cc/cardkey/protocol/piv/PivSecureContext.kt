@@ -255,7 +255,7 @@ internal class Cs7Cipher(keys: ByteArray) : Closeable {
             responseChain = full
             pending = false
             for (i in 15 downTo 0) { counter[i]++; if (counter[i] != 0.toByte()) break }
-            if (counter[0].toInt() and 0x80 != 0 || counter.all { it == 0.toByte() }) { data.fill(0); malformed() }
+            if (counter[0] != 0.toByte() || counter.all { it == 0.toByte() }) { data.fill(0); malformed() }
             return ApduResponse(data, ((status[0].toInt() and 255) shl 8) or (status[1].toInt() and 255))
         } catch (e: Exception) { close(); throw e }
     }

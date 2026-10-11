@@ -38,7 +38,7 @@ Protect the complete message before fragmenting. A logical command uses canonica
 
 Command body: optional `87 L [01 || ciphertext]`, optional `97 01 00`, then mandatory `8E 08 cmac[0:8]`. A data-free VERIFY omits `87`. GET DATA and GENERAL AUTHENTICATE require `97 01 00`. Response body: optional `87 L [01 || ciphertext]`, mandatory `99 02 innerSW`, then mandatory `8E 08 rmac[0:8]`. Even status-only handler errors have authenticated `99` and `8E`.
 
-Both encryption directions use AES-CBC and ISO 7816 padding (`80` followed by zeroes, always 1–16 bytes). The 16-byte big-endian encryption counter starts at one. Command IV is AES-ECB(SKENC, counter). Response IV uses that same counter with its first byte replaced by `80`. Increment once after each complete logical protected exchange. Fragment acknowledgments and GET RESPONSE do not increment it.
+Both encryption directions use AES-CBC and ISO 7816 padding (`80` followed by zeroes, always 1–16 bytes). The 16-byte big-endian encryption counter starts at one. Command IV is AES-ECB(SKENC, counter). Response IV uses that same counter with its first byte replaced by `80`. Increment once after each complete logical protected exchange. End the session before the counter enters its first byte, whose replacement by `80` would otherwise repeat a response IV. Fragment acknowledgments and GET RESPONSE do not increment it.
 
 `fullCmac = CMAC(SKMAC, previousFullCmac || 0C INS P1 P2 80 [00 × 11] || encoded87? || encoded97?)`.
 

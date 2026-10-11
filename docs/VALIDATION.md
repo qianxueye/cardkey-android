@@ -48,4 +48,6 @@ On 2026-10-10, `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTe
 
 The CS7 gate produced zero lint errors and two warnings: the existing unused Bouncy Castle TLS helper and AES-ECB in the CS7 IV derivation. CS7 encrypts one counter block with AES-ECB to derive its IV, as required by the protocol; command and response payloads use AES-CBC. No lint suppression or baseline was added.
 
+After the normal merge of the updated status-copy/provider parent and the response-IV counter-boundary correction, the same full gate passed in 19 seconds. All 201 JVM tests passed again with 4.624 seconds of summed execution; instrumentation APK compilation included the parent lifecycle fixes.
+
 The CS7 API is available to an enrolled-identity consumer. Existing manager screens retain their contact-only workflow. No enrollment UI, issuer storage, permissions or approved Chinese UI wording changed. Synthetic test success does not establish physical interoperability, deployment, issuer enrollment or PIN recovery acceptance. The [CS7 contract and API](CS7-WIRE.md) describe trust inputs, scope and lifetime.
