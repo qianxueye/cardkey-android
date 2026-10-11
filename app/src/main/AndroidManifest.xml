@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.NFC" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" tools:node="remove" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" tools:node="remove" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
-    <application android:allowBackup="false" android:fullBackupContent="false" android:label="CardKey" android:supportsRtl="true"
+    <application android:allowBackup="false" android:fullBackupContent="false" android:label="@string/app_name" android:supportsRtl="true"
         android:theme="@style/Theme.CardKey" android:usesCleartextTraffic="false"
         android:icon="@mipmap/ic_launcher" android:dataExtractionRules="@xml/data_extraction_rules">
         <activity android:name=".MainActivity" android:exported="true">
@@ -12,5 +15,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".provider.ProviderActivity" android:exported="false" android:excludeFromRecents="true" />
+        <service android:name=".provider.CardKeyProviderService" android:exported="true"
+            android:permission="android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.credentials.CredentialProviderService" />
+            </intent-filter>
+            <meta-data android:name="android.credentials.provider" android:resource="@xml/credential_provider" />
+        </service>
     </application>
 </manifest>

@@ -22,4 +22,4 @@ jobs:
       - name: Install Android platform
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"'
       - name: Build and verify
-        run: ./gradlew assembleDebug testDebugUnitTest lintDebug --no-daemon
+        run: ./gradlew assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --no-daemon

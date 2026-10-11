@@ -1,6 +1,5 @@
 package cc.cardkey.ui
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -26,9 +25,7 @@ import cc.cardkey.transport.UsbReaderDescriptor
 fun CardKeyTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
-    val colors = if (Build.VERSION.SDK_INT >= 31) {
-        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else if (dark) darkColorScheme() else lightColorScheme()
+    val colors = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     MaterialTheme(colorScheme = colors, content = content)
 }
 
@@ -46,6 +43,7 @@ fun ManagerScreen(
     onExport: (ManagerReport) -> Unit,
     onLastRetry: (Boolean) -> Unit,
     onSecureChange: (Boolean) -> Unit,
+    onProviderSettings: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
     var operation by remember { mutableStateOf(ManagerOperation.FIDO_INFO) }
@@ -95,7 +93,9 @@ fun ManagerScreen(
             dismissButton = { TextButton(onClick = { onLastRetry(false) }) { Text("取消") } })
     }
     Scaffold(
-        topBar = { TopAppBar(title = { Text("CardKey") }) },
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }, actions = {
+            TextButton(onClick = onProviderSettings, enabled = !state.busy) { Text("凭据提供者") }
+        }) },
         bottomBar = {
             NavigationBar {
                 listOf("FIDO2", "PIV", "读卡器").forEachIndexed { index, title ->
@@ -113,7 +113,7 @@ fun ManagerScreen(
                 if (tab == 2) {
                     Text("读卡器", style = MaterialTheme.typography.headlineSmall)
                     if (state.readers.isEmpty()) Text(stringResource(R.string.reader_empty))
-                    if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission))
+                    if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission, stringResource(R.string.app_name)))
                     OutlinedCard(onClick = { if (!state.busy) onReader(null) }, Modifier.fillMaxWidth()) {
                         ListItem(headlineContent = { Text("NFC") }, trailingContent = { RadioButton(state.nfc, onClick = null) })
                     }
@@ -165,7 +165,7 @@ fun ManagerScreen(
                         val label = when (op) {
                             ManagerOperation.FIDO_CREDENTIALS -> "RP SHA-256 · HEX"
                             ManagerOperation.FIDO_MIN_PIN -> "PIN · 最短长度"
-                            ManagerOperation.PIV_CSR -> "Subject · CN=CardKey"
+                            ManagerOperation.PIV_CSR -> "Subject · CN=${stringResource(R.string.app_name)}"
                             else -> "凭据 ID · HEX"
                         }
                         OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())

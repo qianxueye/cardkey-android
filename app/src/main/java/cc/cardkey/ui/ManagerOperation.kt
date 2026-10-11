@@ -77,7 +77,7 @@ class ManagerOperations {
             })
             ManagerOperation.FIDO_DELETE -> { fido.deleteCredential(input.pin, input.text.hexBytes()); empty() }
             ManagerOperation.FIDO_UPDATE -> {
-                fido.updateUser(input.pin, input.text.hexBytes(), input.secondary, input.secondary); empty()
+                fido.updateUser(input.pin, input.text.hexBytes(), input.secondary, null); empty()
             }
             ManagerOperation.FIDO_ALWAYS_UV -> info(fido.setAlwaysUv(input.pin.takeIf { it.isNotEmpty() }, input.enabled))
             ManagerOperation.FIDO_MIN_PIN -> info(fido.setMinPinLength(input.pin.takeIf { it.isNotEmpty() }, input.text.toInt(), forceChange = input.enabled))

@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
 import android.nfc.NfcAdapter
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.view.WindowManager
@@ -15,6 +14,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
+import androidx.credentials.CredentialManager
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.stringResource
 import androidx.activity.viewModels
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
@@ -32,6 +37,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private val model: ManagerViewModel by viewModels()
     private val usb by lazy { getSystemService(UsbManager::class.java) }
     private val nfc by lazy { NfcAdapter.getDefaultAdapter(this) }
+    private var showProviderSettings by mutableStateOf(false)
+    private val providerSettings = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { }
     private var clearInputs by mutableIntStateOf(0)
     private var imported by mutableStateOf<ByteArray?>(null)
     private var export: ManagerReport? = null
@@ -97,8 +104,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
-        else registerReceiver(receiver, filter)
+        registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
         model.refreshReaders()
         setContent {
             val state by model.state.collectAsState()
@@ -114,7 +120,19 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     { importer.launch(arrayOf("*/*")) }, imported,
                     { report -> export = report; exporter.launch(report.fileName ?: "cardkey.der") }, model::approveLastRetry,
                     { secure -> if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-                        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) })
+                        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) },
+                    { showProviderSettings = true })
+                if (showProviderSettings) AlertDialog(
+                    onDismissRequest = { showProviderSettings = false },
+                    title = { Text("凭据提供者") },
+                    text = { Text(stringResource(R.string.provider_settings, stringResource(R.string.app_name))) },
+                    confirmButton = { TextButton(onClick = {
+                        showProviderSettings = false
+                        providerSettings.launch(IntentSenderRequest.Builder(
+                            CredentialManager.create(this@MainActivity).createSettingsPendingIntent()).build())
+                    }) { Text("启用") } },
+                    dismissButton = { TextButton(onClick = { showProviderSettings = false }) { Text("取消") } },
+                )
             }
         }
     }
