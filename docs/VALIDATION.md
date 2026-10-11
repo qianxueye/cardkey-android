@@ -41,6 +41,14 @@ Nine Android instrumentation tests compile into `app/build/outputs/apk/androidTe
 The packaged application manifest includes NFC, Internet and AndroidX's signature-scoped internal receiver permission. Unused biometric permissions from the Credentials dependency are removed. The seven approved provider messages match the reviewed batch, and `app_name` supplies the product display name.
 
 Both APKs are installed on the physical Sony and the nine distinct instrumentation tests have applicable passing device evidence. Provider physical acceptance remains separate: verify system provider enablement and picker behavior, validate native DAL and Chrome Stable flows, and qualify real NFC/USB cancellation, presence, PIN and account operations. Scripted-card and Android plumbing results do not establish those consumer results.
+
+## Manager diagnostic signature acceptance
+
+The manager rejects an invalid CTAP attestation or assertion signature and an invalid U2F registration or authentication signature with the existing card-response failure. It checks signatures before replacing a cached credential or advancing its verified counter. An accepted card command can still have changed card state; signature failure preserves that effect and does not retry the command. Unsigned `none` attestation remains supported and does not imply an attestation signature was verified.
+
+Six manager regressions use synthetic EC keys and actual signed APDU responses. Four reject cryptographically invalid signatures and confirm that the prior credential or counter remains usable. The other two cover unsigned attestation and an unknown registration result after a lost response, without retry or caching a new credential. Against the original manager, exactly the four invalid-signature tests fail; the red-proof run took 8 seconds (8.50 seconds wall time).
+
+The required `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --no-watch-fs` gate passed in 25 seconds. All 182 JVM tests passed, including the six new regressions; summed test execution was 0.963 seconds, with 0.292 seconds for the new class. Both APKs compiled. This package has no new device or physical-card acceptance result.
 ## Manager review regressions
 
 Synthetic workflow tests reject invalid CTAP and U2F registration/assertion signatures before replacing cached credentials or counters. `none` attestation still permits a subsequent verified assertion. Credential deletion and user-name updates enumerate the target and check the resulting state with the same credential-management token. User IDs come from that enumeration; accepted mutations with missing or mismatched readback remain failures without automatic replay. Requested HMAC output must be present on every assertion. Blob-write attempts preserve the reusable imported bytes on success and failure.
