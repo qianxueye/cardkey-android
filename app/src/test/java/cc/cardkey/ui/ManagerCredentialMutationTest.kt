@@ -55,12 +55,12 @@ class ManagerCredentialMutationTest {
             run(ManagerOperation.FIDO_UPDATE, card))
         assertEquals(1, card.writes)
     }
-    @Test fun updateKeepsEnumeratedUserIdAndReadsNamesBack() {
+    @Test fun updateKeepsEnumeratedUserIdAndReadsSupportedNameBack() {
         val card = Card()
         assertTrue(run(ManagerOperation.FIDO_UPDATE, card) is OperationResult.Completed)
         assertArrayEquals(userId, card.user!!["id"].bytes())
         assertEquals("updated", card.user!!["name"].text())
-        assertEquals("updated", card.user!!["displayName"].text())
+        assertNull(card.user!!["displayName"])
         assertEquals(1, card.server.tokenRequests)
         assertEquals(listOf(2L, 4L, 7L, 4L), card.channel.commands.filter { it.first == 10 }.map { it.second!![1].number() })
     }
