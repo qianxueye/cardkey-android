@@ -21,6 +21,7 @@ internal class ProviderOperationRunner {
         clientData: ClientData,
         pin: CharArray?,
         readerId: String? = null,
+        claim: RequestRegistry.Claim? = null,
         connect: () -> CardChannel,
     ): OperationResult<ProviderOutput> {
         if (!started.compareAndSet(false, true)) {
@@ -33,6 +34,9 @@ internal class ProviderOperationRunner {
                 ?: return OperationResult.Failed(FailureCode.BUSY, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
             return lease.use {
                 if (cancelled.get()) return@use OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
+                // Connection can power or initialize the card, so reserve before entering transport code.
+                if (claim != null && !claim.reserveTransport())
+                    return@use OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                 val connected = connect()
                 channel.set(connected)
                 val result = CardSession(connected).use { session ->

@@ -4,6 +4,7 @@ import cc.cardkey.protocol.fido.Assertion
 import cc.cardkey.protocol.fido.CborCodec
 import cc.cardkey.protocol.fido.cbor
 import cc.cardkey.protocol.fido.textMap
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import java.util.Base64
 
@@ -15,6 +16,7 @@ object ResponseEncoder {
             "authData" to result.authData.cbor(), "attStmt" to result.statement))
         val response = response(clientData)
         response.addProperty("attestationObject", encode(attestation))
+        response.add("transports", JsonArray().apply { add("nfc"); add("usb") })
         return envelope(credential.credentialId, response).toString()
     }
 
@@ -35,6 +37,7 @@ object ResponseEncoder {
         addProperty("id", encode(id))
         addProperty("rawId", encode(id))
         addProperty("type", "public-key")
+        addProperty("authenticatorAttachment", "cross-platform")
         add("response", response)
         add("clientExtensionResults", JsonObject())
     }
