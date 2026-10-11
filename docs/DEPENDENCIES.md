@@ -13,10 +13,14 @@ Original Kotlin protocol and reader implementations were written for this reposi
 | AndroidX Lifecycle | 2.9.4 | Apache-2.0 |
 | Kotlin Coroutines Android | 1.10.2 | Apache-2.0 |
 | Bouncy Castle PKIX/provider/util | 1.83 | Bouncy Castle MIT-style license; CSR ASN.1 and JCA support |
+| Robolectric | 4.16 | MIT; JVM Android framework simulation, tests only |
+| Kotlin Coroutines Test | 1.10.2 | Apache-2.0; ViewModel dispatcher control, tests only |
 | JUnit | 4.13.2 | EPL-1.0; tests only |
 | Hamcrest Core | 1.3 (JUnit transitive) | BSD-3-Clause; tests only |
 
 AndroidX, Kotlin standard library, JetBrains annotations and JSpecify transitives use their published public Maven metadata. The build resolves only Google Maven, Maven Central and the public Gradle Plugin Portal. Pinned tool and library versions are visible in the Gradle scripts; the application has no runtime network permission.
+
+Robolectric resolves its public Android framework test artifacts from Maven Central. These test dependencies are not packaged into the application.
 
 License texts shipped inside third-party JAR/AAR files remain attached to their respective artifacts. The Bouncy Castle notice is also retained under `licenses/BOUNCY-CASTLE.txt`.
 

@@ -13,13 +13,13 @@ interface CardChannel : Closeable {
 
 enum class Dispatch { NOT_DISPATCHED, RESPONSE_UNAVAILABLE }
 
-class TransportException(val dispatch: Dispatch, cause: Throwable? = null) : IOException(dispatch.name, cause)
+class TransportException(val dispatch: Dispatch, cause: Throwable? = null, val cancelled: Boolean = false) : IOException(dispatch.name, cause)
 
 enum class FailureCode {
     UNSUPPORTED, CONTACT_REQUIRED, PHYSICAL_ACTION_REQUIRED, BUSY, CANCELLED,
     PIN_INVALID, PIN_BLOCKED, AUTHORIZATION_DENIED, CERTIFICATE_KEY_MISMATCH,
     MALFORMED_RESPONSE, CAPACITY_EXCEEDED, RECOVERY_REQUIRED, TRANSPORT_FAILURE,
-    INVALID_INPUT, CARD_REJECTED
+    INVALID_INPUT, CARD_REJECTED, NFC_UNAVAILABLE, NFC_DISABLED
 }
 
 class CardFailure(val code: FailureCode, val status: Int? = null) : Exception(code.name)

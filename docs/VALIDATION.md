@@ -33,3 +33,5 @@ This result covers the local implementation; physical phone/card qualification r
 ## Manager review regressions
 
 Synthetic workflow tests reject invalid CTAP and U2F registration/assertion signatures before replacing cached credentials or counters. `none` attestation still permits a subsequent verified assertion. Credential deletion and user-name updates enumerate the target and check the resulting state with the same credential-management token. User IDs come from that enumeration; accepted mutations with missing or mismatched readback remain failures without automatic replay. Requested HMAC output must be present on every assertion. Blob-write attempts preserve the reusable imported bytes on success and failure.
+
+JVM Android framework tests cover an absent or disabled NFC adapter, enabling NFC for a new operation, and disabling it while an operation is waiting. Cancellation-race tests preserve known PIN failures, block subsequent APDU dispatch, and retain the uncertain effect of a write interrupted by channel closure. Robolectric and coroutine test dispatchers provide these checks without phone or card access.
