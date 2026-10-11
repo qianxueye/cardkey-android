@@ -1,11 +1,16 @@
 package cc.cardkey.transport
 
+import android.content.BroadcastReceiver
+import android.content.Intent
 import android.content.Context
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
+import cc.cardkey.MainActivity
+import cc.cardkey.provider.ProviderActivity
+import cc.cardkey.ui.ManagerViewModel
 import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.Dispatch
 import cc.cardkey.protocol.TransportException
@@ -13,6 +18,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
@@ -92,6 +98,115 @@ class UsbHidReaderTest {
         }
         assertTrue(UsbHidReader.discover(manager).isEmpty())
         assertEquals(0, DescriptorConnection.rawReads)
+    }
+
+    @Test fun samePathReattachHasNewRouteAndOldDescriptorCannotOpenEitherBackend() {
+        val oldDevice = device()
+        shadowOf(manager).addOrUpdateUsbDevice(oldDevice, true)
+        val old = UsbAuthenticatorReader.discover(manager).single()
+        val oldApdu = UsbReaderDescriptor(oldDevice, 1)
+        shadowOf(manager).removeUsbDevice(oldDevice)
+        UsbAuthenticatorReader.invalidate(old)
+        UsbAuthenticatorReader.invalidate(old)
+        shadowOf(manager).addOrUpdateUsbDevice(device(), true)
+        val fresh = UsbAuthenticatorReader.discover(manager).single()
+        assertNotEquals(old.routeKey, fresh.routeKey)
+        UsbAuthenticatorReader.invalidate(old)
+        assertTrue(UsbAuthenticatorReader.isCurrent(manager, fresh))
+        assertFalse(UsbAuthenticatorReader.isCurrent(manager, old))
+        val reads = DescriptorConnection.rawReads
+        for (connect in listOf<() -> Unit>(
+            { UsbAuthenticatorReader.connect(manager, old) },
+            { UsbHidReader.connect(manager, old) },
+            { UsbCcidReader.connect(manager, oldApdu) },
+        )) {
+            try { connect(); fail() }
+            catch (failure: TransportException) { assertEquals(Dispatch.NOT_DISPATCHED, failure.dispatch) }
+        }
+        assertEquals(reads, DescriptorConnection.rawReads)
+        assertEquals(0, DescriptorConnection.claims)
+    }
+
+    @Test fun discoveryObservingAbsenceAlsoRetiresAttachmentGeneration() {
+        val oldDevice = device()
+        shadowOf(manager).addOrUpdateUsbDevice(oldDevice, false)
+        val old = UsbAuthenticatorReader.discover(manager).single()
+        shadowOf(manager).removeUsbDevice(oldDevice)
+        assertTrue(UsbAuthenticatorReader.discover(manager).isEmpty())
+        shadowOf(manager).addOrUpdateUsbDevice(device(), false)
+        val fresh = UsbAuthenticatorReader.discover(manager).single()
+        assertNotEquals(old.routeKey, fresh.routeKey)
+        assertFalse(UsbAuthenticatorReader.isCurrent(manager, old))
+    }
+
+    @Test fun bothActivityDetachCallbacksRetireOldSelectionAndPermissionWithoutInvalidatingReplacement() {
+        val oldDevice = device()
+        shadowOf(manager).addOrUpdateUsbDevice(oldDevice, true)
+        val old = UsbAuthenticatorReader.discover(manager).single()
+        val model = ManagerViewModel(RuntimeEnvironment.getApplication())
+        model.refreshReaders()
+        model.selectReader(old)
+        val main = Robolectric.buildActivity(MainActivity::class.java).get()
+        ReflectionHelpers.setField(main, "model\$delegate", lazyOf(model))
+        ReflectionHelpers.setField(main, "usb\$delegate", lazyOf(manager))
+        ReflectionHelpers.setField(main, "requestedReader", old)
+        val provider = Robolectric.buildActivity(ProviderActivity::class.java).get()
+        ReflectionHelpers.setField(provider, "usb\$delegate", lazyOf(manager))
+        ReflectionHelpers.callInstanceMethod<Unit>(provider, "setReaders",
+            ReflectionHelpers.ClassParameter.from(List::class.java, listOf(old)))
+        ReflectionHelpers.setField(provider, "pendingReader", old)
+        ReflectionHelpers.callInstanceMethod<Unit>(provider, "setSelected",
+            ReflectionHelpers.ClassParameter.from(UsbReaderDescriptor::class.java, old))
+        ReflectionHelpers.callInstanceMethod<Unit>(provider, "setBusy",
+            ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType, true))
+        shadowOf(manager).addOrUpdateUsbDevice(device(), true)
+        val detach = Intent(UsbManager.ACTION_USB_DEVICE_DETACHED).putExtra(UsbManager.EXTRA_DEVICE, oldDevice)
+        val mainReceiver = ReflectionHelpers.getField<BroadcastReceiver>(main, "receiver")
+        val providerReceiver = ReflectionHelpers.getField<BroadcastReceiver>(provider, "receiver")
+        mainReceiver.onReceive(RuntimeEnvironment.getApplication(), detach)
+        val replacement = UsbAuthenticatorReader.discover(manager).single()
+        providerReceiver.onReceive(RuntimeEnvironment.getApplication(), detach)
+        assertTrue(UsbAuthenticatorReader.isCurrent(manager, replacement))
+        assertNull(model.state.value.selectedReader)
+        assertNull(ReflectionHelpers.getField<UsbReaderDescriptor?>(main, "requestedReader"))
+        assertNull(ReflectionHelpers.getField<UsbReaderDescriptor?>(provider, "pendingReader"))
+        assertNull(ReflectionHelpers.callInstanceMethod<UsbReaderDescriptor?>(provider, "getSelected"))
+        assertTrue(ReflectionHelpers.getField(provider, "requestCancelled"))
+        assertTrue(ReflectionHelpers.callInstanceMethod(provider, "getBusy"))
+        assertFalse(ReflectionHelpers.getField(provider, "completed"))
+        assertFalse(UsbAuthenticatorReader.isCurrent(manager, old))
+    }
+
+    @Test fun latePermissionCallbackCannotSelectOldGenerationOrConsumeNewPendingRequest() {
+        val oldDevice = device()
+        shadowOf(manager).addOrUpdateUsbDevice(oldDevice, true)
+        val old = UsbAuthenticatorReader.discover(manager).single()
+        UsbAuthenticatorReader.invalidate(old)
+        val fresh = UsbAuthenticatorReader.discover(manager).single()
+        val model = ManagerViewModel(RuntimeEnvironment.getApplication())
+        val main = Robolectric.buildActivity(MainActivity::class.java).get()
+        ReflectionHelpers.setField(main, "model\$delegate", lazyOf(model))
+        ReflectionHelpers.setField(main, "usb\$delegate", lazyOf(manager))
+        ReflectionHelpers.setField(main, "requestedReader", fresh)
+        val receiver = ReflectionHelpers.getField<BroadcastReceiver>(main, "receiver")
+        val action = RuntimeEnvironment.getApplication().packageName + ".USB_PERMISSION"
+        receiver.onReceive(RuntimeEnvironment.getApplication(), Intent(action).setIdentifier(old.routeKey))
+        assertSame(fresh, ReflectionHelpers.getField<UsbReaderDescriptor?>(main, "requestedReader"))
+        assertNull(model.state.value.selectedReader)
+        receiver.onReceive(RuntimeEnvironment.getApplication(), Intent(action).setIdentifier(fresh.routeKey))
+        assertEquals(fresh.routeKey, model.state.value.selectedReader?.routeKey)
+        assertNull(ReflectionHelpers.getField<UsbReaderDescriptor?>(main, "requestedReader"))
+        val provider = Robolectric.buildActivity(ProviderActivity::class.java).get()
+        ReflectionHelpers.setField(provider, "usb\$delegate", lazyOf(manager))
+        ReflectionHelpers.setField(provider, "pendingReader", fresh)
+        val providerReceiver = ReflectionHelpers.getField<BroadcastReceiver>(provider, "receiver")
+        val providerAction = RuntimeEnvironment.getApplication().packageName + ".PROVIDER_USB_PERMISSION"
+        providerReceiver.onReceive(RuntimeEnvironment.getApplication(), Intent(providerAction).setIdentifier(old.routeKey))
+        assertSame(fresh, ReflectionHelpers.getField<UsbReaderDescriptor?>(provider, "pendingReader"))
+        assertNull(ReflectionHelpers.callInstanceMethod<UsbReaderDescriptor?>(provider, "getSelected"))
+        providerReceiver.onReceive(RuntimeEnvironment.getApplication(), Intent(providerAction).setIdentifier(fresh.routeKey))
+        assertEquals(fresh.routeKey, ReflectionHelpers.callInstanceMethod<UsbReaderDescriptor?>(provider, "getSelected")?.routeKey)
+        assertNull(ReflectionHelpers.getField<UsbReaderDescriptor?>(provider, "pendingReader"))
     }
 
     @Test fun routeSeparatesWireAndInterfaceAndHidNeverUsesApduRemovalProbe() {

@@ -28,7 +28,7 @@ object UsbHidReader {
 
     fun connect(manager: UsbManager, descriptor: UsbReaderDescriptor, timeoutMillis: Int = 15000): CardChannel {
         val device = descriptor.device
-        if (descriptor.wire != CardWire.CTAP || !manager.hasPermission(device) ||
+        if (!UsbAuthenticatorReader.isCurrent(manager, descriptor) || descriptor.wire != CardWire.CTAP || !manager.hasPermission(device) ||
             Thread.currentThread().isInterrupted || timeoutMillis !in 1..60000) {
             throw TransportException(Dispatch.NOT_DISPATCHED)
         }
@@ -45,6 +45,7 @@ object UsbHidReader {
             claimed = connection.claimInterface(intf, false)
             check(claimed)
             channel = CtaphidChannel(HidInterruptIo(AndroidInterruptConnection(connection, intf, endpoints)), timeoutMillis)
+            if (!UsbAuthenticatorReader.isCurrent(manager, descriptor)) throw TransportException(Dispatch.NOT_DISPATCHED)
             channel.initialize()
             return channel
         } catch (failure: Exception) {

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
+import android.hardware.usb.UsbDevice
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Bundle
@@ -79,10 +80,26 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private val permissionAction get() = "$packageName.PROVIDER_USB_PERMISSION"
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)?.let { device ->
+                    (readers + listOfNotNull(selected, pendingReader))
+                        .filter { it.device.deviceName == device.deviceName }.forEach(UsbAuthenticatorReader::invalidate)
+                    if (pendingReader?.device?.deviceName == device.deviceName) {
+                        pendingReader = null
+                        permissionPending = false
+                    }
+                    if (selected?.device?.deviceName == device.deviceName) {
+                        cancelRequest()
+                        selected = null
+                    }
+                }
+            }
             if (intent.action == permissionAction) {
-                pendingReader?.let { if (usb.hasPermission(it.device)) selected = it }
-                pendingReader = null
-                permissionPending = false
+                pendingReader?.takeIf { intent.identifier == it.routeKey }?.let {
+                    if (UsbAuthenticatorReader.isCurrent(usb, it) && usb.hasPermission(it.device)) selected = it
+                    pendingReader = null
+                    permissionPending = false
+                }
             }
             refreshReaders()
         }
@@ -176,12 +193,13 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun selectReader(reader: UsbReaderDescriptor) {
+        if (!UsbAuthenticatorReader.isCurrent(usb, reader)) { refreshReaders(); return }
         if (usb.hasPermission(reader.device)) { selected = reader; observeRemoval(reader) }
         else {
             pendingReader = reader
             permissionPending = true
             usb.requestPermission(reader.device, PendingIntent.getBroadcast(this, 1,
-                Intent(permissionAction).setPackage(packageName), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+                Intent(permissionAction).setPackage(packageName).setIdentifier(reader.routeKey), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         }
     }
 

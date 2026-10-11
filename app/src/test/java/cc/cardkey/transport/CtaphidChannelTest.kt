@@ -36,6 +36,13 @@ class CtaphidChannelTest {
         assertEquals(1, io.writes.size)
     }
 
+    @Test fun initAcceptsBoundedFutureExtensionFields() {
+        val io = FakeIo(frames(6, initReply() + ByteArray(70) { 42 }, 0xffffffffL) + frames(0x10, byteArrayOf(0)))
+        val channel = ready(io)
+        assertTrue(channel.supportsCtap2)
+        assertArrayEquals(byteArrayOf(0), channel.exchangeCtap2(byteArrayOf(4)))
+    }
+
     @Test fun invalidInitNonceCidProtocolOrLengthRetiresConnection() {
         val malformed = listOf(
             initReply().also { it[0] = 99 },

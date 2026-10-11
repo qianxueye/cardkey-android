@@ -52,7 +52,7 @@ internal class CtaphidChannel(
                 send(INIT, challenge)
                 val reply = receive(INIT)
                 try {
-                    require(reply.size == 17 && reply.copyOfRange(0, 8).contentEquals(challenge))
+                    require(reply.size >= 17 && reply.copyOfRange(0, 8).contentEquals(challenge))
                     val assigned = readCid(reply, 8)
                     require(assigned != 0L && assigned != BROADCAST_CID && u8(reply[12]) == 2)
                     val capabilities = u8(reply[16])

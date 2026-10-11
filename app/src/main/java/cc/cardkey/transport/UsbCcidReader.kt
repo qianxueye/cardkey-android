@@ -16,7 +16,8 @@ class UsbReaderDescriptor internal constructor(
     val interfaceId: Int,
     val wire: CardWire = CardWire.APDU,
 ) {
-    val routeKey: String = "usb:${device.deviceName.length}:${device.deviceName}:$interfaceId:${wire.name}"
+    internal val attachment = UsbAuthenticatorReader.attachment(device.deviceName)
+    val routeKey: String = "usb:${device.deviceName.length}:${device.deviceName}:$attachment:$interfaceId:${wire.name}"
 }
 
 object UsbCcidReader {
@@ -36,6 +37,7 @@ object UsbCcidReader {
     ): CardChannel {
         val channel = openChannel(manager, descriptor, timeoutMillis)
         try {
+            if (!UsbAuthenticatorReader.isCurrent(manager, descriptor)) throw TransportException(Dispatch.NOT_DISPATCHED)
             channel.initialize(allowInitialPowerOn)
             return channel
         } catch (error: Exception) {
@@ -60,7 +62,7 @@ object UsbCcidReader {
         timeoutMillis: Int,
     ): CcidChannel {
         val device = descriptor.device
-        if (descriptor.wire != CardWire.APDU || device.vendorId != 0x04e6 || device.productId != 0x5810 ||
+        if (!UsbAuthenticatorReader.isCurrent(manager, descriptor) || descriptor.wire != CardWire.APDU || device.vendorId != 0x04e6 || device.productId != 0x5810 ||
             !manager.hasPermission(device) || Thread.currentThread().isInterrupted) {
             throw TransportException(Dispatch.NOT_DISPATCHED)
         }

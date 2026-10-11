@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
+import android.hardware.usb.UsbDevice
 import android.nfc.NfcAdapter
 import android.os.Bundle
 import android.os.Handler
@@ -28,6 +29,7 @@ import cc.cardkey.ui.*
 import cc.cardkey.protocol.FailureCode
 import cc.cardkey.protocol.OperationResult
 import cc.cardkey.transport.UsbReaderDescriptor
+import cc.cardkey.transport.UsbAuthenticatorReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,10 +85,22 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)?.let { device ->
+                    (model.state.value.readers + listOfNotNull(model.state.value.selectedReader, requestedReader))
+                        .filter { it.device.deviceName == device.deviceName }.forEach(UsbAuthenticatorReader::invalidate)
+                    if (requestedReader?.device?.deviceName == device.deviceName) {
+                        requestedReader = null
+                        model.permissionPending(false)
+                    }
+                }
+            }
             if (intent.action == permissionAction) {
-                requestedReader?.let { reader -> if (usb.hasPermission(reader.device)) model.selectReader(reader) }
-                requestedReader = null
-                model.permissionPending(false)
+                requestedReader?.takeIf { intent.identifier == it.routeKey }?.let { reader ->
+                    if (UsbAuthenticatorReader.isCurrent(usb, reader) && usb.hasPermission(reader.device)) model.selectReader(reader)
+                    requestedReader = null
+                    model.permissionPending(false)
+                }
             }
             if (intent.action == NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) {
                 model.refreshNfc()
@@ -140,11 +154,12 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun selectReader(reader: UsbReaderDescriptor?) {
+        if (reader != null && !UsbAuthenticatorReader.isCurrent(usb, reader)) { model.refreshReaders(); return }
         if (reader == null || usb.hasPermission(reader.device)) model.selectReader(reader)
         else {
             requestedReader = reader
             model.permissionPending(true)
-            val intent = Intent(permissionAction).setPackage(packageName)
+            val intent = Intent(permissionAction).setPackage(packageName).setIdentifier(reader.routeKey)
             usb.requestPermission(reader.device, PendingIntent.getBroadcast(this, 0, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         }
