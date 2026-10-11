@@ -98,6 +98,13 @@ class CardCredentialOperationTest {
         assertTrue(AuthenticatorData.parse(result.value.result.authData).extensions!!["vendor.policy"].bool())
     }
 
+    @Test fun rejectsPrivateCoseMaterialInsteadOfExportingItInAttestation() {
+        val invalidPublicKey = Cbor.Map(key.value + cborMap(-4 to ByteArray(32) { 1 }.cbor()).value)
+        val result = createWith(creation(registration(publicKey = invalidPublicKey)))
+        assertTrue(result is OperationResult.Failed)
+        assertEquals(FailureCode.MALFORMED_RESPONSE, (result as OperationResult.Failed).code)
+    }
+
     @Test fun directPreservesOriginalWhileIndirectUsesNone() {
         val original = registration()
         val direct = createWith(creation(original), create.copy(attestation = AttestationPreference.DIRECT)) as OperationResult.Completed

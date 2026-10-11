@@ -3,6 +3,7 @@ Original code: Apache License 2.0.
 
 AndroidX (including Jetpack Compose and Material 3), Kotlin, Kotlin Coroutines,
 JetBrains annotations and JSpecify: Apache License 2.0.
+Gson, OkHttp and Okio: Apache License 2.0.
 Bouncy Castle provider, PKIX and utility libraries: Bouncy Castle MIT-style license.
 
 The corresponding license texts are included in this directory.

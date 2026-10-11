@@ -31,7 +31,7 @@ object CardCredentialOperation {
         val id = auth.credentialId ?: malformed()
         if (request.excludeIds.any { it.contentEquals(id) }) malformed()
         val key = auth.publicKey ?: malformed()
-        if (key[3].number() != -7L) malformed()
+        if (key[3].number() != -7L || key[-4] != null) malformed()
         FidoDiagnostics.publicKey(key)
         if (result.enterpriseAttestation == true || result.largeBlobKey != null) malformed()
         val verified = FidoDiagnostics.verifyRegistration(result, request.rpId, clientData.hash, requireUv)

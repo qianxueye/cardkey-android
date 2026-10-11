@@ -1,6 +1,10 @@
 package cc.cardkey.provider
 
 import cc.cardkey.protocol.*
+import cc.cardkey.protocol.fido.*
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -75,4 +79,56 @@ class ProviderLifecycleTest {
             error("must not replay")
         } as OperationResult.Failed).code)
     }
+
+    @Test fun `cancel after assertion dispatch holds lease until worker exits and reports uncertain result`() {
+        val dispatched = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val runner = ProviderOperationRunner()
+        val channel = FidoChannel { code, _ -> when (code) {
+            4 -> success(info())
+            2 -> {
+                dispatched.countDown()
+                check(resume.await(5, TimeUnit.SECONDS))
+                throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+            }
+            else -> error("unexpected command")
+        } }
+        val result = AtomicReference<OperationResult<ProviderOutput>>()
+        val worker = Thread {
+            result.set(runner.execute(null, ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)),
+                UserVerificationRequirement.DISCOURAGED), ClientData(byteArrayOf(), ByteArray(32), true), null) { channel })
+        }
+        worker.start()
+        assertTrue(dispatched.await(5, TimeUnit.SECONDS))
+        try {
+            runner.cancel()
+            assertTrue(channel.closed)
+            assertNull(CardOperationGate.tryAcquire())
+        } finally { resume.countDown(); worker.join(5000) }
+        assertFalse(worker.isAlive)
+        val failure = result.get() as OperationResult.Failed
+        assertEquals(Effect.UNKNOWN, failure.effect)
+        assertEquals(Dispatch.RESPONSE_UNAVAILABLE, failure.dispatch)
+        assertEquals(1, channel.commands.count { it.first == 2 })
+        requireNotNull(CardOperationGate.tryAcquire()).close()
+    }
+
+    @Test fun `physical presence failure is shared across manager and provider until observed removal`() {
+        val reader = "synthetic-reader"
+        val channel = FidoChannel { code, _ -> when (code) {
+            4 -> success(info())
+            2 -> byteArrayOf(0x2f)
+            else -> error("unexpected command")
+        } }
+        try {
+            val result = ProviderOperationRunner().execute(null,
+                ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.DISCOURAGED),
+                ClientData(byteArrayOf(), ByteArray(32), true), null, reader) { channel }
+            assertEquals(FailureCode.PHYSICAL_ACTION_REQUIRED, (result as OperationResult.Failed).code)
+            assertTrue(CardOperationGate.isRemovalRequired(reader))
+            assertEquals(listOf(4, 4, 2), channel.commands.map { it.first })
+        } finally { CardOperationGate.observedRemoval(reader) }
+        assertFalse(CardOperationGate.isRemovalRequired(reader))
+    }
+
 }
