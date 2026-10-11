@@ -2,7 +2,7 @@
 
 A native Kotlin and Jetpack Compose Material 3 manager for FIDO2 and PIV smart cards, with an interactive Android Credential Provider. The Android application has its own public protocol implementation and builds without private repositories, applet binaries, provisioning secrets, or private CI artifacts.
 
-The application targets Android 14 and later. NFC uses Android IsoDep. The USB adapter handles the Identiv uTrust 2700R (`04e6:5810`) through reader-managed APDU exchange or host-managed T=1 TPDU exchange. The recorded TPDU profile (`bcdDevice=0202`, features `0x100BA`) requires valid current T=1 parameters, successful link synchronization, and an acknowledged IFSD of 32 before any APDU. T=0 TPDU exchange is unsupported. Physical reader and phone qualification must be recorded separately from a successful build. [Transport scope](docs/T1-TRANSPORT.md)
+The application targets Android 14 and later. NFC uses Android IsoDep. Standard USB FIDO HID interfaces use direct CTAP2 and U2F interrupt transfers for both the Manager and Credential Provider; PIV is unavailable on this route. [CTAPHID scope and ownership](docs/CTAPHID-TRANSPORT.md) The USB adapter handles the Identiv uTrust 2700R (`04e6:5810`) through reader-managed APDU exchange or host-managed T=1 TPDU exchange. The recorded TPDU profile (`bcdDevice=0202`, features `0x100BA`) requires valid current T=1 parameters, successful link synchronization, and an acknowledged IFSD of 32 before any APDU. T=0 TPDU exchange is unsupported. Physical reader and phone qualification must be recorded separately from a successful build. [Transport scope](docs/T1-TRANSPORT.md)
 
 ## Build
 
@@ -21,7 +21,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. CI uses public Ubu
 - PIV: information, slot metadata, public keys and certificates; PIN/PUK changes and unblock; 3DES/AES management authentication and key changes; RSA-2048/P-256/P-384 generation; verified card-signed CSR export; matching certificate import/readback; signature, ECDH and RSA-decryption checks.
 - PIV reset only when the card already reports both PIN and PUK blocked. The app never consumes retries to reach that state. Blocking both has already erased keys in the supported CardKey profile.
 
-Management actions use the approved Chinese confirmation and result messages. PIN/PUK-sensitive PIV operations read live retry counts before verification; a last attempt that could erase keys requires an additional confirmation and a second check of those facts in the same session. Unknown writes require inspection before another mutation. These controls do not replace physical device acceptance. [Copy scope](docs/COPY-PROPOSAL.md)
+Management actions use the approved Chinese confirmation and result messages. PIN/PUK-sensitive PIV operations read live retry counts before verification; a last attempt that could erase keys requires an additional confirmation and a second check of those facts in the same session. Unknown writes block further mutations. For HID, routine inspection cannot resolve an unknown write because a USB route does not establish card identity. These controls do not replace physical device acceptance. [Copy scope](docs/COPY-PROPOSAL.md)
 
 ## Card and session rules
 
@@ -31,7 +31,7 @@ The supported CardKey profile uses 6–8 ASCII digits for both PIN and PUK, padd
 
 Each operation owns one session. PIN tokens and administrative authorization are never cached across operations. A lost response is not success and does not trigger replay. A write accepted before readback fails remains distinct from a command whose dispatch failed. Cancelling a request does not undo a command already sent.
 
-When the authenticator requires physical presence, the session ends. The app does not reconnect with reset or power-cycle the card to satisfy presence. USB close releases the interface without sending power-off. FIDO reset is unavailable; applet replacement belongs to a separate desktop provisioning workflow. AAGUID, attestation keys and enterprise allowlists are not daily management controls.
+When the authenticator returns a terminal physical-presence requirement, the session ends. HID KEEPALIVE responses remain part of the current operation. The app does not reconnect with reset or power-cycle the card to satisfy presence. USB close releases the interface without sending power-off. FIDO reset is unavailable; applet replacement belongs to a separate desktop provisioning workflow. AAGUID, attestation keys and enterprise allowlists are not daily management controls.
 
 The Android Credential Provider creates and retrieves ES256 passkeys using the card after explicit confirmation. Enable CardKey through its provider-settings entry. Get uses an interactive system Action; it does not maintain an on-phone credential database. Native app requests require a verified Digital Asset Links association; the initial delegated browser policy accepts Chrome Stable with its pinned release signer. [Provider security, privacy and acceptance](docs/CREDENTIAL-PROVIDER.md)
 
