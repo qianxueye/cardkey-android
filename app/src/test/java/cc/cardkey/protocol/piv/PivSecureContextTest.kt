@@ -106,6 +106,23 @@ class PivSecureContextTest {
         assertEquals(1, card.protectedCommands)
     }
 
+    @Test fun protectedInfoReadsAuthenticateEmptyMetadataCommandsAndReplies() {
+        val card = Peer()
+        val (session, context) = establish(card)
+        val info = PivClient(session, context).readInfo()
+        assertEquals("5.7.0", info.version)
+        assertEquals(0x01020304L, info.serial)
+        assertEquals(ManagementAlgorithm.AES256, info.managementAlgorithm)
+        assertTrue(info.managementDefault)
+        assertEquals(RetryMetadata(true, 5, 4), info.pin)
+        assertEquals(RetryMetadata(false, 5, 3), info.puk)
+        assertEquals(listOf(0xfd, 0xf8, 0xf7, 0xf7, 0xf7),
+            card.commands.filter { it[0] == 0x0c.toByte() }.drop(1).map { it[1].toInt() and 255 })
+        assertEquals(6, card.protectedCommands)
+        assertEquals(0, card.pinTries)
+        assertEquals(Effect.NONE, session.effect)
+    }
+
     @Test fun confirmationAndPairingFailuresNeverSendPin() {
         for (tamper in listOf(true, false)) {
             val card = Peer().apply { badConfirmation = tamper; pairingStatus = 0x6300 }
@@ -428,7 +445,21 @@ class PivSecureContextTest {
                     else { status = pinStatus; if (input.isNotEmpty()) pinTries++ }
                     byteArrayOf()
                 }
-                0xf7 -> metadata()
+                0xfd, 0xf8, 0xf7 -> {
+                    assertTrue(input.isEmpty())
+                    assertEquals(listOf(0x97, 0x8e), fields.keys.toList())
+                    assertArrayEquals(byteArrayOf(0), fields.getValue(0x97))
+                    when (ins) {
+                        0xfd -> byteArrayOf(5, 7, 0)
+                        0xf8 -> "01020304".hexBytes()
+                        else -> when (p2) {
+                            0x9b -> PivTlv.encode(1, byteArrayOf(0x0c)) + PivTlv.encode(5, byteArrayOf(1))
+                            0x80, 0x81 -> PivTlv.encode(5, byteArrayOf(if (p2 == 0x80) 1 else 0)) +
+                                PivTlv.encode(6, byteArrayOf(5, if (p2 == 0x80) 4 else 3))
+                            else -> metadata()
+                        }
+                    }
+                }
                 0x87 -> PivTlv.encode(0x7c, PivTlv.encode(0x82, privateOperation(input)))
                 0xcb -> ByteArray(256) { it.toByte() }
                 else -> error("Unexpected protected command")
