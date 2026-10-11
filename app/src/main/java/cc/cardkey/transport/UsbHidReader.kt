@@ -6,6 +6,7 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.hardware.usb.UsbRequest
+import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.CardChannel
 import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.Dispatch
@@ -16,13 +17,6 @@ object UsbHidReader {
     fun discover(manager: UsbManager): List<UsbReaderDescriptor> = manager.deviceList.values.flatMap { device ->
         (0 until device.interfaceCount).map { device.getInterface(it) }
             .filter { isHid(it) && endpoints(it) != null }
-            .filter { intf ->
-                if (!manager.hasPermission(device)) true
-                else runCatching {
-                    val connection = manager.openDevice(device) ?: return@runCatching false
-                    try { validateDescriptor(connection, intf, 1000); true } finally { connection.close() }
-                }.getOrDefault(false)
-            }
             .map { UsbReaderDescriptor(device, it.id, CardWire.CTAP) }
     }
 
@@ -54,6 +48,7 @@ object UsbHidReader {
                 if (claimed) runCatching { connection.releaseInterface(intf) }
                 connection.close()
             }
+            if (failure is CardFailure) throw failure
             throw TransportException(Dispatch.NOT_DISPATCHED, failure)
         }
     }

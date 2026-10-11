@@ -1,5 +1,8 @@
 package cc.cardkey.transport
 
+import cc.cardkey.protocol.CardSession
+import cc.cardkey.protocol.Effect
+import cc.cardkey.protocol.OperationResult
 import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.Dispatch
@@ -14,6 +17,27 @@ import java.util.concurrent.atomic.AtomicReference
 
 class CtaphidChannelTest {
     private val challenge = ByteArray(8) { (it + 1).toByte() }
+
+    @Test fun busyRejectionPreservesPriorEffectWithoutInventingUnknownWrite() {
+        for (accepted in listOf(false, true)) {
+            val io = FakeIo(init() + frames(0x3f, byteArrayOf(6)))
+            val result = CardSession(ready(io)).run { session ->
+                if (accepted) session.applied()
+                session.exchangeCtap2(byteArrayOf(1), effectful = true)
+            }
+            assertEquals(OperationResult.Failed(FailureCode.BUSY,
+                if (accepted) Effect.APPLIED else Effect.NONE, 6, writeAccepted = accepted), result)
+            assertEquals(2, io.writes.size)
+            assertEquals(1, io.closes)
+        }
+    }
+
+    @Test fun busyAfterProcessingCannotErasePossibleExecution() {
+        val io = FakeIo(init() + frames(0x3b, byteArrayOf(1)) + frames(0x3f, byteArrayOf(6)))
+        val result = CardSession(ready(io)).run { it.exchangeCtap2(byteArrayOf(1), effectful = true) } as OperationResult.Failed
+        assertEquals(Effect.UNKNOWN, result.effect)
+        assertEquals(Dispatch.RESPONSE_UNAVAILABLE, result.dispatch)
+    }
 
     @Test fun initializesFromNonceAndNegotiatedCapabilitiesAndKeepsCid() {
         val io = FakeIo(init() + frames(0x10, byteArrayOf(0, 1)) + frames(3, byteArrayOf(0x90.toByte(), 0)))

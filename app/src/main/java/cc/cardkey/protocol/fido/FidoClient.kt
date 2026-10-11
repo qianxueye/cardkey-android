@@ -76,7 +76,7 @@ class FidoClient(private val session: CardSession) {
         val info = FidoInfo(versions, map[2]?.array()?.map { it.text() }?.toSet() ?: emptySet(), options,
             map[6]?.array()?.map { it.count(255) } ?: emptyList(), map[13]?.count(63) ?: 4,
             map[15]?.count(65535), map)
-        session.setCtap2MaxCommandBytes(map[5]?.count() ?: 1024)
+        session.setCtap2MaxCommandBytes(map[5]?.count(CborCodec.MAX_BYTES) ?: 1024)
         return info
     }
 

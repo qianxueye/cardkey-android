@@ -138,8 +138,8 @@ fun ManagerScreen(
                     }
                     state.readers.forEach { reader ->
                         OutlinedCard(onClick = { if (!state.busy) onReader(reader) }, Modifier.fillMaxWidth()) {
-                            ListItem(headlineContent = { Text(reader.device.productName ?: if (reader.wire == CardWire.CTAP) "USB HID" else "USB CCID") },
-                                supportingContent = { Text("${if (reader.wire == CardWire.CTAP) "USB HID" else "USB CCID"} · %04x:%04x".format(reader.device.vendorId, reader.device.productId)) },
+                            ListItem(headlineContent = { Text(reader.device.productName ?: "USB") },
+                                supportingContent = { Text("USB · %04x:%04x".format(reader.device.vendorId, reader.device.productId)) },
                                 trailingContent = { RadioButton(!state.nfc && state.selectedReader?.routeKey == reader.routeKey, onClick = null) })
                         }
                     }

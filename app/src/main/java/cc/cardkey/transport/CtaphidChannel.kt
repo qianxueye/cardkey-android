@@ -42,6 +42,7 @@ internal class CtaphidChannel(
     private var cid = BROADCAST_CID
     private var deadline = 0L
     private var dispatched = false
+    private var processingObserved = false
 
     init { require(timeoutMillis in 1..60000) }
 
@@ -115,6 +116,7 @@ internal class CtaphidChannel(
     private fun <T> transaction(command: Int, block: () -> T): T {
         deadline = nanoTime() + timeoutMillis * 1_000_000L
         dispatched = false
+        processingObserved = false
         try {
             ensureAvailable()
             return block()
@@ -124,6 +126,7 @@ internal class CtaphidChannel(
                 try { runCatching { io.sendCancel(cancel, 1000) } } finally { cancel.fill(0) }
             }
             close()
+            if (failure is CardFailure && failure.code == FailureCode.BUSY && !cancelled.get()) throw failure
             throw TransportException(if (dispatched) Dispatch.RESPONSE_UNAVAILABLE else Dispatch.NOT_DISPATCHED,
                 failure, cancelled.get())
         } finally { reportUserPresence(false) }
@@ -162,11 +165,13 @@ internal class CtaphidChannel(
                 require(length <= MAX_MESSAGE_BYTES)
                 if (receivedCommand == KEEPALIVE) {
                     require(command != INIT && length == 1 && u8(report[7]) in 1..2)
+                    processingObserved = true
                     reportUserPresence(u8(report[7]) == 2)
                     continue
                 }
                 if (receivedCommand == ERROR) {
                     require(length == 1)
+                    if (u8(report[7]) == 6 && !processingObserved) throw CardFailure(FailureCode.BUSY, 6)
                     throw IOException("CTAPHID error ${u8(report[7])}")
                 }
                 require(receivedCommand == command)

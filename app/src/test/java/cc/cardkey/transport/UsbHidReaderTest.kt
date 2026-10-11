@@ -57,15 +57,14 @@ class UsbHidReaderTest {
         assertEquals(0, DescriptorConnection.claims)
     }
 
-    @Test fun permittedDiscoveryRequiresActualFidoUsageAndClosesInspectionConnection() {
+    @Test fun permittedDiscoveryNeverOpensOrReadsDeviceOnUiThread() {
         shadowOf(manager).addOrUpdateUsbDevice(device(), true)
         assertEquals(1, UsbHidReader.discover(manager).size)
-        assertEquals(1, DescriptorConnection.rawReads)
-        assertEquals(1, DescriptorConnection.closes)
-        assertEquals(0, DescriptorConnection.claims)
         DescriptorConnection.report[1] = 1
-        assertTrue(UsbHidReader.discover(manager).isEmpty())
-        assertEquals(2, DescriptorConnection.closes)
+        assertEquals(1, UsbHidReader.discover(manager).size)
+        assertEquals(0, DescriptorConnection.rawReads)
+        assertEquals(0, DescriptorConnection.closes)
+        assertEquals(0, DescriptorConnection.claims)
     }
 
     @Test fun connectRevalidatesFidoUsageBeforeClaimOrInitAndRejectsTruncatedDescriptor() {
@@ -79,7 +78,7 @@ class UsbHidReaderTest {
             catch (failure: TransportException) { assertEquals(Dispatch.NOT_DISPATCHED, failure.dispatch) }
             assertEquals(0, DescriptorConnection.claims)
         }
-        assertEquals(3, DescriptorConnection.closes)
+        assertEquals(2, DescriptorConnection.closes)
     }
 
     @Test fun discoveryRejectsNonInterruptWrongSizeDuplicateDirectionAndAlternateInterfaces() {

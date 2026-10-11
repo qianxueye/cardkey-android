@@ -9,6 +9,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FidoClientTest {
+    @Test fun getInfoAcceptsMessageLimitsAboveGenericCollectionCount() {
+        for (maximum in listOf(4097, 7609)) {
+            val channel = FidoChannel { _, _ -> success(info(extra = cborMap(5 to maximum.cbor()))) }
+            val result = CardSession(channel).run { FidoClient(it).apply { select() }.getInfo() }
+            assertTrue(result.toString(), result is OperationResult.Completed)
+        }
+    }
+
     @Test fun malformedErrorPayloadCannotProveWriteOutcome() {
         for (wire in CardWire.entries) for (effectful in listOf(false, true)) for (accepted in listOf(false, true)) {
             for (suffix in listOf("ff", "a000", "a101")) {
