@@ -5,12 +5,19 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
+import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.CardChannel
 import cc.cardkey.protocol.Dispatch
 import cc.cardkey.protocol.TransportException
 import java.util.concurrent.atomic.AtomicBoolean
 
-class UsbReaderDescriptor internal constructor(val device: UsbDevice, val interfaceId: Int)
+class UsbReaderDescriptor internal constructor(
+    val device: UsbDevice,
+    val interfaceId: Int,
+    val wire: CardWire = CardWire.APDU,
+) {
+    val routeKey: String = "usb:${device.deviceName.length}:${device.deviceName}:$interfaceId:${wire.name}"
+}
 
 object UsbCcidReader {
     fun discover(manager: UsbManager): List<UsbReaderDescriptor> = manager.deviceList.values
@@ -53,7 +60,7 @@ object UsbCcidReader {
         timeoutMillis: Int,
     ): CcidChannel {
         val device = descriptor.device
-        if (device.vendorId != 0x04e6 || device.productId != 0x5810 ||
+        if (descriptor.wire != CardWire.APDU || device.vendorId != 0x04e6 || device.productId != 0x5810 ||
             !manager.hasPermission(device) || Thread.currentThread().isInterrupted) {
             throw TransportException(Dispatch.NOT_DISPATCHED)
         }
