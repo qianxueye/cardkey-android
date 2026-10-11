@@ -56,7 +56,7 @@ object ConfirmationPolicy {
         ManagerOperation.U2F_INFO, ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT,
     )
 
-    fun resultMessages(result: OperationResult<*>): List<Int> = when (result) {
+    fun resultMessages(result: OperationResult<*>, wire: CardWire = CardWire.APDU): List<Int> = when (result) {
         is OperationResult.Completed -> listOf(R.string.operation_completed)
         is OperationResult.Failed -> {
             val effect = when {

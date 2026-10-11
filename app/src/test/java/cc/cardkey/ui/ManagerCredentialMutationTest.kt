@@ -4,8 +4,15 @@ import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.Parameterized
 
-class ManagerCredentialMutationTest {
+@RunWith(Parameterized::class)
+class ManagerCredentialMutationTest(private val wire: CardWire) {
+    companion object {
+        @JvmStatic @Parameterized.Parameters(name = "{0}")
+        fun wires() = CardWire.entries.map { arrayOf(it) }
+    }
     private val id = byteArrayOf(7)
     private val userId = byteArrayOf(8, 9)
     private val rpHash = sha256("example.test".toByteArray())
@@ -17,10 +24,10 @@ class ManagerCredentialMutationTest {
         var user: Cbor.Map? = null
         var readbackUser: Cbor.Map? = null
         var writes = 0
-        lateinit var channel: FidoChannel
+        lateinit var channel: ManagerTestChannel
     }
 
-    private fun channel(card: Card): FidoChannel = FidoChannel { code, map -> when (code) {
+    private fun channel(card: Card): ManagerTestChannel = ManagerTestChannel(wire) { code, map -> when (code) {
             4 -> success(info(mapOf("pinUvAuthToken" to true, "credMgmt" to true)))
             6 -> card.server.respond(map!!, 4, null)
             10 -> when (map!![1].number().toInt()) {

@@ -77,10 +77,13 @@ fun ManagerScreen(
         ManagerOperation.PIV_IMPORT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE))
     SideEffect { onSecureChange(secretForm || secretResult || state.lastRetry != null) }
     LaunchedEffect(state.result) { showSecrets = false; showSecretConfirmation = false; exportConfirmation = null }
-    LaunchedEffect(clearInputs, operation) {
+    LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc) {
         pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""; invalid = false
         confirmation?.close(); confirmation = null
         showSecrets = false; showSecretConfirmation = false; exportConfirmation = null
+    }
+    LaunchedEffect(state.supportsPiv) {
+        if (!state.supportsPiv && tab == 1) { tab = 0; operation = ManagerOperation.FIDO_INFO }
     }
     DisposableEffect(Unit) { onDispose { confirmation?.close() } }
     confirmation?.let { input ->
@@ -115,7 +118,7 @@ fun ManagerScreen(
         bottomBar = {
             NavigationBar {
                 listOf("FIDO2", "PIV", "读卡器").forEachIndexed { index, title ->
-                    NavigationBarItem(selected = tab == index, onClick = {
+                    NavigationBarItem(selected = tab == index, enabled = index != 1 || state.supportsPiv, onClick = {
                         tab = index
                         if (index < 2) operation = if (index == 0) ManagerOperation.FIDO_INFO else ManagerOperation.PIV_INFO
                     }, icon = { Text(if (index == 0) "F" else if (index == 1) "P" else "↔") }, label = { Text(title) })
@@ -135,9 +138,9 @@ fun ManagerScreen(
                     }
                     state.readers.forEach { reader ->
                         OutlinedCard(onClick = { if (!state.busy) onReader(reader) }, Modifier.fillMaxWidth()) {
-                            ListItem(headlineContent = { Text(reader.device.productName ?: "USB CCID") },
-                                supportingContent = { Text("USB · %04x:%04x".format(reader.device.vendorId, reader.device.productId)) },
-                                trailingContent = { RadioButton(!state.nfc && state.selectedReader?.device?.deviceName == reader.device.deviceName, onClick = null) })
+                            ListItem(headlineContent = { Text(reader.device.productName ?: if (reader.wire == CardWire.CTAP) "USB HID" else "USB CCID") },
+                                supportingContent = { Text("${if (reader.wire == CardWire.CTAP) "USB HID" else "USB CCID"} · %04x:%04x".format(reader.device.vendorId, reader.device.productId)) },
+                                trailingContent = { RadioButton(!state.nfc && state.selectedReader?.routeKey == reader.routeKey, onClick = null) })
                         }
                     }
                     OutlinedButton(onClick = onRefresh, enabled = !state.busy) { Text("读取") }
@@ -244,7 +247,7 @@ fun ManagerScreen(
                                 if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                 else confirmation = PendingOperation(input)
                             } catch (_: IllegalArgumentException) { invalid = true }
-                        }, enabled = !state.busy && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
+                        }, enabled = !state.busy && (!op.piv || state.supportsPiv) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
                         if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
                     }
                 }
@@ -278,7 +281,7 @@ fun ManagerScreen(
                     is OperationResult.Failed -> {
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
-                                ConfirmationPolicy.resultMessages(result).forEach {
+                                ConfirmationPolicy.resultMessages(result, state.resultWire).forEach {
                                     Text(stringResource(it), color = MaterialTheme.colorScheme.error)
                                 }
                                 result.status?.let { Text("0x%04X".format(it)) }

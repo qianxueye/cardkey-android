@@ -113,4 +113,48 @@ class ManagerOperationsTest {
         assertTrue(input.pin.all { it == '\u0000' })
         assertTrue(input.newPin.all { it == '\u0000' })
     }
+    @Test fun everyPivOperationRejectsTypedCtapBeforeAnyCommand() {
+        for (operation in ManagerOperation.entries.filter { it.piv }) {
+            val channel = ManagerTestChannel(CardWire.CTAP) { _, _ -> error("PIV sent CTAP") }
+            val result = CardSession(channel).run { ManagerOperations().execute(it, OperationInput(operation)) }
+            assertEquals(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE), result)
+            assertTrue(channel.commands.isEmpty())
+            assertTrue(channel.closed)
+        }
+    }
+
+    @Test fun typedPinSetAndChangeAuthenticateEncryptedPayloadAndRetireInputs() {
+        for (version in 1..2) for (changing in listOf(false, true)) {
+            val server = FidoClientTest.PinServer(version)
+            var writes = 0
+            val channel = ManagerTestChannel(CardWire.CTAP) { code, parameters -> when (code) {
+                4 -> success(info(mapOf("clientPin" to changing), protocols = listOf(version)))
+                6 -> if (parameters!![2].number() == 2L) success(cborMap(1 to server.cose)) else {
+                    writes++
+                    assertEquals(if (changing) 4L else 3L, parameters[2].number())
+                    val key = server.keyFor(parameters[3].map())
+                    try {
+                        val encrypted = parameters[5].bytes()
+                        val old = parameters[6]?.bytes()
+                        assertArrayEquals("5678".toByteArray().copyOf(64), PinProtocol.decrypt(version, key, encrypted))
+                        if (changing) assertArrayEquals(sha256("1234".toByteArray()).copyOf(16), PinProtocol.decrypt(version, key, old!!))
+                        else assertNull(old)
+                        assertArrayEquals(PinProtocol.authenticate(version, key, encrypted + (old ?: byteArrayOf())), parameters[4].bytes())
+                    } finally { key.fill(0) }
+                    success()
+                }
+                else -> error("Unexpected command")
+            } }
+            val input = OperationInput(if (changing) ManagerOperation.FIDO_CHANGE_PIN else ManagerOperation.FIDO_SET_PIN,
+                pin = "1234".toCharArray(), newPin = "5678".toCharArray())
+            val result = input.use { CardSession(channel).run { ManagerOperations().execute(it, input) } }
+            assertEquals(Effect.APPLIED, (result as OperationResult.Completed).effect)
+            assertEquals(listOf(4, 6, 6), channel.commands.map { it.first })
+            assertEquals(1, writes)
+            assertArrayEquals(CharArray(4), input.pin)
+            assertArrayEquals(CharArray(4), input.newPin)
+            assertTrue(channel.closed)
+        }
+    }
+
 }

@@ -1,6 +1,11 @@
 package cc.cardkey.ui
 
 import android.nfc.NfcAdapter
+import android.hardware.usb.UsbDevice
+import cc.cardkey.transport.UsbReaderDescriptor
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.util.ReflectionHelpers
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
 import kotlinx.coroutines.Dispatchers
@@ -92,6 +97,7 @@ class ManagerViewModelTest {
         } }
         val channel = object : CardChannel by delegate {
             override fun close() { released.countDown(); delegate.close() }
+            override fun cancel() = close()
         }
         val input = OperationInput(ManagerOperation.FIDO_DELETE, pin = "9999".toCharArray(), text = "01")
         val run = ManagerViewModel::class.java.getDeclaredMethod("run", OperationInput::class.java, Function0::class.java)
@@ -137,6 +143,145 @@ class ManagerViewModelTest {
         assertArrayEquals(ByteArray(3), plaintext)
         assertArrayEquals(byteArrayOf(9, 8, 7), authorizedExport.export)
         authorizedExport.export!!.fill(0)
+    }
+
+    private fun reader(name: String, wire: CardWire, interfaceId: Int = 0): UsbReaderDescriptor {
+        val device = Shadow.newInstanceOf(UsbDevice::class.java)
+        ReflectionHelpers.setField(device, "mName", name)
+        return UsbReaderDescriptor(device, interfaceId, wire)
+    }
+
+    private fun outcome(model: ManagerViewModel, route: String, wire: CardWire,
+        operation: ManagerOperation, result: OperationResult<ManagerReport>) {
+        ReflectionHelpers.setField(model, "operationRoute", route)
+        ReflectionHelpers.setField(model, "operationWire", wire)
+        val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+        state.value = state.value.copy(operation = operation)
+        val finish = ManagerViewModel::class.java.getDeclaredMethod("finish", OperationResult::class.java)
+        finish.isAccessible = true
+        finish.invoke(model, result)
+    }
+
+    @Test fun hidSelectionRejectsEveryPivOperationBeforeUsbPermissionOrIo() {
+        val model = ManagerViewModel(application)
+        model.selectReader(reader("hid", CardWire.CTAP))
+        assertFalse(model.state.value.supportsPiv)
+        ManagerOperation.entries.filter { it.piv }.forEach { operation ->
+            val input = OperationInput(operation, pin = "123456".toCharArray())
+            model.submit(input)
+            assertEquals(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED), model.state.value.result)
+            assertArrayEquals(CharArray(6), input.pin)
+            assertFalse(model.state.value.busy)
+        }
+        model.selectReader(null)
+        assertTrue(model.state.value.supportsPiv)
+    }
+
+    @Test fun apduRecoveryCanOnlyBeClearedByInspectionOnItsOriginalRoute() {
+        val model = ManagerViewModel(application)
+        val failed = OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN, dispatch = Dispatch.RESPONSE_UNAVAILABLE)
+        val inspected = OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE)
+        outcome(model, "reader-one", CardWire.APDU, ManagerOperation.FIDO_DELETE, failed)
+        assertTrue(model.state.value.requiresInspection)
+        outcome(model, "reader-two", CardWire.APDU, ManagerOperation.FIDO_INFO, inspected)
+        assertTrue(model.state.value.requiresInspection)
+        outcome(model, "nfc", CardWire.APDU, ManagerOperation.FIDO_INFO, inspected)
+        assertTrue(model.state.value.requiresInspection)
+        outcome(model, "reader-one", CardWire.APDU, ManagerOperation.FIDO_INFO, inspected)
+        assertFalse(model.state.value.requiresInspection)
+    }
+
+    @Test fun hidUnknownAndAcceptedWriteFencesSurviveEveryRoutineInspectionAndSelectionChange() {
+        for (effect in listOf(Effect.UNKNOWN, Effect.APPLIED)) {
+            val model = ManagerViewModel(application)
+            val selected = reader("hid", CardWire.CTAP)
+            model.selectReader(selected)
+            outcome(model, selected.routeKey, CardWire.CTAP, ManagerOperation.FIDO_DELETE,
+                OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, effect,
+                    dispatch = Dispatch.RESPONSE_UNAVAILABLE, writeAccepted = effect == Effect.APPLIED))
+            for (operation in ManagerOperation.entries.filter(ConfirmationPolicy::canInspect)) {
+                outcome(model, selected.routeKey, CardWire.CTAP, operation,
+                    OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE))
+                assertTrue(model.state.value.requiresInspection)
+            }
+            model.selectReader(null)
+            outcome(model, "nfc", CardWire.APDU, ManagerOperation.FIDO_INFO,
+                OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE))
+            model.selectReader(selected)
+            val input = OperationInput(ManagerOperation.FIDO_DELETE, pin = "1234".toCharArray())
+            model.submit(input)
+            assertTrue(model.state.value.requiresInspection)
+            assertFalse(model.state.value.busy)
+            assertArrayEquals(CharArray(4), input.pin)
+        }
+    }
+
+    @Test fun hidPresenceFailureDoesNotInstallCcidRemovalFence() {
+        val model = ManagerViewModel(application)
+        val selected = reader("hid-presence", CardWire.CTAP)
+        model.selectReader(selected)
+        val channel = ManagerTestChannel(CardWire.CTAP) { _, _ -> byteArrayOf(0x3b) }
+        val run = ManagerViewModel::class.java.getDeclaredMethod("run", OperationInput::class.java, Function0::class.java)
+        run.isAccessible = true
+        run.invoke(model, OperationInput(ManagerOperation.FIDO_INFO), { channel })
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (model.state.value.result == null && System.nanoTime() < deadline) Thread.sleep(5)
+        assertEquals(FailureCode.PHYSICAL_ACTION_REQUIRED, (model.state.value.result as OperationResult.Failed).code)
+        assertFalse(CardOperationGate.isRemovalRequired(selected.routeKey))
+        assertNull(ReflectionHelpers.getField<Any?>(model, "presenceWatch"))
+        assertTrue(channel.closed)
+        CardOperationGate.tryAcquire()!!.close()
+    }
+
+    @Test fun failureDuringInspectionOnAnotherRouteCannotBeClearedByFirstRoute() {
+        for (secondWire in CardWire.entries) {
+            val model = ManagerViewModel(application)
+            val failed = OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN, dispatch = Dispatch.RESPONSE_UNAVAILABLE)
+            outcome(model, "original", CardWire.APDU, ManagerOperation.FIDO_DELETE, failed)
+            outcome(model, "other", secondWire, ManagerOperation.FIDO_CAPACITY, failed)
+            for (route in listOf("original", "other")) {
+                outcome(model, route, CardWire.APDU, ManagerOperation.FIDO_INFO,
+                    OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE))
+                assertTrue(model.state.value.requiresInspection)
+            }
+        }
+    }
+
+    @Test fun cancelledLateAcceptedWriteKeepsLeaseUntilReplyAndCannotPublishSuccess() {
+        val model = ManagerViewModel(application)
+        val server = FidoClientTest.PinServer(2)
+        val dispatched = CountDownLatch(1)
+        val cancelled = CountDownLatch(1)
+        val released = CountDownLatch(1)
+        val delegate = FidoChannel { code, parameters -> when (code) {
+            4 -> success(info(mapOf("clientPin" to false)))
+            6 -> if (parameters!![2].number() == 2L) success(cborMap(1 to server.cose)) else {
+                dispatched.countDown()
+                check(released.await(5, TimeUnit.SECONDS))
+                success()
+            }
+            else -> error("Unexpected command")
+        } }
+        val channel = object : CardChannel by delegate {
+            override fun cancel() { cancelled.countDown() }
+        }
+        val input = OperationInput(ManagerOperation.FIDO_SET_PIN, newPin = "5678".toCharArray())
+        val run = ManagerViewModel::class.java.getDeclaredMethod("run", OperationInput::class.java, Function0::class.java)
+        run.isAccessible = true
+        run.invoke(model, input, { channel })
+        try {
+            assertTrue(dispatched.await(5, TimeUnit.SECONDS))
+            model.cancel()
+            assertTrue(cancelled.await(5, TimeUnit.SECONDS))
+            assertNull(CardOperationGate.tryAcquire())
+        } finally { released.countDown() }
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (model.state.value.result == null && System.nanoTime() < deadline) Thread.sleep(5)
+        assertEquals(OperationResult.Failed(FailureCode.CANCELLED, Effect.APPLIED, writeAccepted = true), model.state.value.result)
+        assertTrue(model.state.value.requiresInspection)
+        assertArrayEquals(CharArray(4), input.newPin)
+        assertTrue(delegate.closed)
+        CardOperationGate.tryAcquire()!!.close()
     }
 
 }

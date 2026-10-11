@@ -31,7 +31,10 @@ data class ManagerState(
     val requiresInspection: Boolean = false,
     val operation: ManagerOperation? = null,
     val permissionPending: Boolean = false,
-)
+    val resultWire: CardWire = CardWire.APDU,
+) {
+    val supportsPiv get() = nfc || selectedReader?.wire != CardWire.CTAP
+}
 
 class ManagerViewModel(application: Application) : AndroidViewModel(application) {
     private val usb = application.getSystemService(UsbManager::class.java)
@@ -45,23 +48,27 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val currentChannel = AtomicReference<CancellableCardChannel?>(null)
     private var retryApproval: CompletableDeferred<Boolean>? = null
     private var presenceWatch: Job? = null
+    private var operationRoute = "nfc"
+    private var operationWire = CardWire.APDU
+    private var recoveryRoute: String? = null
+    private var recoveryWire: CardWire? = null
 
     fun refreshReaders() {
-        val readers = UsbCcidReader.discover(usb)
+        val readers = UsbAuthenticatorReader.discover(usb)
         val selected = mutable.value.selectedReader?.let { prior -> readers.firstOrNull {
-            it.device.deviceName == prior.device.deviceName && it.interfaceId == prior.interfaceId
+            it.routeKey == prior.routeKey
         } }
         if (mutable.value.selectedReader != null && selected == null) cancel()
-        if (presenceBlockedReader != null && readers.none { it.device.deviceName == presenceBlockedReader }) {
+        if (presenceBlockedReader != null && readers.none { it.routeKey == presenceBlockedReader }) {
             CardOperationGate.observedRemoval(requireNotNull(presenceBlockedReader))
             presenceBlockedReader = null
         }
         if (presenceBlockedReader == null) presenceBlockedReader = readers.firstOrNull {
-            CardOperationGate.isRemovalRequired(it.device.deviceName)
-        }?.device?.deviceName
+            it.wire == CardWire.APDU && CardOperationGate.isRemovalRequired(it.routeKey)
+        }?.routeKey
         mutable.value = mutable.value.copy(readers = readers, selectedReader = selected)
         if (presenceBlockedReader != null && presenceWatch?.isActive != true)
-            readers.firstOrNull { it.device.deviceName == presenceBlockedReader }?.let(::observeCardRemoval)
+            readers.firstOrNull { it.wire == CardWire.APDU && it.routeKey == presenceBlockedReader }?.let(::observeCardRemoval)
     }
 
     fun selectReader(reader: UsbReaderDescriptor?) {
@@ -77,8 +84,15 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             input.close(); return
         }
         cancelled = false
+        operationRoute = mutable.value.selectedReader?.routeKey ?: "nfc"
+        operationWire = mutable.value.selectedReader?.wire ?: CardWire.APDU
         retireResult()
-        mutable.value = mutable.value.copy(busy = true, result = null, operation = input.operation)
+        mutable.value = mutable.value.copy(busy = true, result = null, operation = input.operation, resultWire = operationWire)
+        if (input.operation.piv && !mutable.value.supportsPiv) {
+            input.close()
+            finish(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED))
+            return
+        }
         if (mutable.value.nfc) {
             pending = input
             mutable.value = mutable.value.copy(awaitingNfc = true)
@@ -90,12 +104,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 finish(OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.NONE))
                 return
             }
-            if (reader.device.deviceName == presenceBlockedReader || CardOperationGate.isRemovalRequired(reader.device.deviceName)) {
+            if (reader.wire == CardWire.APDU && (reader.routeKey == presenceBlockedReader || CardOperationGate.isRemovalRequired(reader.routeKey))) {
                 input.close()
                 finish(OperationResult.Failed(FailureCode.PHYSICAL_ACTION_REQUIRED, Effect.NONE))
                 return
             }
-            run(input) { UsbCcidReader.connect(usb, reader, allowInitialPowerOn = true) }
+            run(input) { UsbAuthenticatorReader.connect(usb, reader, allowInitialPowerOn = true) }
         }
     }
 
@@ -123,7 +137,9 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     private fun run(input: OperationInput, connect: () -> CardChannel) {
         inProgress = true
+        val reader = mutable.value.selectedReader
         viewModelScope.launch {
+            var writeAccepted = false
             val result = withContext(Dispatchers.IO) {
                 try {
                     if (cancelled) OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
@@ -137,6 +153,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                                 channel.close()
                                 OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                             } else CardSession(channel).use sessionUse@ { session ->
+                                if (input.operation.piv && session.wire == CardWire.CTAP)
+                                    return@sessionUse OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                                 if (ConfirmationPolicy.pivVerificationReference(input.operation) != null) {
                                     session.requireContact()
                                     val before = PivClient(session).readInfo()
@@ -161,8 +179,9 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                                 }
                                 if (cancelled) OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
                                 else session.run { operations.execute(it, input) }.also { outcome ->
-                                    if (outcome is OperationResult.Failed && outcome.code == FailureCode.PHYSICAL_ACTION_REQUIRED)
-                                        mutable.value.selectedReader?.device?.deviceName?.let(CardOperationGate::requireRemoval)
+                                    writeAccepted = session.hasAcceptedWrite
+                                    if (reader?.wire == CardWire.APDU && outcome is OperationResult.Failed && outcome.code == FailureCode.PHYSICAL_ACTION_REQUIRED)
+                                        CardOperationGate.requireRemoval(reader.routeKey)
                                 }
                             }
                         }
@@ -176,10 +195,10 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 } finally { currentChannel.set(null); input.close() }
             }
             inProgress = false
-            if (result is OperationResult.Failed && result.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
-                presenceBlockedReader = mutable.value.selectedReader?.device?.deviceName
+            if (reader?.wire == CardWire.APDU && result is OperationResult.Failed && result.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
+                presenceBlockedReader = reader.routeKey
                 presenceBlockedReader?.let(CardOperationGate::requireRemoval)
-                mutable.value.selectedReader?.let(::observeCardRemoval)
+                observeCardRemoval(reader)
             }
             if (cancelled) {
                 operations.clearSession()
@@ -188,8 +207,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     if (report.protectedExport) report.export?.fill(0)
                 }
             }
-            finish(if (cancelled && result is OperationResult.Completed) result.copy(value = result.value.copy(
-                secrets = null, export = result.value.export.takeUnless { result.value.protectedExport })) else result)
+            finish(if (cancelled && result is OperationResult.Completed)
+                OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result)
         }
     }
 
@@ -202,11 +221,22 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     private fun finish(result: OperationResult<ManagerReport>) {
         val previous = mutable.value
+        if (result is OperationResult.Failed && (result.effect == Effect.UNKNOWN || result.writeAccepted)) {
+            if (!previous.requiresInspection) {
+                recoveryRoute = operationRoute
+                recoveryWire = operationWire
+            } else {
+                if (recoveryRoute != operationRoute) recoveryRoute = null
+                if (operationWire == CardWire.CTAP) recoveryWire = CardWire.CTAP
+            }
+        }
         val requiresInspection = when {
             result is OperationResult.Failed && (result.effect == Effect.UNKNOWN || result.writeAccepted) -> true
-            result is OperationResult.Completed && previous.operation?.let(ConfirmationPolicy::canInspect) == true -> false
+            result is OperationResult.Completed && recoveryWire != CardWire.CTAP &&
+                recoveryRoute == operationRoute && previous.operation?.let(ConfirmationPolicy::canInspect) == true -> false
             else -> previous.requiresInspection
         }
+        if (!requiresInspection) { recoveryRoute = null; recoveryWire = null }
         retireResult(result)
         mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null,
             result = result, requiresInspection = requiresInspection)
@@ -216,13 +246,14 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun permissionPending(pending: Boolean) { mutable.value = mutable.value.copy(permissionPending = pending) }
 
     private fun observeCardRemoval(reader: UsbReaderDescriptor) {
+        if (reader.wire != CardWire.APDU) return
         presenceWatch?.cancel()
         presenceWatch = viewModelScope.launch {
-            while (presenceBlockedReader == reader.device.deviceName) {
+            while (presenceBlockedReader == reader.routeKey) {
                 val absent = withContext(Dispatchers.IO) {
                     CardOperationGate.tryAcquire()?.use { UsbCcidReader.isCardAbsent(usb, reader) } == true
                 }
-                if (absent) { CardOperationGate.observedRemoval(reader.device.deviceName); presenceBlockedReader = null; break }
+                if (absent) { CardOperationGate.observedRemoval(reader.routeKey); presenceBlockedReader = null; break }
                 delay(750)
             }
         }

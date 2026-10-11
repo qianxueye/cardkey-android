@@ -13,8 +13,15 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.Parameterized
 
-class ManagerFidoVerificationTest {
+@RunWith(Parameterized::class)
+class ManagerFidoVerificationTest(private val wire: CardWire) {
+    companion object {
+        @JvmStatic @Parameterized.Parameters(name = "{0}")
+        fun wires() = CardWire.entries.map { arrayOf(it) }
+    }
     private val manager = ManagerOperations()
     private val pair = KeyPairGenerator.getInstance("EC").run {
         initialize(ECGenParameterSpec("secp256r1")); generateKeyPair()
@@ -38,8 +45,8 @@ class ManagerFidoVerificationTest {
     private fun execute(operation: ManagerOperation, channel: CardChannel) =
         CardSession(channel).run { manager.execute(it, OperationInput(operation)) }
 
-    private fun registration(credentialId: ByteArray = id, valid: Boolean = true, none: Boolean = false, blobKey: ByteArray? = null, enterprise: Int? = null, protection: Int? = null, uvm: Cbor? = null): FidoChannel =
-        FidoChannel { code, parameters -> when (code) {
+    private fun registration(credentialId: ByteArray = id, valid: Boolean = true, none: Boolean = false, blobKey: ByteArray? = null, enterprise: Int? = null, protection: Int? = null, uvm: Cbor? = null): ManagerTestChannel =
+        ManagerTestChannel(wire) { code, parameters -> when (code) {
             4 -> success(info(mapOf("ep" to true, "rk" to true), extensions = listOf("largeBlobKey", "credProtect", "uvm")))
             1 -> {
                 assertEquals(enterprise?.toLong(), parameters!![10]?.number())
@@ -54,7 +61,7 @@ class ManagerFidoVerificationTest {
             else -> error("Unexpected CTAP command $code")
         } }
 
-    private fun assertion(valid: Boolean, counter: Int, uvm: Cbor? = null, credentialBlob: ByteArray? = null): FidoChannel = FidoChannel { code, parameters -> when (code) {
+    private fun assertion(valid: Boolean, counter: Int, uvm: Cbor? = null, credentialBlob: ByteArray? = null): ManagerTestChannel = ManagerTestChannel(wire) { code, parameters -> when (code) {
         4 -> success(info(extensions = listOf("uvm", "credBlob")))
         2 -> {
             assertArrayEquals(id, parameters!![3].array().single().map()["id"].bytes())
@@ -75,31 +82,41 @@ class ManagerFidoVerificationTest {
             2 to auth.cbor(), 3 to sign(auth + params[2].bytes(), valid).cbor(), 7 to returnedKey.cbor()))
     }
 
-    private class U2fChannel(val respond: (ByteArray) -> ByteArray) : CardChannel {
+    private class U2fChannel(override val wire: CardWire, val respond: (ByteArray) -> ByteArray) : CardChannel {
         override val medium = Medium.CONTACT
-        override val maxCommandBytes = 261
+        override val maxCommandBytes = 7609
+        override val supportsCtap1 get() = wire == CardWire.CTAP
         var requests = 0
         var closed = false
         override fun transmit(command: ByteArray): ByteArray {
-            check(!closed)
+            check(!closed && wire == CardWire.APDU)
             if (command[1].toInt() and 255 == 0xa4) return "U2F_V2".toByteArray() + byteArrayOf(0x90.toByte(), 0)
+            requests++
+            return respond(command) + byteArrayOf(0x90.toByte(), 0)
+        }
+        override fun exchangeCtap1(command: ByteArray): ByteArray {
+            check(!closed && wire == CardWire.CTAP)
+            assertEquals(0, command[4].toInt())
+            assertEquals(command.size - 9, ((command[5].toInt() and 255) shl 8) or (command[6].toInt() and 255))
             requests++
             return respond(command) + byteArrayOf(0x90.toByte(), 0)
         }
         override fun close() { closed = true }
     }
-    private fun u2fRegistration(credentialId: ByteArray = id, valid: Boolean = true) = U2fChannel { command ->
+    private fun u2fRegistration(credentialId: ByteArray = id, valid: Boolean = true) = U2fChannel(wire) { command ->
         assertEquals(1, command[1].toInt())
-        val challenge = command.copyOfRange(5, 37)
-        val application = command.copyOfRange(37, 69)
+        val offset = if (wire == CardWire.CTAP) 7 else 5
+        val challenge = command.copyOfRange(offset, offset + 32)
+        val application = command.copyOfRange(offset + 32, offset + 64)
         byteArrayOf(5) + point + byteArrayOf(credentialId.size.toByte()) + credentialId + certificate +
             sign(byteArrayOf(0) + application + challenge + credentialId + point, valid)
     }
-    private fun u2fAssertion(valid: Boolean, counter: Int) = U2fChannel { command ->
+    private fun u2fAssertion(valid: Boolean, counter: Int) = U2fChannel(wire) { command ->
         assertEquals(2, command[1].toInt())
-        assertArrayEquals(id, command.copyOfRange(70, command.size - 1))
+        val offset = if (wire == CardWire.CTAP) 7 else 5
+        assertArrayEquals(id, command.copyOfRange(offset + 65, command.size - if (wire == CardWire.CTAP) 2 else 1))
         val presenceCounter = byteArrayOf(1, 0, 0, 0, counter.toByte())
-        presenceCounter + sign(command.copyOfRange(37, 69) + presenceCounter + command.copyOfRange(5, 37), valid)
+        presenceCounter + sign(command.copyOfRange(offset + 32, offset + 64) + presenceCounter + command.copyOfRange(offset, offset + 32), valid)
     }
     private fun rejected(result: OperationResult<*>) {
         assertEquals(OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, Effect.APPLIED, writeAccepted = true), result)
@@ -140,7 +157,7 @@ class ManagerFidoVerificationTest {
         assertTrue(execute(ManagerOperation.FIDO_ASSERT, assertion(true, 1)) is OperationResult.Completed)
     }
     @Test fun lostRegistrationResponseIsUnknownAndNotRetried() {
-        val channel = FidoChannel { code, _ -> when (code) {
+        val channel = ManagerTestChannel(wire) { code, _ -> when (code) {
             4 -> success(info())
             1 -> throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
             else -> error("Unexpected command")
@@ -171,7 +188,7 @@ class ManagerFidoVerificationTest {
         val input = OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true, makeExtensions = MakeExtensions(largeBlobKey = true))
         CardSession(registration(blobKey = ByteArray(32) { 7 })).run { manager.execute(it, input) }
         val encoded = LargeBlobs.encode(listOf(LargeBlobs.encrypt(ByteArray(32) { 7 }, byteArrayOf())))
-        val channel = FidoChannel { code, params -> when(code) {
+        val channel = ManagerTestChannel(wire) { code, params -> when(code) {
             4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
             2 -> blobProof(params!!)
             12 -> success(cborMap(1 to encoded.cbor()))
@@ -181,7 +198,7 @@ class ManagerFidoVerificationTest {
         assertArrayEquals(byteArrayOf(), result.value.export)
         assertTrue(result.value.protectedExport)
         assertFalse(result.value.toString().contains("export=["))
-        val unused = FidoChannel { code, _ -> check(code == 4); success(info()) }
+        val unused = ManagerTestChannel(wire) { code, _ -> check(code == 4); success(info()) }
         assertEquals(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE), execute(ManagerOperation.FIDO_BLOB_READ, unused))
         assertEquals(listOf(4), unused.commands.map { it.first })
     }
@@ -194,7 +211,7 @@ class ManagerFidoVerificationTest {
 
     @Test fun minimumPinPassesReplacementListAndForcePolicy() {
         var changed = false
-        val channel = FidoChannel { code, params -> when (code) {
+        val channel = ManagerTestChannel(wire) { code, params -> when (code) {
             4 -> success(info(mapOf("setMinPINLength" to true, "authnrCfg" to true), extensions = listOf("minPinLength"),
                 extra = cborMap(13 to (if (changed) 6 else 4).cbor(), 16 to 2.cbor(), 12 to changed.cbor())))
             13 -> {
@@ -211,7 +228,7 @@ class ManagerFidoVerificationTest {
     }
     @Test fun emptyReplacementListIsSentAndLowerPinLengthIsRejected() {
         var writes = 0
-        val channel = FidoChannel { code, params -> when(code) {
+        val channel = ManagerTestChannel(wire) { code, params -> when(code) {
             4 -> success(info(mapOf("setMinPINLength" to true, "authnrCfg" to true), extensions = listOf("minPinLength"),
                 extra = cborMap(16 to 2.cbor())))
             13 -> { assertTrue(params!![2].map()[2].array().isEmpty()); writes++; success() }
@@ -219,7 +236,7 @@ class ManagerFidoVerificationTest {
         } }
         assertTrue(CardSession(channel).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_MIN_PIN, text = "4")) } is OperationResult.Completed)
         assertEquals(1, writes)
-        val lower = FidoChannel { _, _ -> success(info(mapOf("setMinPINLength" to true))) }
+        val lower = ManagerTestChannel(wire) { _, _ -> success(info(mapOf("setMinPINLength" to true))) }
         assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE),
             CardSession(lower).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_MIN_PIN, text = "3")) })
         assertEquals(listOf(4), lower.commands.map { it.first })
@@ -232,7 +249,7 @@ class ManagerFidoVerificationTest {
                     makeExtensions = MakeExtensions(largeBlobKey = true)))
             }
             var stored = LargeBlobs.encode(listOf(LargeBlobs.encrypt(ByteArray(32) { 7 }, byteArrayOf(9))))
-            val channel = FidoChannel { code, params -> when(code) {
+            val channel = ManagerTestChannel(wire) { code, params -> when(code) {
                 4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
                 2 -> blobProof(params!!)
                 12 -> if (params!![1] != null) success(cborMap(1 to stored.cbor())) else {
@@ -263,7 +280,7 @@ class ManagerFidoVerificationTest {
                 manager.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true,
                     makeExtensions = MakeExtensions(largeBlobKey = true)))
             }
-            val channel = FidoChannel { code, params -> when (code) {
+            val channel = ManagerTestChannel(wire) { code, params -> when (code) {
                 4 -> success(info(extensions = listOf("largeBlobKey")))
                 2 -> blobProof(params!!, valid = valid, returnedKey = ByteArray(32) { 8 })
                 else -> error("Unverified card must not receive a blob operation")
@@ -303,7 +320,7 @@ class ManagerFidoVerificationTest {
         var cancelled = false
         val controlled = ManagerOperations { cancelled }
         CardSession(registration()).run { controlled.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER)) }
-        val channel = FidoChannel { code, params -> when(code) {
+        val channel = ManagerTestChannel(wire) { code, params -> when(code) {
             4 -> success(info(extensions = listOf("largeBlobKey")))
             2 -> blobProof(params!!).also { cancelled = true }
             else -> error("Cancelled workflow sent a blob command")
@@ -316,7 +333,7 @@ class ManagerFidoVerificationTest {
         CardSession(registration()).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER)) }
         val initial = LargeBlobs.encode(emptyList())
         var writes = 0
-        val channel = FidoChannel { code, params -> when(code) {
+        val channel = ManagerTestChannel(wire) { code, params -> when(code) {
             4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
             2 -> blobProof(params!!)
             12 -> if (params!![1] != null) success(cborMap(1 to initial.cbor())) else {
@@ -337,7 +354,7 @@ class ManagerFidoVerificationTest {
         for (failWrite in listOf(false, true, false)) {
             CardSession(registration()).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER)) }
             var stored = LargeBlobs.encode(emptyList())
-            val channel = FidoChannel { code, params -> when (code) {
+            val channel = ManagerTestChannel(wire) { code, params -> when (code) {
                 4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
                 2 -> blobProof(params!!)
                 12 -> if (params!![1] != null) success(cborMap(1 to stored.cbor())) else {
@@ -361,7 +378,7 @@ class ManagerFidoVerificationTest {
         for (operation in listOf(ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE)) {
             execute(ManagerOperation.FIDO_REGISTER, registration())
             val server = FidoClientTest.PinServer(2)
-            val channel = FidoChannel { code, params -> when(code) {
+            val channel = ManagerTestChannel(wire) { code, params -> when(code) {
                 4 -> success(info(mapOf("credMgmt" to true, "pinUvAuthToken" to true)))
                 6 -> server.respond(params!!, 4, null)
                 10 -> when(params!![1].number()) {
@@ -386,7 +403,7 @@ class ManagerFidoVerificationTest {
     @Test fun blobKeyMismatchInvalidatesContextBeforeAnotherAttempt() {
         CardSession(registration(blobKey = ByteArray(32) { 7 })).run { manager.execute(it,
             OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true, makeExtensions = MakeExtensions(largeBlobKey = true))) }
-        val first = FidoChannel { code, params -> when(code) {
+        val first = ManagerTestChannel(wire) { code, params -> when(code) {
             4 -> success(info(extensions = listOf("largeBlobKey")))
             2 -> blobProof(params!!, returnedKey = ByteArray(32) { 8 })
             else -> error("Mismatch must not dispatch a blob command")
@@ -394,7 +411,7 @@ class ManagerFidoVerificationTest {
         assertEquals(OperationResult.Failed(FailureCode.AUTHORIZATION_DENIED, Effect.APPLIED, writeAccepted = true),
             execute(ManagerOperation.FIDO_BLOB_READ, first))
         val encoded = LargeBlobs.encode(listOf(LargeBlobs.encrypt(ByteArray(32) { 8 }, byteArrayOf(9))))
-        val next = FidoChannel { code, params -> when(code) {
+        val next = ManagerTestChannel(wire) { code, params -> when(code) {
             4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
             2 -> blobProof(params!!, returnedKey = ByteArray(32) { 8 })
             12 -> success(cborMap(1 to encoded.cbor()))

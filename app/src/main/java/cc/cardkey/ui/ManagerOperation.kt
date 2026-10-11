@@ -103,9 +103,10 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
 
     fun execute(session: CardSession, input: OperationInput): ManagerReport {
         if (input.operation !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) clearSecrets()
+        if (input.operation.piv && session.wire == CardWire.CTAP) throw CardFailure(FailureCode.UNSUPPORTED)
         val fido = FidoClient(session)
         val piv = PivClient(session)
-        if (!input.operation.piv) fido.select()
+        if (!input.operation.piv && input.operation !in setOf(ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT)) fido.select()
         fun empty() = ManagerReport(emptyList())
         return when (input.operation) {
             ManagerOperation.FIDO_INFO -> info(fido.getInfo())
