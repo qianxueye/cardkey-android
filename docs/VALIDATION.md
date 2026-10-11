@@ -125,3 +125,31 @@ The shared FIDO PIN encoder now applies Unicode normalization form C before code
 The genuine red run against unchanged runtime produced seven failures among 12 PIN tests in 1 second. Independent cases cover canonical byte/hash equality, normalized code-point minimum, UTF-8 shrinking to exactly 63 bytes and expansion past that ceiling. The green focused compile/FIDO PIN/client/manager gate passed all 93 selected tests in 4 seconds, with zero failures/errors/skips and 1.761 seconds of summed execution. Both PIN protocols exercise set/change encryption, token hashes, caller-input erasure and uncertain token-response effects. No raw-PIN fallback, dependency, runtime copy, firmware or transport change was introduced; the final APK gate remains deferred.
 
 The CS7 child normally integrated Unicode PIN parent `3a7c323`. The same focused protocol/provider/manager selection passed all 254 cases in 6 seconds (6.12 seconds wall time), with zero failures/errors/skips and 2.889 seconds of summed execution. The preceding 248-case selection is preserved with six additional PIN tests. PIV PIN handling, protected CS7 code, nullable public-key behavior, dependencies and approved runtime copy are unchanged. The final approved-copy parent and release gate remain pending; no APK, device, CI or unchanged private wire gate was run for this checkpoint.
+
+On 2026-10-11, the complete manager review candidate passed `testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest` in one invocation: 29 seconds reported by Gradle, 29.88 seconds wall time. All 137 JVM tests across 21 suites passed with no failures, errors, or skipped tests; summed test execution time was 2.714 seconds. Lint reported zero errors and 11 warnings: nine dependency/tool-version notices, the existing unused Bouncy Castle TLS helper, and the existing base monochrome-icon warning. No gate, lint baseline, or suppression was weakened. Both debug APKs were built; no instrumentation tests, device installation, or physical card acceptance were performed.
+
+The approved six-string Android batch is active. Regression tests require blob overwrite confirmation with and without a PIN, distinct capacity/recovery/rejection reasons, and distinct NFC unavailable/disabled reasons alongside the no-dispatch result.
+
+## Completed approved-parent stack integration
+
+The approved parent has been normally merged through the existing unmerged Android branches. Each stage passed `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --offline --no-watch-fs` independently. The local results are:
+
+| Stage | Verified runtime commit | JVM tests | Summed test seconds | Gate seconds | Lint errors / warnings / hints |
+| --- | --- | ---: | ---: | ---: | --- |
+| PR2 provider | 56217ccc | 196 | 4.275 | 11 | 0 / 14 / 1 |
+| PR3 status copy | 06113684 | 200 | 3.041 | 15 | 0 / 14 / 1 |
+| PR4 signature verification | c92e34c6 | 200 | 2.472 | 18 | 0 / 14 / 1 |
+| PR5 provider extensions | 6ec5268f | 218 | 2.611 | 13 | 0 / 1 / 0 |
+| PR6 FIDO profile | 47db3ea6 | 254 | 3.003 | 9 | 0 / 14 / 1 |
+
+Every stage had zero test failures, errors and skipped tests. Both APK targets compiled at every stage; instrumentation was not executed on a device. No lint baseline, suppression or gate was weakened. The parent raw-key overwrite warning applies to its lower raw-key management stages. PR6 retains the separately approved credential-bound corruption/recovery warning and secret-read/PIN consent. The final PR6 source includes the approved NFC/capacity/recovery/rejection mappings, username-only manager updates, immutable user-ID and same-token readback checks, reusable input ownership, Unicode PIN normalization, private provider outputs and origin verification, and known/unknown cancellation effects.
+
+The final parent-copy integration gate is complete; earlier preparation notes about deferring that gate are historical. Remote publication/checks and physical phone/card/account acceptance remain separate. No private applet source or CAP artifact is needed by these Android gates.
+
+## Final approved-copy CS7 integration
+
+The CS7 child normally merged final FIDO parent `a5fbc712`. The five approved failure reasons are mapped to NFC unavailable/disabled, capacity, recovery and card rejection. The exact credential-bound `confirm_blobWrite` corruption/recovery warning remains in the manager and provider; the lower-stage raw-key warning does not replace it. No enrollment workflow or additional wording was introduced.
+
+The complete `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --offline --no-watch-fs` gate passed in 13 seconds (13.67 seconds wall time). All 289 JVM tests passed with zero failures/errors/skips and 4.867 seconds of summed execution. This retains the 254-test final FIDO parent and 35 additional CS7/PIV/session cases; 49 PIV, 77 provider and 64 manager/UI cases passed. Lint reports zero errors and the same two CS7 warnings: protocol-required AES-ECB IV derivation and the unused Bouncy Castle TLS helper. No baseline, suppression or assertion was weakened. Both APK targets completed successfully.
+
+The PIV protocol/API and constructors are unchanged by this integration. The coordinator's existing private actual-client/app-applet evidence of 54 plus 38 assertions remains applicable and was not rerun. The private adapter, producer source and CAP artifacts are not Android dependencies or CI inputs. Earlier preparation notes deferring the final local release gate are historical; that gate is now complete. Remote candidate checks, publication and physical phone/card/account acceptance remain separate.

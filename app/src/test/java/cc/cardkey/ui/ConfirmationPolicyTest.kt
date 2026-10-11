@@ -7,6 +7,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ConfirmationPolicyTest {
+    @Test fun blobOverwriteAlwaysRequiresConfirmationWithoutPin() {
+        val messages = ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_WRITE))
+        assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead), messages)
+        OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "1234".toCharArray()).use {
+            assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead, R.string.confirm_authenticate), ConfirmationPolicy.messages(it))
+        }
+    }
+
+    @Test fun unavailableNfcReportsTheReasonAndNoDispatch() {
+        for ((code, message) in listOf(FailureCode.NFC_UNAVAILABLE to R.string.error_nfcUnavailable,
+            FailureCode.NFC_DISABLED to R.string.error_nfcDisabled)) {
+            assertEquals(listOf(R.string.operation_notDispatched, message), ConfirmationPolicy.resultMessages(
+                OperationResult.Failed(code, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)))
+        }
+    }
+
+    @Test fun capacityRecoveryAndCardRejectionAreNotUnsupportedAndHaveDistinctReasons() {
+        val messages = listOf(FailureCode.CAPACITY_EXCEEDED, FailureCode.RECOVERY_REQUIRED, FailureCode.CARD_REJECTED).map {
+            ConfirmationPolicy.resultMessages(OperationResult.Failed(it, Effect.NONE)).single()
+        }
+        assertFalse(messages.contains(R.string.error_unsupported))
+        assertEquals(listOf(R.string.error_capacityExceeded, R.string.error_recoveryRequired, R.string.error_cardRejected), messages)
+    }
+
     private fun info(pin: Int, puk: Int, serial: Long = 1) = PivInfo("1.0.0", serial,
         RetryMetadata(false, 3, pin), RetryMetadata(false, 3, puk), ManagementAlgorithm.TDES, false)
 

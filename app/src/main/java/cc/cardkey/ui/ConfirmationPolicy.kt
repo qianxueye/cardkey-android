@@ -77,6 +77,11 @@ object ConfirmationPolicy {
                 FailureCode.INVALID_INPUT -> R.string.error_invalidInput
                 FailureCode.TRANSPORT_FAILURE, FailureCode.BUSY -> R.string.error_transport
                 FailureCode.CANCELLED -> R.string.error_cancelled
+                FailureCode.NFC_UNAVAILABLE -> R.string.error_nfcUnavailable
+                FailureCode.NFC_DISABLED -> R.string.error_nfcDisabled
+                FailureCode.CAPACITY_EXCEEDED -> R.string.error_capacityExceeded
+                FailureCode.RECOVERY_REQUIRED -> R.string.error_recoveryRequired
+                FailureCode.CARD_REJECTED -> R.string.error_cardRejected
                 else -> R.string.error_unsupported
             }
             listOfNotNull(effect, reason).distinct()
