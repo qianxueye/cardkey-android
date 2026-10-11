@@ -62,7 +62,7 @@ object ConfirmationPolicy {
             val effect = when {
                 result.writeAccepted -> R.string.operation_appliedReadbackFailed
                 result.effect == Effect.UNKNOWN && (result.dispatch == Dispatch.RESPONSE_UNAVAILABLE ||
-                    result.code == FailureCode.MALFORMED_RESPONSE) -> R.string.operation_unknown
+                    result.code == FailureCode.MALFORMED_RESPONSE || result.status in setOf(0x7f, 0x6f00, 0x2d)) -> R.string.operation_unknown
                 result.dispatch == Dispatch.NOT_DISPATCHED -> R.string.operation_notDispatched
                 else -> null
             }
@@ -81,7 +81,7 @@ object ConfirmationPolicy {
                 FailureCode.NFC_DISABLED -> R.string.error_nfcDisabled
                 FailureCode.CAPACITY_EXCEEDED -> R.string.error_capacityExceeded
                 FailureCode.RECOVERY_REQUIRED -> R.string.error_recoveryRequired
-                FailureCode.CARD_REJECTED -> R.string.error_cardRejected
+                FailureCode.CARD_REJECTED -> if (result.effect == Effect.UNKNOWN) R.string.error_recoveryRequired else R.string.error_cardRejected
                 else -> R.string.error_unsupported
             }
             listOfNotNull(effect, reason).distinct()

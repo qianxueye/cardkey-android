@@ -1,6 +1,6 @@
 # Android CTAPHID transport
 
-The Manager and Credential Provider can use a USB FIDO authenticator through CTAPHID. CTAP2 requests go directly to the HID CBOR command. U2F requests use the HID MSG command with the standard seven-byte extended APDU header. These paths do not synthesize smart-card SELECT replies, relay pairing tickets, or carry PIV and GlobalPlatform commands. The existing NFC, CCID APDU and CCID T=1 paths remain available.
+The Manager and Credential Provider can use a USB FIDO authenticator through CTAPHID. CTAP2 requests go directly to the HID CBOR command. U2F requests use the HID MSG command and standard extended APDU framing. A nonempty command has a seven-byte header and a two-byte expected-length field; the empty VERSION request is exactly seven bytes (`00 03 00 00 00 00 00`). These paths do not synthesize smart-card SELECT replies, relay pairing tickets, or carry PIV and GlobalPlatform commands. The existing NFC, CCID APDU and CCID T=1 paths remain available.
 
 ## Discovery and connection
 
