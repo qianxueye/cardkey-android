@@ -53,7 +53,6 @@ fun ManagerScreen(
     var newAdminKey by remember { mutableStateOf("") }
     var text by remember { mutableStateOf("") }
     var secondary by remember { mutableStateOf("") }
-    var userId by remember { mutableStateOf("") }
     var enabled by remember { mutableStateOf(false) }
     var extensionNames by remember { mutableStateOf(setOf<String>()) }
     var extensionValue by remember { mutableStateOf("") }
@@ -172,7 +171,6 @@ fun ManagerScreen(
                         OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
                     }
                     if (op == ManagerOperation.FIDO_UPDATE) {
-                        OutlinedTextField(userId, { userId = it }, label = { Text("用户 ID · HEX") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
                     }
                     if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {
@@ -206,7 +204,7 @@ fun ManagerScreen(
                             try {
                                 val input = OperationInput(op, pin.toCharArray(), newPin.toCharArray(), adminKey.hexBytes(), newAdminKey.hexBytes(),
                                     adminAlgorithm, newAdminAlgorithm, slot, algorithm, pinPolicy, text, secondary, enabled,
-                                    if (op == ManagerOperation.FIDO_UPDATE) userId.hexBytes() else imported ?: byteArrayOf(),
+                                    imported ?: byteArrayOf(),
                                     makeExtensions = MakeExtensions(if ("credProtect" in extensionNames) 3 else null,
                                         if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER) extensionValue.hexBytes() else null,
                                         "hmac-secret" in extensionNames, "minPinLength" in extensionNames, "largeBlobKey" in extensionNames),
