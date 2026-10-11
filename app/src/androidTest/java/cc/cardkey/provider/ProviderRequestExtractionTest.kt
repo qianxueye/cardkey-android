@@ -1,6 +1,5 @@
 package cc.cardkey.provider
 
-import android.Manifest
 import android.app.Activity
 import android.app.Application
 import android.content.ComponentName
@@ -8,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import androidx.credentials.CreatePublicKeyCredentialRequest
 import androidx.credentials.GetPublicKeyCredentialOption
 import androidx.credentials.PublicKeyCredential
@@ -100,11 +100,15 @@ class ProviderRequestExtractionTest {
         }
 
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val chromeSigning = try {
-            instrumentation.uiAutomation.adoptShellPermissionIdentity(Manifest.permission.QUERY_ALL_PACKAGES)
-            requireNotNull(context.packageManager.getPackageInfo(CallerVerifier.CHROME_PACKAGE,
-                PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())).signingInfo)
-        } finally { instrumentation.uiAutomation.dropShellPermissionIdentity() }
+        val chromePaths = ParcelFileDescriptor.AutoCloseInputStream(
+            instrumentation.uiAutomation.executeShellCommand("pm path com.android.chrome")
+        ).bufferedReader().use { it.readLines() }
+        val chromeBase = chromePaths.filter { it.startsWith("package:/") && it.endsWith("/base.apk") }
+            .single().removePrefix("package:")
+        val chromeArchive = requireNotNull(context.packageManager.getPackageArchiveInfo(chromeBase,
+            PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())))
+        assertEquals(CallerVerifier.CHROME_PACKAGE, chromeArchive.packageName)
+        val chromeSigning = requireNotNull(chromeArchive.signingInfo)
         val chrome = CallingAppInfo(CallerVerifier.CHROME_PACKAGE, chromeSigning, "https://example.com")
         assertEquals("https://example.com", CallerVerifier.verifiedOrigin(chrome))
         val hash = ByteArray(32) { it.toByte() }
