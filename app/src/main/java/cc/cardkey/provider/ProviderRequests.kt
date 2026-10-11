@@ -30,21 +30,58 @@ internal data class OfferedRequest(
 )
 
 internal class RequestRegistry(private val now: () -> Long = System::nanoTime) {
-    private data class Entry(val request: OfferedRequest, val expires: Long)
+    private enum class State { PENDING, ACTIVE, DISPATCHED }
+    private data class Entry(val request: OfferedRequest, val expires: Long,
+        var state: State = State.PENDING, var claim: Claim? = null)
+    internal class Claim internal constructor(val id: String, val request: OfferedRequest,
+        private val registry: RequestRegistry) {
+        fun reserveTransport(): Boolean = registry.reserve(this)
+        fun finish(cancelled: Boolean) = registry.finish(this, cancelled)
+    }
     private val entries = linkedMapOf<String, Entry>()
 
     @Synchronized fun offer(request: OfferedRequest): String {
-        entries.entries.removeAll { it.value.expires <= now() }
-        check(entries.size < 64)
+        entries.entries.removeAll { it.value.state == State.PENDING && it.value.expires <= now() }
+        if (entries.size >= 64) {
+            val oldest = entries.entries.firstOrNull { it.value.state == State.PENDING }
+            check(oldest != null)
+            entries.remove(oldest.key)
+        }
         return UUID.randomUUID().toString().also {
             entries[it] = Entry(request.copy(hash = request.hash?.copyOf()), now() + 300_000_000_000L)
         }
     }
 
-    @Synchronized fun claim(id: String): OfferedRequest {
-        val entry = entries.remove(id) ?: throw IllegalArgumentException()
-        require(entry.expires > now())
-        return entry.request
+    @Synchronized fun inspect(id: String): OfferedRequest {
+        val entry = entries[id] ?: throw IllegalArgumentException()
+        require(entry.state == State.PENDING && entry.expires > now())
+        return entry.request.copy(hash = entry.request.hash?.copyOf())
+    }
+
+    @Synchronized fun claim(id: String): Claim {
+        val request = inspect(id)
+        return Claim(id, request, this).also {
+            entries.getValue(id).apply { state = State.ACTIVE; claim = it }
+        }
+    }
+
+    @Synchronized private fun reserve(claim: Claim): Boolean {
+        val entry = entries[claim.id] ?: return false
+        if (entry.claim !== claim || entry.state != State.ACTIVE) return false
+        entry.state = State.DISPATCHED
+        return true
+    }
+
+    @Synchronized private fun finish(claim: Claim, cancelled: Boolean): Boolean {
+        val entry = entries[claim.id] ?: return false
+        if (entry.claim !== claim) return false
+        if (cancelled && entry.state == State.ACTIVE && entry.expires > now()) {
+            entry.state = State.PENDING
+            entry.claim = null
+            return true
+        }
+        entries.remove(claim.id)
+        return false
     }
 
     @Synchronized fun discard(id: String) { entries.remove(id) }
@@ -59,7 +96,8 @@ internal object ProviderRequests {
     fun extract(intent: Intent): ExtractedRequest {
         val uri = requireNotNull(intent.data)
         require(uri.scheme == "cardkey-provider" && uri.host == "request" && uri.pathSegments.size == 1)
-        val offered = registry.claim(uri.pathSegments.single())
+        val id = uri.pathSegments.single()
+        val offered = registry.inspect(id)
         val expectedAction = if (offered.kind == ProviderRequestKind.CREATE) ACTION_CREATE else ACTION_GET
         require(intent.action == expectedAction)
         val json: String
@@ -82,7 +120,7 @@ internal object ProviderRequests {
             hash = selected.clientDataHash
         }
         require(json == offered.json && sameHash(hash, offered.hash) && CallerSnapshot.from(caller) == offered.caller)
-        return ExtractedRequest(offered.kind, json, hash, caller)
+        return ExtractedRequest(offered.kind, json, hash, caller, registry.claim(id))
     }
 
     private fun sameHash(first: ByteArray?, second: ByteArray?): Boolean =
@@ -94,4 +132,5 @@ internal data class ExtractedRequest(
     val json: String,
     val hash: ByteArray?,
     val caller: CallingAppInfo,
+    val claim: RequestRegistry.Claim,
 )

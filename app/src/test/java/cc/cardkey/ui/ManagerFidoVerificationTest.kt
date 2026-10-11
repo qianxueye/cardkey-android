@@ -54,12 +54,12 @@ class ManagerFidoVerificationTest {
             else -> error("Unexpected CTAP command $code")
         } }
 
-    private fun assertion(valid: Boolean, counter: Int, uvm: Cbor? = null): FidoChannel = FidoChannel { code, parameters -> when (code) {
-        4 -> success(info(extensions = listOf("uvm")))
+    private fun assertion(valid: Boolean, counter: Int, uvm: Cbor? = null, credentialBlob: ByteArray? = null): FidoChannel = FidoChannel { code, parameters -> when (code) {
+        4 -> success(info(extensions = listOf("uvm", "credBlob")))
         2 -> {
             assertArrayEquals(id, parameters!![3].array().single().map()["id"].bytes())
-            val auth = rpHash + byteArrayOf((if (uvm == null) 1 else 0x81).toByte(), 0, 0, 0, counter.toByte()) +
-                (uvm?.let { CborCodec.encode(textMap("uvm" to it)) } ?: byteArrayOf())
+            val auth = rpHash + byteArrayOf((if (uvm == null && credentialBlob == null) 1 else 0x81).toByte(), 0, 0, 0, counter.toByte()) +
+                (if (uvm != null || credentialBlob != null) CborCodec.encode(textMap("uvm" to uvm, "credBlob" to credentialBlob?.cbor())) else byteArrayOf())
             success(cborMap(1 to textMap("type" to "public-key".cbor(), "id" to id.cbor()),
                 2 to auth.cbor(), 3 to sign(auth + parameters[2].bytes(), valid).cbor()))
         }
@@ -381,6 +381,52 @@ class ManagerFidoVerificationTest {
             assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), execute(ManagerOperation.FIDO_ASSERT, untouched))
             assertTrue(untouched.commands.isEmpty())
         }
+    }
+
+    @Test fun blobKeyMismatchInvalidatesContextBeforeAnotherAttempt() {
+        CardSession(registration(blobKey = ByteArray(32) { 7 })).run { manager.execute(it,
+            OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true, makeExtensions = MakeExtensions(largeBlobKey = true))) }
+        val first = FidoChannel { code, params -> when(code) {
+            4 -> success(info(extensions = listOf("largeBlobKey")))
+            2 -> blobProof(params!!, returnedKey = ByteArray(32) { 8 })
+            else -> error("Mismatch must not dispatch a blob command")
+        } }
+        assertEquals(OperationResult.Failed(FailureCode.AUTHORIZATION_DENIED, Effect.APPLIED, writeAccepted = true),
+            execute(ManagerOperation.FIDO_BLOB_READ, first))
+        val encoded = LargeBlobs.encode(listOf(LargeBlobs.encrypt(ByteArray(32) { 8 }, byteArrayOf(9))))
+        val next = FidoChannel { code, params -> when(code) {
+            4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
+            2 -> blobProof(params!!, returnedKey = ByteArray(32) { 8 })
+            12 -> success(cborMap(1 to encoded.cbor()))
+            else -> error("Unexpected command")
+        } }
+        assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), execute(ManagerOperation.FIDO_BLOB_READ, next))
+        assertTrue(next.commands.isEmpty())
+    }
+    @Test fun credentialBlobIsNeverAutomaticOrdinaryOutputAndFollowsSecretLifecycle() {
+        execute(ManagerOperation.FIDO_REGISTER, registration())
+        val plaintext = byteArrayOf(9, 8, 7, 6)
+        val result = CardSession(assertion(true, 1, credentialBlob = plaintext)).run {
+            manager.execute(it, OperationInput(ManagerOperation.FIDO_ASSERT,
+                assertionExtensions = AssertionExtensions(credentialBlob = true)))
+        } as OperationResult.Completed
+        assertFalse(result.value.rows.any { it.label == "credBlob" || it.value.contains(plaintext.hex()) })
+        assertNull(result.value.export)
+        assertNotNull(result.value.secrets)
+        val secret = result.value.secrets!!.credBlob!!
+        assertArrayEquals(plaintext, secret)
+        assertFalse(result.value.toString().contains(plaintext.hex()))
+        manager.clearSession()
+        assertArrayEquals(ByteArray(plaintext.size), secret)
+    }
+
+    @Test fun invalidCredentialBlobAssertionCannotProduceSecretOutputOrAdvanceContext() {
+        execute(ManagerOperation.FIDO_REGISTER, registration())
+        val channel = assertion(false, 9, credentialBlob = byteArrayOf(9, 8, 7))
+        val result = CardSession(channel).run { manager.execute(it, OperationInput(ManagerOperation.FIDO_ASSERT,
+            assertionExtensions = AssertionExtensions(credentialBlob = true))) }
+        assertEquals(OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, Effect.APPLIED, writeAccepted = true), result)
+        assertTrue(execute(ManagerOperation.FIDO_ASSERT, assertion(true, 1)) is OperationResult.Completed)
     }
 
 }

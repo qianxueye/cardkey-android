@@ -126,4 +126,16 @@ class ConfirmationPolicyTest {
             ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_READ)))
     }
 
+    @Test fun credentialBlobReadRequiresExistingSecretConsent() {
+        assertTrue(ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_ASSERT,
+            assertionExtensions = cc.cardkey.protocol.fido.AssertionExtensions(credentialBlob = true)))
+            .contains(R.string.confirm_secretRead))
+    }
+
+    @Test fun storingCredentialBlobRetainsRegistrationConsentWithoutClaimingSecretRead() {
+        val input = OperationInput(ManagerOperation.FIDO_REGISTER,
+            makeExtensions = cc.cardkey.protocol.fido.MakeExtensions(credentialBlob = byteArrayOf(9)))
+        input.use { assertEquals(listOf(R.string.confirm_registration), ConfirmationPolicy.messages(it)) }
+    }
+
 }

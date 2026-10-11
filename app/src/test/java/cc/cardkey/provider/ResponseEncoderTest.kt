@@ -17,6 +17,7 @@ class ResponseEncoderTest {
     @Test fun assertionEncodesExactClientDataAndSignedBytesWithoutPadding() {
         val result = JsonParser.parseString(ResponseEncoder.get(assertion, client)).asJsonObject
         assertEquals("public-key", result["type"].asString)
+        assertEquals("cross-platform", result["authenticatorAttachment"]?.asString)
         assertEquals(result["id"], result["rawId"])
         assertArrayEquals(id, decode(result["rawId"].asString))
         assertFalse(result["id"].asString.contains('='))
@@ -34,6 +35,7 @@ class ResponseEncoderTest {
         val result = JsonParser.parseString(ResponseEncoder.get(assertion.copy(user = null),
             ClientData(byteArrayOf(), ByteArray(32) { 7 }, true))).asJsonObject
         val response = result["response"].asJsonObject
+        assertEquals("cross-platform", result["authenticatorAttachment"]?.asString)
         assertFalse(response.has("clientDataJSON"))
         assertTrue(response["userHandle"].isJsonNull)
         assertArrayEquals(assertion.signature, decode(response["signature"].asString))
@@ -45,6 +47,8 @@ class ResponseEncoderTest {
         val credential = CreatedCredential(MakeCredentialResult("packed", authData, statement, null, null), id, true)
         val result = JsonParser.parseString(ResponseEncoder.create(credential, client)).asJsonObject
         val response = result["response"].asJsonObject
+        assertEquals("cross-platform", result["authenticatorAttachment"]?.asString)
+        assertEquals(listOf("nfc", "usb"), response["transports"]?.asJsonArray?.map { it.asString })
         assertArrayEquals(json, decode(response["clientDataJSON"].asString))
         val attestation = CborCodec.decode(decode(response["attestationObject"].asString)).map()
         assertEquals("packed", attestation["fmt"].text())
@@ -58,8 +62,10 @@ class ResponseEncoderTest {
         val result = JsonParser.parseString(ResponseEncoder.create(credential,
             ClientData(byteArrayOf(), ByteArray(32) { 8 }, true))).asJsonObject
         val response = result["response"].asJsonObject
+        assertEquals("cross-platform", result["authenticatorAttachment"]?.asString)
         assertFalse(response.has("clientDataJSON"))
         val attestation = CborCodec.decode(decode(response["attestationObject"].asString)).map()
+        assertEquals(listOf("nfc", "usb"), response["transports"]?.asJsonArray?.map { it.asString })
         assertEquals("none", attestation["fmt"].text())
         assertTrue(attestation["attStmt"].map().value.isEmpty())
     }

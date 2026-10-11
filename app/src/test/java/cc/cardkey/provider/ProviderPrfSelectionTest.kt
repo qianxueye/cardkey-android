@@ -175,7 +175,7 @@ class ProviderPrfSelectionTest {
     }
 
     @Test fun preflightMalformedIdentityFlagsExtensionsAndCountAbortBeforeFinalAssertion() {
-        val cases = listOf(response(id = byteArrayOf(3)), response(up = true), response(uv = false),
+        val cases = listOf(response(id = byteArrayOf(3)), response(uv = false),
             response(rpId = "wrong.example"), response(count = 2), response(count = 0),
             response(extensions = textMap("uvm" to true.cbor())),
             Cbor.Map(response().value + cborMap(4 to textMap("id" to byteArrayOf().cbor())).value),
@@ -246,4 +246,38 @@ class ProviderPrfSelectionTest {
         assertEquals("{}", result.extensions.json()["prf"].toString())
         assertTrue(AuthenticatorData.parse(result.assertion.authData).userPresent)
     }
+    @Test fun builtInUvPreflightMaySetPresenceButPinTokenPathMayNot() {
+        for (usePin in listOf(false, true)) {
+            val server = FidoClientTest.PinServer(2)
+            var count = 0
+            val channel = FidoChannel { code, map -> when (code) {
+                4 -> success(info(mapOf("uv" to true, "clientPin" to true, "pinUvAuthToken" to true),
+                    listOf(2), listOf("hmac-secret")))
+                6 -> if (usePin) server.respond(map!!, 2, rp) else success(cborMap(1 to server.cose))
+                2 -> {
+                    count++
+                    if (count == 1) {
+                        assertFalse(map!![5].map()["up"].bool())
+                        if (usePin) { assertNull(map[5].map()["uv"]); assertNotNull(map[6]) }
+                        else { assertTrue(map[5].map()["uv"].bool()); assertNull(map[6]) }
+                        success(response(up = true))
+                    } else {
+                        assertFalse(usePin)
+                        assertTrue(map!![5].map()["up"].bool())
+                        assertArrayEquals(selectedId, parseDescriptor(map[3].array().single()))
+                        val hmac = map[4].map()["hmac-secret"].map()
+                        val shared = server.keyFor(hmac[1].map())
+                        val ext = textMap("hmac-secret" to PinProtocol.encrypt(2, shared, ByteArray(64) { 7 }).cbor())
+                        shared.fill(0)
+                        success(response(up = true, extensions = ext))
+                    }
+                }
+                else -> error("unexpected")
+            } }
+            val result = execute(channel, pin = if (usePin) "1234".toCharArray() else null)
+            if (usePin) { assertTrue(result is OperationResult.Failed); assertEquals(1, count) }
+            else { assertEquals(2, count); (result as OperationResult.Completed).value.single().close() }
+        }
+    }
+
 }

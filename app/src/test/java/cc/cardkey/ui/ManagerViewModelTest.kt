@@ -104,4 +104,39 @@ class ManagerViewModelTest {
         assertEquals(OperationResult.Failed(FailureCode.PIN_INVALID, Effect.APPLIED, 0x31), model.state.value.result)
         assertArrayEquals(CharArray(4), input.pin)
     }
+    private fun show(model: ManagerViewModel, report: ManagerReport) {
+        val finish = ManagerViewModel::class.java.getDeclaredMethod("finish", OperationResult::class.java)
+        finish.isAccessible = true
+        finish.invoke(model, OperationResult.Completed(report, Effect.NONE))
+    }
+    @Test fun everyResultReplacementWipesRetiredProtectedPlaintext() {
+        for (action in listOf("submit", "reader", "replacement")) {
+            shadowOf(NfcAdapter.getDefaultAdapter(application)).setEnabled(true)
+            val model = ManagerViewModel(application)
+            val plaintext = byteArrayOf(9, 8, 7)
+            show(model, ManagerReport(emptyList(), plaintext, protectedExport = true))
+            try {
+                when(action) {
+                    "submit" -> model.submit(OperationInput(ManagerOperation.FIDO_INFO))
+                    "reader" -> model.selectReader(null)
+                    else -> show(model, ManagerReport(emptyList()))
+                }
+                assertArrayEquals(ByteArray(3), plaintext)
+            } finally { model.cancel() }
+        }
+    }
+    @Test fun resultRetirementPreservesTransferredBufferAndAuthorizedExportCopy() {
+        val model = ManagerViewModel(application)
+        val plaintext = byteArrayOf(9, 8, 7)
+        val first = ManagerReport(emptyList(), plaintext, protectedExport = true)
+        val authorizedExport = first.copy(export = plaintext.copyOf())
+        show(model, first)
+        show(model, first.copy(rows = listOf(ResultRow("bytes", "3"))))
+        assertArrayEquals(byteArrayOf(9, 8, 7), plaintext)
+        model.selectReader(null)
+        assertArrayEquals(ByteArray(3), plaintext)
+        assertArrayEquals(byteArrayOf(9, 8, 7), authorizedExport.export)
+        authorizedExport.export!!.fill(0)
+    }
+
 }

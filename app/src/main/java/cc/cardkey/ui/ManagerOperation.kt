@@ -48,8 +48,8 @@ class OperationInput(
 }
 
 data class ResultRow(val label: String, val value: String)
-class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?) : AutoCloseable {
-    override fun close() { hmac?.fill(0); blobKey?.fill(0) }
+class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob: ByteArray? = null) : AutoCloseable {
+    override fun close() { hmac?.fill(0); blobKey?.fill(0); credBlob?.fill(0) }
 }
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
     val secrets: SecretOutputs? = null, val protectedExport: Boolean = false) {
@@ -65,13 +65,14 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
 
     fun clearSecrets() { blobKey?.fill(0); blobKey = null; secrets?.close(); secrets = null }
     fun clearSession() { clearSecrets(); diagnosticCredential = null; u2fCredential = null; u2fCounter = null }
-    private fun retainSecrets(hmac: ByteArray?, key: ByteArray?): SecretOutputs? {
+    private fun retainSecrets(hmac: ByteArray?, key: ByteArray?, credBlob: ByteArray? = null): SecretOutputs? {
         clearSecrets()
         blobKey = key?.copyOf()
-        return if (hmac != null || key != null) SecretOutputs(hmac?.copyOf(), key?.copyOf()).also { secrets = it } else null
+        return if (hmac != null || key != null || credBlob != null) SecretOutputs(hmac?.copyOf(), key?.copyOf(), credBlob?.copyOf()).also { secrets = it } else null
     }
     private fun verifiedBlobKey(fido: FidoClient, input: OperationInput): ByteArray {
         val proof = diagnosticCredential ?: throw CardFailure(FailureCode.INVALID_INPUT)
+        diagnosticCredential = null
         val expected = blobKey?.copyOf()
         clearSecrets()
         val hash = ByteArray(32).also(SecureRandom()::nextBytes)
@@ -91,8 +92,8 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             val fresh = result.largeBlobKey ?: throw CardFailure(FailureCode.MALFORMED_RESPONSE)
             if (expected != null && !java.security.MessageDigest.isEqual(expected, fresh))
                 throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
-            diagnosticCredential = proof.copy(counter = verified.counter)
             if (cancelled()) throw CardFailure(FailureCode.CANCELLED)
+            diagnosticCredential = proof.copy(counter = verified.counter)
             return fresh.copyOf()
         } finally {
             expected?.fill(0)
@@ -110,7 +111,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.FIDO_INFO -> info(fido.getInfo())
             ManagerOperation.FIDO_RETRIES -> fido.retries().let {
                 ManagerReport(listOf(ResultRow("PIN 剩余重试次数", "${it.pin} 次")) +
-                    listOfNotNull(it.uv?.let { count -> ResultRow("UV", count.toString()) },
+                    listOfNotNull(it.uv?.let { count -> ResultRow("UV 剩余重试次数", "$count 次") },
                         it.powerCycleState?.takeIf { required -> required }?.let {
                             ResultRow("", "请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。")
                         }))
@@ -211,7 +212,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             try {
                 val proof = FidoDiagnostics.verifyRegistration(result, rpId, hash, requireUv = pin != null)
                 if (proof.signatureValid == false) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
-                val extensionRows = publicExtensions(result.authData, input.makeExtensions.uvm)
+                val extensionRows = publicExtensions(AuthenticatorData.parse(result.authData), input.makeExtensions.uvm)
                 diagnosticCredential = proof
                 return ManagerReport(listOf(ResultRow("RP", rpId), ResultRow("凭据 ID", proof.credentialId.hex()),
                     ResultRow("证明", proof.kind.name), ResultRow("计数", proof.counter.toString())) +
@@ -221,27 +222,33 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
         val proof = diagnosticCredential ?: throw CardFailure(FailureCode.INVALID_INPUT)
         val results = fido.getAssertion(GetAssertionRequest(rpId, hash, listOf(proof.credentialId), requireUv = pin != null,
             extensions = input.assertionExtensions), pin)
+        var credentialBlob: ByteArray? = null
         try {
             require(results.size == 1 && results.single().credentialId.contentEquals(proof.credentialId))
             val verified = FidoDiagnostics.verifyAssertion(results.single(), proof.publicKey, rpId, hash, proof.counter, requireUv = pin != null)
             if (!verified.signatureValid) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
             if (verified.counterAdvanced == false) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
-            val extensionRows = publicExtensions(results.single().authData, input.assertionExtensions.uvm)
+            val auth = AuthenticatorData.parse(results.single().authData)
+            credentialBlob = (auth.extensions?.get("credBlob") as? Cbor.Bytes)?.value
+            val extensionRows = publicExtensions(auth, input.assertionExtensions.uvm)
             diagnosticCredential = proof.copy(counter = verified.counter)
             return ManagerReport(listOf(ResultRow("RP", rpId), ResultRow("计数", verified.counter.toString())) +
-                extensionRows, secrets = retainSecrets(results.single().hmacSecret, results.single().largeBlobKey))
-        } finally { results.forEach { it.hmacSecret?.fill(0); it.largeBlobKey?.fill(0) } }
+                extensionRows, secrets = retainSecrets(results.single().hmacSecret, results.single().largeBlobKey, credentialBlob))
+        } finally {
+            credentialBlob?.fill(0)
+            results.forEach {
+                it.hmacSecret?.fill(0); it.largeBlobKey?.fill(0)
+                if (input.assertionExtensions.credentialBlob) it.authData.fill(0)
+            }
+        }
     }
 
-    private fun publicExtensions(authData: ByteArray, requestedUvm: Boolean): List<ResultRow> {
-        val auth = AuthenticatorData.parse(authData)
+    private fun publicExtensions(auth: AuthenticatorData, requestedUvm: Boolean): List<ResultRow> {
         val uvm = cc.cardkey.provider.uvmOutput(auth, requestedUvm)
         val extensions = auth.extensions ?: return emptyList()
         return listOfNotNull(extensions["credProtect"]?.let { ResultRow("credProtect", it.number().toString()) },
             extensions["minPinLength"]?.let { ResultRow("最短 PIN 长度", "${it.number()} 个字符") },
-            extensions["credBlob"]?.let { value ->
-            ResultRow("credBlob", if (value is Cbor.Bytes) value.value.hex() else value.bool().toString())
-        }, uvm?.let { rows -> ResultRow("用户验证方法", rows.joinToString("; ") { it.joinToString() }) })
+            (extensions["credBlob"] as? Cbor.Bool)?.let { ResultRow("credBlob", it.value.toString()) }, uvm?.let { rows -> ResultRow("用户验证方法", rows.joinToString("; ") { it.joinToString() }) })
     }
 
     private fun u2fDiagnostic(session: CardSession, input: OperationInput): ManagerReport {

@@ -3,6 +3,8 @@ package cc.cardkey.provider
 import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.CardSession
 import cc.cardkey.protocol.FailureCode
+import cc.cardkey.protocol.Dispatch
+import cc.cardkey.protocol.TransportException
 import cc.cardkey.protocol.fido.*
 import java.math.BigInteger
 
@@ -60,7 +62,7 @@ object CardCredentialOperation {
             }
             CreatedCredential(output.copy(largeBlobKey = null), id.copyOf(), resident, extensionOutputs)
         } finally { result.largeBlobKey?.fill(0) }
-    } finally { pin?.fill('\u0000') }
+    } finally { pin?.fill('\u0000'); request.extensions.close() }
 
     fun get(session: CardSession, request: ParsedGet, clientData: ClientData,
         pin: CharArray? = null): List<ProvidedAssertion> {
@@ -85,7 +87,8 @@ object CardCredentialOperation {
                 val preflight = client.getAssertion(GetAssertionRequest(request.rpId, clientData.hash,
                     allowIds, requireUv = true, userPresence = false), pin?.copyOf()).singleOrNull() ?: malformed()
                 val auth = validateAuth(preflight.authData, request.rpId, requireUv = true, requireUp = false)
-                if (auth.userPresent || auth.credentialId != null || auth.extensions?.value?.isNotEmpty() == true ||
+                val builtInUv = pin == null && info.options["uv"] == true
+                if ((auth.userPresent && !builtInUv) || auth.credentialId != null || auth.extensions?.value?.isNotEmpty() == true ||
                     allowIds.none { it.contentEquals(preflight.credentialId) } ||
                     (preflight.user != null && preflight.user.id.size !in 1..64)) malformed()
                 validateSignature(preflight.signature)
@@ -121,8 +124,18 @@ object CardCredentialOperation {
                 var blob: ByteArray? = null
                 try {
                     if (input.largeBlobRead && result.largeBlobKey != null) {
-                        blob = client.readLargeBlob(result.largeBlobKey.copyOf())
-                        if (blob != null && blob.size > MAX_PROVIDER_BLOB) throw CardFailure(FailureCode.CAPACITY_EXCEEDED)
+                        try {
+                            blob = client.readLargeBlob(result.largeBlobKey.copyOf())
+                            if (blob != null && blob.size > MAX_PROVIDER_BLOB) { blob.fill(0); blob = null }
+                        } catch (failure: CardFailure) {
+                            if (failure.code == FailureCode.CANCELLED) throw failure
+                        } catch (failure: TransportException) {
+                            if (failure.cancelled) throw failure
+                        } catch (_: java.security.GeneralSecurityException) {
+                            blob = null
+                        } catch (_: IllegalArgumentException) {
+                            blob = null
+                        }
                     }
                     val written = if (input.largeBlobWrite == null) null else if (result.largeBlobKey == null) false else {
                         try {
@@ -131,6 +144,9 @@ object CardCredentialOperation {
                         } catch (failure: CardFailure) {
                             if (failure.code !in setOf(FailureCode.CAPACITY_EXCEEDED, FailureCode.UNSUPPORTED,
                                     FailureCode.AUTHORIZATION_DENIED, FailureCode.PIN_INVALID, FailureCode.PIN_BLOCKED)) throw failure
+                            false
+                        } catch (failure: TransportException) {
+                            if (failure.cancelled || failure.dispatch != Dispatch.NOT_DISPATCHED) throw failure
                             false
                         }
                     }
@@ -150,6 +166,7 @@ object CardCredentialOperation {
         } finally {
             results.forEach { it.hmacSecret?.fill(0); it.largeBlobKey?.fill(0) }
             pin?.fill('\u0000')
+            request.extensions.close()
         }
     }
 
