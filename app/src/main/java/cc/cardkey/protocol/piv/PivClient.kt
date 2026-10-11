@@ -40,9 +40,10 @@ public data class PivInfo(val version: String, val serial: Long, val pin: RetryM
                          val managementAlgorithm: ManagementAlgorithm, val managementDefault: Boolean)
 public data class SlotMetadata(val algorithm: KeyAlgorithm, val pinPolicy: Int, val touchPolicy: Int,
                               val generated: Boolean, val publicKey: PublicKey)
+public data class PivPinStatus(val verified: Boolean, val retriesRemaining: Int?, val contactRequired: Boolean)
 public data class PivSlot(val slot: Int, val metadata: SlotMetadata?, val certificate: X509Certificate?)
 
-public class PivClient(private val session: CardSession) {
+public class PivClient(private val session: CardSession, private val secure: PivSecureContext? = null) {
     private val random = SecureRandom()
 
     fun readInfo(): PivInfo {
@@ -66,6 +67,19 @@ public class PivClient(private val session: CardSession) {
         return withPin(pin) { encoded ->
             select()
             verifyEncoded(encoded)
+        }
+    }
+
+    fun pinStatus(): PivPinStatus {
+        if (secure == null) session.requireContact() else secure.requireCurrent(session)
+        select()
+        val response = exchange(Apdu(ins = 0x20, p2 = 0x80, le = null))
+        if (response.data.isNotEmpty()) malformed()
+        return when {
+            response.status == 0x9000 -> PivPinStatus(true, null, false)
+            response.status and 0xfff0 == 0x63c0 -> PivPinStatus(false, response.status and 15, false)
+            response.status == 0x6983 -> PivPinStatus(false, null, secure != null)
+            else -> { response.requireSuccess(); malformed() }
         }
     }
 
@@ -251,15 +265,20 @@ public class PivClient(private val session: CardSession) {
     private inline fun <T> withPin(pin: CharArray, operation: (ByteArray) -> T): T {
         var encoded = byteArrayOf()
         try {
-            session.requireContact()
+            if (secure == null) session.requireContact() else secure.requireCurrent(session)
             encoded = secret(pin)
             return operation(encoded)
         } finally { pin.fill('\u0000'); encoded.fill(0) }
     }
 
-    private fun select() { send(Apdu(ins = 0xa4, p1 = 4, data = "a000000308000010000100".hexBytes())) }
+    private fun select() {
+        if (secure != null) secure.requireCurrent(session)
+        else send(Apdu(ins = 0xa4, p1 = 4, data = "a000000308000010000100".hexBytes()))
+    }
+    private fun exchange(apdu: Apdu, effectful: Boolean = false): ApduResponse =
+        secure?.exchange(apdu, effectful) ?: session.exchange(apdu, effectful)
     private fun send(apdu: Apdu, effectful: Boolean = false): ByteArray = try {
-        val response = session.exchange(apdu, effectful)
+        val response = exchange(apdu, effectful)
         if (effectful && response.status and 0xfff0 == 0x63c0) session.securityStateChanged()
         response.requireSuccess()
     } finally { if (effectful) apdu.data.fill(0) }
@@ -279,7 +298,7 @@ public class PivClient(private val session: CardSession) {
     }
     private fun slotMetadata(slot: Int) = slotMetadataOrNull(slot) ?: throw CardFailure(FailureCode.CARD_REJECTED, 0x6a88)
     private fun slotMetadataOrNull(slot: Int): SlotMetadata? {
-        val response = session.exchange(Apdu(ins = 0xf7, p2 = slot))
+        val response = exchange(Apdu(ins = 0xf7, p2 = slot))
         if (response.status == 0x6a88) return null
         val fields = PivTlv.parse(response.requireSuccess())
         val algorithm = KeyAlgorithm.from(byte(fields, 1))
@@ -291,7 +310,7 @@ public class PivClient(private val session: CardSession) {
         return SlotMetadata(algorithm, pinPolicy, touchPolicy, !flag(fields, 3), publicKey(algorithm, fields[4] ?: malformed()))
     }
     private fun certificate(slot: Int): X509Certificate? {
-        val response = session.exchange(Apdu(ins = 0xcb, p1 = 0x3f, p2 = 0xff, data = objectTag(slot)))
+        val response = exchange(Apdu(ins = 0xcb, p1 = 0x3f, p2 = 0xff, data = objectTag(slot)))
         if (response.status == 0x6a82 || response.status == 0x6a88) return null
         val fields = PivTlv.parse(PivTlv.one(response.requireSuccess(), 0x53))
         if (byte(fields, 0x71) != 0) throw CardFailure(FailureCode.UNSUPPORTED)
