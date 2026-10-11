@@ -154,6 +154,7 @@ class ManagerOperations {
             val result = fido.makeCredential(MakeCredentialRequest(rpId, "CardKey", user, hash,
                 residentKey = input.enabled, requireUv = pin != null, extensions = input.makeExtensions), pin)
             val proof = FidoDiagnostics.verifyRegistration(result, rpId, hash, requireUv = pin != null)
+            if (proof.signatureValid == false) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
             diagnosticCredential = proof
             return ManagerReport(listOf(ResultRow("RP", rpId), ResultRow("凭据 ID", proof.credentialId.hex()),
                 ResultRow("证明", proof.kind.name), ResultRow("计数", proof.counter.toString())) +
@@ -164,6 +165,7 @@ class ManagerOperations {
             extensions = input.assertionExtensions), pin)
         require(results.size == 1 && results.single().credentialId.contentEquals(proof.credentialId))
         val verified = FidoDiagnostics.verifyAssertion(results.single(), proof.publicKey, rpId, hash, proof.counter, requireUv = pin != null)
+        if (!verified.signatureValid) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
         if (verified.counterAdvanced == false) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
         diagnosticCredential = proof.copy(counter = verified.counter)
         return ManagerReport(listOf(ResultRow("RP", rpId), ResultRow("计数", verified.counter.toString())) +
@@ -177,11 +179,13 @@ class ManagerOperations {
         val application = java.security.MessageDigest.getInstance("SHA-256").digest("https://cardkey.example".toByteArray())
         if (input.operation == ManagerOperation.U2F_REGISTER) {
             val result = client.register(challenge, application)
+            if (!result.signatureValid) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
             u2fCredential = result; u2fCounter = null
             return ManagerReport(listOf(ResultRow("RP", "cardkey.example"), ResultRow("凭据 ID", result.keyHandle.hex())))
         }
         val registration = u2fCredential ?: throw CardFailure(FailureCode.INVALID_INPUT)
         val result = client.authenticate(challenge, application, registration.keyHandle, registration.publicKey, u2fCounter)
+        if (!result.signatureValid) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
         if (result.counterAdvanced == false) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
         u2fCounter = result.counter
         return ManagerReport(listOf(ResultRow("RP", "cardkey.example"), ResultRow("计数", result.counter.toString())))
