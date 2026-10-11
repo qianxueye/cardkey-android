@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.activity.viewModels
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
 import cc.cardkey.ui.*
 import cc.cardkey.protocol.FailureCode
 import cc.cardkey.protocol.OperationResult
@@ -85,6 +86,10 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 requestedReader = null
                 model.permissionPending(false)
             }
+            if (intent.action == NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) {
+                model.refreshNfc()
+                if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) enableNfcReader()
+            }
             model.refreshReaders()
         }
     }
@@ -95,6 +100,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         enableEdgeToEdge()
         val filter = IntentFilter().apply {
             addAction(permissionAction)
+            addAction(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED)
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
@@ -144,8 +150,14 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onResume() {
         super.onResume()
-        nfc?.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, null)
+        enableNfcReader()
         model.refreshReaders()
+    }
+
+    private fun enableNfcReader() {
+        model.refreshNfc()
+        if (nfc?.isEnabled == true) nfc?.enableReaderMode(this, this,
+            NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, null)
     }
 
     override fun onPause() {
