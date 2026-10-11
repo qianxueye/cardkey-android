@@ -433,6 +433,109 @@ class PivSecureContextTest {
         }
     }
 
+    @Test fun outerLeIsPresentWhileDo97TracksOriginalCommandLe() {
+        val card = Peer().apply { pinStatus = 0x9000 }
+        val (session, context) = establish(card)
+        val client = PivClient(session, context)
+        client.verifyPin("123456".toCharArray())
+        client.pinStatus()
+        client.readInfo()
+        for (command in card.commands.filter { it[0] == 0x0c.toByte() }) {
+            val length = command[4].toInt() and 255
+            assertEquals(length + 6, command.size)
+            assertEquals(0, command.last().toInt())
+            val fields = PivTlv.parse(command.copyOfRange(5, 5 + length))
+            assertEquals(command[1] != 0x20.toByte(), fields.containsKey(0x97))
+        }
+    }
+
+    @Test fun preFinalFragmentRejectionDoesNotClaimAnInnerMutation() {
+        for (mode in listOf("fragment-6987", "fragment-6988", "fragment-lost", "fragment-malformed")) {
+            val card = Peer()
+            val (session, context) = establish(card)
+            card.failure = mode
+            val count = card.commands.size
+            val result = session.run {
+                context.exchange(Apdu(ins = 0x87, p1 = 7, p2 = 0x9d, data = ByteArray(256)), true)
+            } as OperationResult.Failed
+            assertEquals(mode, Effect.NONE, result.effect)
+            assertFalse(result.writeAccepted)
+            assertEquals(1, card.commands.size - count)
+            assertEquals(0x1c.toByte(), card.commands.last()[0])
+            assertEquals(0, card.pinTries)
+        }
+    }
+
+    @Test fun preFinalFailurePreservesPriorAuthenticatedWriteEvidence() {
+        val card = Peer()
+        val (session, context) = establish(card)
+        session.applied()
+        card.failure = "fragment-6988"
+        val result = session.run {
+            context.exchange(Apdu(ins = 0x87, p1 = 7, p2 = 0x9d, data = ByteArray(256)), true)
+        } as OperationResult.Failed
+        assertEquals(Effect.APPLIED, result.effect)
+        assertTrue(result.writeAccepted)
+    }
+
+    @Test fun authenticatedMalformedPinStatusClosesContextWithoutMutation() {
+        val card = Peer().apply { pinStatus = 0x9000 }
+        val (session, context) = establish(card)
+        card.failure = "pin-data"
+        val client = PivClient(session, context)
+        assertEquals(FailureCode.MALFORMED_RESPONSE, (failure { client.pinStatus() } as CardFailure).code)
+        assertEquals(Effect.NONE, session.effect)
+        val count = card.commands.size
+        failure { client.verifyPin("123456".toCharArray()) }
+        assertEquals(count, card.commands.size)
+        assertEquals(0, card.pinTries)
+    }
+
+    @Test fun unverifiedFinalOuterErrorsRemainUnknownAndInvalidateContext() {
+        for (status in listOf("6987", "6988")) {
+            val card = Peer()
+            val (session, context) = establish(card)
+            session.applied()
+            card.failure = "outer-$status"
+            val exception = failure { PivClient(session, context).verifyPin("123456".toCharArray()) } as CardFailure
+            assertEquals(status.toInt(16), exception.status)
+            assertEquals(Effect.UNKNOWN, session.effect)
+            assertEquals(1, card.pinTries)
+            val count = card.commands.size
+            failure { PivClient(session, context).verifyPin("123456".toCharArray()) }
+            assertEquals(count, card.commands.size)
+        }
+    }
+
+    @Test fun authenticatedDownstreamMetadataOrDerFailureStopsLaterDispatch() {
+        for (mode in listOf("metadata", "certificate")) {
+            val card = Peer().apply {
+                if (mode == "metadata") slotMetadata = "0102".hexBytes()
+                else certificateReply = PivTlv.encode(0x53, PivTlv.encode(0x70, byteArrayOf(1)) + PivTlv.encode(0x71, byteArrayOf(0)))
+            }
+            val (session, context) = establish(card)
+            session.applied()
+            val client = PivClient(session, context)
+            assertEquals(FailureCode.MALFORMED_RESPONSE, (failure { client.readSlot(0x9a) } as CardFailure).code)
+            assertEquals(Effect.APPLIED, session.effect)
+            val count = card.commands.size
+            assertEquals(FailureCode.AUTHORIZATION_DENIED, (failure { client.verifyPin("123456".toCharArray()) } as CardFailure).code)
+            assertEquals(count, card.commands.size)
+        }
+    }
+
+    @Test fun authenticatedPrivateResponseParseFailurePreservesPinEffectAndStopsReuse() {
+        val card = Peer().apply { pinStatus = 0x9000; failure = "private-tlv" }
+        val (session, context) = establish(card)
+        val client = PivClient(session, context)
+        assertEquals(FailureCode.MALFORMED_RESPONSE, (failure { client.verifySignature(0x9a, "123456".toCharArray()) } as CardFailure).code)
+        assertEquals(Effect.APPLIED, session.effect)
+        assertEquals(1, card.pinTries)
+        val count = card.commands.size
+        failure { client.verifySignature(0x9a, "123456".toCharArray()) }
+        assertEquals(count, card.commands.size)
+    }
+
     @Test fun fragmentAcknowledgmentCannotAcceptMutationOrUnlockPin() {
         val card = Peer()
         val (session, context) = establish(card)
@@ -461,6 +564,7 @@ class PivSecureContextTest {
         var pairingStatus = 0x9000
         var slotMetadata: ByteArray? = null
         var certificateAbsent = false
+        var certificateReply: ByteArray? = null
         var badConfirmation = false
         var failure: String? = null
         var lastProtected = byteArrayOf()
@@ -481,7 +585,12 @@ class PivSecureContextTest {
             if (ins == 0xa4) return "9000".hexBytes()
             val length = command[4].toInt() and 255
             fragments += command.copyOfRange(5, 5 + length)
-            if (command[0].toInt() and 0x10 != 0) return "9000".hexBytes()
+            if (command[0].toInt() and 0x10 != 0) {
+                if (failure == "fragment-lost") throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+                if (failure == "fragment-malformed") return byteArrayOf(0)
+                if (failure?.startsWith("fragment-") == true) return failure!!.substringAfter('-').hexBytes()
+                return "9000".hexBytes()
+            }
             val body = fragments.also { fragments = byteArrayOf() }
             if (command[0] == 0.toByte()) {
                 assertEquals(0x87, ins); assertEquals(0x2e, command[2].toInt()); assertEquals(4, command[3].toInt())
@@ -510,7 +619,7 @@ class PivSecureContextTest {
                 0x20 -> {
                     if (p2 == 0x98) { assertArrayEquals("12345678".toByteArray(), input); status = pairingStatus }
                     else { status = pinStatus; if (input.isNotEmpty()) pinTries++ }
-                    byteArrayOf()
+                    if (failure == "pin-data") byteArrayOf(1) else byteArrayOf()
                 }
                 0xfd, 0xf8, 0xf7 -> {
                     assertTrue(input.isEmpty())
@@ -527,11 +636,12 @@ class PivSecureContextTest {
                         }
                     }
                 }
-                0x87 -> PivTlv.encode(0x7c, PivTlv.encode(0x82, privateOperation(input)))
-                0xcb -> if (certificateAbsent) { status = 0x6a82; byteArrayOf() } else ByteArray(256) { it.toByte() }
+                0x87 -> if (failure == "private-tlv") "7c0282".hexBytes() else PivTlv.encode(0x7c, PivTlv.encode(0x82, privateOperation(input)))
+                0xcb -> certificateReply ?: if (certificateAbsent) { status = 0x6a82; byteArrayOf() } else ByteArray(256) { it.toByte() }
                 else -> error("Unexpected protected command")
             }
             if (failure == "outer") return "9000".hexBytes()
+            if (failure?.startsWith("outer-") == true) return failure!!.substringAfter('-').hexBytes()
             if (failure == "short") return byteArrayOf(0)
             val encrypted = if (failure == "padding") PivTlv.encode(0x87, byteArrayOf(1) + crypt(ByteArray(16), true, Cipher.ENCRYPT_MODE))
                 else if (reply.isEmpty()) byteArrayOf() else PivTlv.encode(0x87, byteArrayOf(1) +

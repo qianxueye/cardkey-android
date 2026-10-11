@@ -52,9 +52,9 @@ class CardSession(private val channel: CardChannel) : Closeable {
         previous?.close()
     }
 
-    @Synchronized internal fun exchangeSecure(owner: Closeable, apdu: Apdu, effectful: Boolean): ApduResponse {
+    @Synchronized internal fun exchangeSecure(owner: Closeable, apdu: Apdu, effectful: Boolean, finalDispatch: () -> Unit): ApduResponse {
         if (!ownsSecure(owner)) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
-        return exchangeWire(apdu, effectful)
+        return exchangeWire(apdu, effectful, finalDispatch)
     }
 
     @Synchronized fun exchange(apdu: Apdu, effectful: Boolean = false): ApduResponse {
@@ -62,7 +62,7 @@ class CardSession(private val channel: CardChannel) : Closeable {
         return exchangeWire(apdu, effectful)
     }
 
-    private fun exchangeWire(apdu: Apdu, effectful: Boolean): ApduResponse {
+    private fun exchangeWire(apdu: Apdu, effectful: Boolean, finalDispatch: (() -> Unit)? = null): ApduResponse {
         check(!finished)
         require(apdu.data.size <= 65535 && apdu.le in listOf(null, 256))
         val chunkSize = minOf(255, channel.maxCommandBytes - 6)
@@ -70,15 +70,17 @@ class CardSession(private val channel: CardChannel) : Closeable {
         var offset = 0
         while (apdu.data.size - offset > chunkSize) {
             val part = send(encode(apdu.copy(cla = apdu.cla or 0x10,
-                data = apdu.data.copyOfRange(offset, offset + chunkSize), le = null)), effectful)
+                data = apdu.data.copyOfRange(offset, offset + chunkSize), le = null)), effectful && finalDispatch == null)
             part.requireSuccess()
             if (part.data.isNotEmpty()) {
-                if (effectful) securityStateUncertain()
+                if (effectful && finalDispatch == null) securityStateUncertain()
                 throw CardFailure(FailureCode.MALFORMED_RESPONSE)
             }
             offset += chunkSize
         }
-        var response = send(encode(apdu.copy(data = apdu.data.copyOfRange(offset, apdu.data.size))), effectful)
+        val finalCommand = encode(apdu.copy(data = apdu.data.copyOfRange(offset, apdu.data.size)))
+        finalDispatch?.invoke()
+        var response = send(finalCommand, effectful)
         var data = response.data
         var continuations = 0
         while (response.status ushr 8 == 0x61) {

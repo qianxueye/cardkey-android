@@ -46,21 +46,21 @@ public data class PivSlot(val slot: Int, val metadata: SlotMetadata?, val certif
 public class PivClient(private val session: CardSession, private val secure: PivSecureContext? = null) {
     private val random = SecureRandom()
 
-    fun readInfo(): PivInfo {
+    fun readInfo(): PivInfo = validateResponse {
         select()
         val version = send(Apdu(ins = 0xfd)).also { if (it.size != 3) malformed() }
         val serial = send(Apdu(ins = 0xf8)).also { if (it.size != 4) malformed() }
         val admin = metadata(0x9b)
         val algorithm = ManagementAlgorithm.entries.firstOrNull { it.code == byte(admin, 1) }
             ?: throw CardFailure(FailureCode.UNSUPPORTED)
-        return PivInfo(version.joinToString(".") { (it.toInt() and 255).toString() },
+        PivInfo(version.joinToString(".") { (it.toInt() and 255).toString() },
             BigInteger(1, serial).toLong(), retries(0x80), retries(0x81), algorithm, flag(admin, 5))
     }
 
-    fun readSlot(slot: Int): PivSlot {
+    fun readSlot(slot: Int): PivSlot = validateResponse {
         requireSlot(slot)
         select()
-        return PivSlot(slot, slotMetadataOrNull(slot), certificate(slot))
+        PivSlot(slot, slotMetadataOrNull(slot), certificate(slot))
     }
 
     fun verifyPin(pin: CharArray) {
@@ -70,12 +70,12 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         }
     }
 
-    fun pinStatus(): PivPinStatus {
+    fun pinStatus(): PivPinStatus = validateResponse {
         if (secure == null) session.requireContact() else secure.requireCurrent(session)
         select()
         val response = exchange(Apdu(ins = 0x20, p2 = 0x80, le = null))
         if (response.data.isNotEmpty()) malformed()
-        return when {
+        when {
             response.status == 0x9000 -> PivPinStatus(true, null, false)
             response.status and 0xfff0 == 0x63c0 -> PivPinStatus(false, response.status and 15, false)
             response.status == 0x6983 -> PivPinStatus(false, null, session.medium == Medium.NFC)
@@ -273,8 +273,18 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         try {
             if (secure == null) session.requireContact() else secure.requireCurrent(session)
             encoded = secret(pin)
-            return operation(encoded)
+            return validateResponse { operation(encoded) }
         } finally { pin.fill('\u0000'); encoded.fill(0) }
+    }
+
+    private inline fun <T> validateResponse(operation: () -> T): T = try {
+        operation()
+    } catch (e: CardFailure) {
+        if (e.code == FailureCode.MALFORMED_RESPONSE) secure?.close()
+        throw e
+    } catch (e: GeneralSecurityException) {
+        secure?.close()
+        throw e
     }
 
     private fun select() {

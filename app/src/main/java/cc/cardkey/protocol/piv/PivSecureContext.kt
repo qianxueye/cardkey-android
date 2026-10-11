@@ -56,8 +56,7 @@ class PivSecureContext private constructor(private val session: CardSession, pri
         var sent = false
         try {
             val protected = cipher.protect(apdu)
-            sent = true
-            val outer = session.exchangeSecure(this, protected, effectful)
+            val outer = session.exchangeSecure(this, protected, effectful) { sent = true }
             val response = cipher.unprotect(outer)
             if (effectful && response.status and 0xfff0 == 0x63c0) session.securityStateChanged()
             return response
@@ -227,7 +226,7 @@ internal class Cs7Cipher(keys: ByteArray) : Closeable {
         val header = byteArrayOf(0x0c, apdu.ins.toByte(), apdu.p1.toByte(), apdu.p2.toByte(), 0x80.toByte()) + ByteArray(11)
         commandChain = Cs7.mac(mac, commandChain + header + objects)
         pending = true
-        return apdu.copy(cla = 0x0c, data = objects + PivTlv.encode(0x8e, commandChain.copyOf(8)))
+        return apdu.copy(cla = 0x0c, data = objects + PivTlv.encode(0x8e, commandChain.copyOf(8)), le = 256)
     }
 
     fun unprotect(outer: ApduResponse): ApduResponse {
