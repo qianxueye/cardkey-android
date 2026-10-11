@@ -8,7 +8,8 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import java.util.Base64
 
-class PrfInputs(val first: ByteArray, val second: ByteArray? = null) {
+class PrfInputs(val first: ByteArray, val second: ByteArray? = null) : AutoCloseable {
+    override fun close() { first.fill(0); second?.fill(0) }
     fun salts(): ByteArray = sha256("WebAuthn PRF\u0000".toByteArray(Charsets.UTF_8) + first) +
         (second?.let { sha256("WebAuthn PRF\u0000".toByteArray(Charsets.UTF_8) + it) } ?: byteArrayOf())
     fun sameAs(other: PrfInputs?): Boolean = other != null && first.contentEquals(other.first) &&
@@ -18,12 +19,19 @@ class PrfInputs(val first: ByteArray, val second: ByteArray? = null) {
 class CreateExtensionInputs(val credProps: Boolean = false, val protection: Int? = null,
     val enforceProtection: Boolean = false, val credBlob: ByteArray? = null,
     val uvm: Boolean = false, val prf: Boolean = false, val minPinLength: Boolean = false,
-    val largeBlobSupport: String? = null)
+    val largeBlobSupport: String? = null) : AutoCloseable {
+    override fun close() { credBlob?.fill(0) }
+}
 
 class GetExtensionInputs(val getCredBlob: Boolean = false, val uvm: Boolean = false,
     val prf: Boolean = false, val prfInputs: PrfInputs? = null,
     val largeBlobRead: Boolean = false, val largeBlobWrite: ByteArray? = null,
-    val prfByCredential: Map<String, PrfInputs> = emptyMap()) {
+    val prfByCredential: Map<String, PrfInputs> = emptyMap()) : AutoCloseable {
+    override fun close() {
+        prfInputs?.close()
+        prfByCredential.values.forEach { it.close() }
+        largeBlobWrite?.fill(0)
+    }
     fun inputsFor(id: ByteArray): PrfInputs? = prfByCredential[encodeExtensionBytes(id)] ?: prfInputs
 }
 
@@ -48,11 +56,14 @@ internal object ExtensionParser {
         }
         ext.optional("prf")?.objectValue()?.let {
             if (it.has("evalByCredential")) unsupportedRequest()
-            it.optional("eval")?.let(::prfValues)
+            it.optional("eval")?.let(::prfValues)?.close()
         }
-        return CreateExtensionInputs(ext.flag("credProps"), policy, enforce,
+        val credProps = ext.flag("credProps")
+        val uvm = ext.flag("uvm")
+        val minPinLength = ext.flag("minPinLength")
+        return CreateExtensionInputs(credProps, policy, enforce,
             ext.optional("credBlob")?.let { decodeBase64Url(it.stringValue(), 0, 65535) },
-            ext.flag("uvm"), ext.has("prf"), ext.flag("minPinLength"), support)
+            uvm, ext.has("prf"), minPinLength, support)
     }
 
     fun get(value: JsonElement?, allowIds: List<ByteArray>): GetExtensionInputs {
@@ -63,23 +74,38 @@ internal object ExtensionParser {
         if (blob?.has("read") == true && blob.has("write")) unsupportedRequest()
         val read = blob?.optional("read")?.booleanValue() ?: false
         val write = blob?.optional("write")?.let { decodeBase64Url(it.stringValue(), 0, MAX_PROVIDER_BLOB) }
-        if (write != null && allowIds.size != 1) unsupportedRequest()
-        val prf = ext.optional("prf")?.objectValue()
-        val fallback = prf?.optional("eval")?.let(::prfValues)
-        if (prf?.optional("evalByCredential")?.objectValue()?.size()?.let { it > 0 } == true && allowIds.isEmpty()) unsupportedRequest()
-        val perCredential = prf?.optional("evalByCredential")?.objectValue()?.entrySet()?.associate { (key, item) ->
-            val id = decodeBase64Url(key, 1, 4096)
-            if (allowIds.none { it.contentEquals(id) }) invalidRequest()
-            key to prfValues(item)
-        } ?: emptyMap()
-        if (perCredential.isNotEmpty() && allowIds.isEmpty()) unsupportedRequest()
-        return GetExtensionInputs(ext.flag("getCredBlob"), ext.flag("uvm"), prf != null, fallback, read, write, perCredential)
+        var fallback: PrfInputs? = null
+        val perCredential = linkedMapOf<String, PrfInputs>()
+        try {
+            if (write != null && allowIds.size != 1) unsupportedRequest()
+            val prf = ext.optional("prf")?.objectValue()
+            fallback = prf?.optional("eval")?.let(::prfValues)
+            val perCredentialValues = prf?.optional("evalByCredential")?.objectValue()
+            if (perCredentialValues?.size()?.let { it > 0 } == true && allowIds.isEmpty()) unsupportedRequest()
+            perCredentialValues?.entrySet()?.forEach { (key, item) ->
+                val id = decodeBase64Url(key, 1, 4096)
+                if (allowIds.none { it.contentEquals(id) }) invalidRequest()
+                perCredential[key] = prfValues(item)
+            }
+            return GetExtensionInputs(ext.flag("getCredBlob"), ext.flag("uvm"), prf != null, fallback, read, write, perCredential)
+        } catch (failure: Exception) {
+            write?.fill(0)
+            fallback?.close()
+            perCredential.values.forEach { it.close() }
+            throw failure
+        }
     }
 
     private fun prfValues(value: JsonElement): PrfInputs = value.objectValue().let {
-        PrfInputs(decodeBase64Url(it.required("first").stringValue(), 0, 65535),
-            it.optional("second")?.let { second -> decodeBase64Url(second.stringValue(), 0, 65535) })
+        val first = decodeBase64Url(it.required("first").stringValue(), 0, 65535)
+        try {
+            PrfInputs(first, it.optional("second")?.let { second -> decodeBase64Url(second.stringValue(), 0, 65535) })
+        } catch (failure: Exception) {
+            first.fill(0)
+            throw failure
+        }
     }
+
     private fun JsonObject.flag(name: String) = optional(name)?.booleanValue() ?: false
     private fun unsupported(ext: JsonObject, create: Boolean) {
         if (ext.has(if (create) "appidExclude" else "appid") || ext.has("payment")) unsupportedRequest()

@@ -4,6 +4,8 @@ import cc.cardkey.protocol.Apdu
 import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.CardSession
 import cc.cardkey.protocol.FailureCode
+import cc.cardkey.protocol.Dispatch
+import cc.cardkey.protocol.TransportException
 
 class FidoClient(private val session: CardSession) {
     private var selected = false
@@ -346,38 +348,51 @@ class FidoClient(private val session: CardSession) {
         plaintext
     } finally { key.fill(0) }
 
-    fun writeLargeBlob(pin: CharArray?, key: ByteArray, plaintext: ByteArray?): Unit = try {
-        require(key.size == 32 && (plaintext == null || plaintext.size <= LargeBlobs.MAX_PLAINTEXT))
-        val info = getInfo()
-        val entries = LargeBlobs.decode(readLargeBlobBytes(info)).filter { entry ->
-            val existing = LargeBlobs.decrypt(key, entry)
-            if (existing == null) true else { existing.fill(0); false }
-        }.toMutableList()
-        if (plaintext != null) entries += LargeBlobs.encrypt(key, plaintext)
-        val serialized = LargeBlobs.encode(entries)
-        val capacity = info.raw[11].count(CborCodec.MAX_BYTES)
-        if (serialized.size > capacity) throw CardFailure(FailureCode.CAPACITY_EXCEEDED)
-        fun write(token: PinToken?) {
-            val chunk = largeBlobChunk(info)
-            var offset = 0
-            while (offset < serialized.size) {
-                val fragment = serialized.copyOfRange(offset, minOf(offset + chunk, serialized.size))
-                val authenticated = ByteArray(32) { 0xff.toByte() } + byteArrayOf(0x0c, 0) +
-                    ByteArray(4) { (offset ushr (it * 8)).toByte() } + sha256(fragment)
-                command(0x0c, cborMap(2 to fragment.cbor(), 3 to offset.cbor(),
-                    4 to if (offset == 0) serialized.size.cbor() else null,
-                    5 to token?.authenticate(authenticated)?.cbor(), 6 to token?.version?.cbor()),
-                    effectful = true, applied = offset + fragment.size == serialized.size)
-                offset += fragment.size
+    fun writeLargeBlob(pin: CharArray?, key: ByteArray, plaintext: ByteArray?) {
+        var wroteFragment = false
+        try {
+            require(key.size == 32 && (plaintext == null || plaintext.size <= LargeBlobs.MAX_PLAINTEXT))
+            val info = getInfo()
+            val entries = LargeBlobs.decode(readLargeBlobBytes(info)).filter { entry ->
+                val existing = LargeBlobs.decrypt(key, entry)
+                if (existing == null) true else { existing.fill(0); false }
+            }.toMutableList()
+            if (plaintext != null) entries += LargeBlobs.encrypt(key, plaintext)
+            val serialized = LargeBlobs.encode(entries)
+            val capacity = info.raw[11].count(CborCodec.MAX_BYTES)
+            if (serialized.size > capacity) throw CardFailure(FailureCode.CAPACITY_EXCEEDED)
+            fun write(token: PinToken?) {
+                val chunk = largeBlobChunk(info)
+                var offset = 0
+                while (offset < serialized.size) {
+                    val fragment = serialized.copyOfRange(offset, minOf(offset + chunk, serialized.size))
+                    val authenticated = ByteArray(32) { 0xff.toByte() } + byteArrayOf(0x0c, 0) +
+                        ByteArray(4) { (offset ushr (it * 8)).toByte() } + sha256(fragment)
+                    command(0x0c, cborMap(2 to fragment.cbor(), 3 to offset.cbor(),
+                        4 to if (offset == 0) serialized.size.cbor() else null,
+                        5 to token?.authenticate(authenticated)?.cbor(), 6 to token?.version?.cbor()),
+                        effectful = true, applied = offset + fragment.size == serialized.size)
+                    wroteFragment = true
+                    offset += fragment.size
+                }
             }
-        }
-        if (info.options["clientPin"] == true || info.options["uv"] == true || info.options["alwaysUv"] == true) {
-            if (pin == null) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
-            withToken(pin, 16, info = info, block = ::write)
-        } else write(null)
-        if (!readLargeBlobBytes(info).contentEquals(serialized)) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
-        Unit
-    } finally { pin?.fill('\u0000'); key.fill(0); plaintext?.fill(0) }
+            if (info.options["clientPin"] == true || info.options["uv"] == true || info.options["alwaysUv"] == true) {
+                if (pin == null) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
+                withToken(pin, 16, info = info, block = ::write)
+            } else write(null)
+            if (!readLargeBlobBytes(info).contentEquals(serialized)) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+        } catch (failure: CardFailure) {
+            if (wroteFragment && failure.code in setOf(FailureCode.CAPACITY_EXCEEDED, FailureCode.UNSUPPORTED,
+                    FailureCode.AUTHORIZATION_DENIED, FailureCode.PIN_INVALID, FailureCode.PIN_BLOCKED))
+                throw CardFailure(FailureCode.RECOVERY_REQUIRED, failure.status)
+            throw failure
+        } catch (failure: TransportException) {
+            // A later undispatched fragment or readback does not undo an accepted write.
+            if (wroteFragment && !failure.cancelled && failure.dispatch == Dispatch.NOT_DISPATCHED)
+                throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+            throw failure
+        } finally { pin?.fill('\u0000'); key.fill(0); plaintext?.fill(0) }
+    }
 
     private fun largeBlobChunk(info: FidoInfo): Int {
         val maxMessage = info.raw[5]?.count(CborCodec.MAX_BYTES) ?: 1024

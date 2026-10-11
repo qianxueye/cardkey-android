@@ -73,7 +73,10 @@ class ProviderExtensionsTest {
             else -> error("unexpected")
         } }
         val result = (performCreate(channel, create("""{"credProps":true,"credBlob":"AA","uvm":true,"prf":{},"minPinLength":true,"largeBlob":{}}""")) as OperationResult.Completed).value
-        val output = JsonParser.parseString(ResponseEncoder.create(result, data)).asJsonObject["clientExtensionResults"].asJsonObject
+        val envelope = JsonParser.parseString(ResponseEncoder.create(result, data)).asJsonObject
+        assertEquals("cross-platform", envelope["authenticatorAttachment"].asString)
+        assertEquals(listOf("nfc", "usb"), envelope["response"].asJsonObject["transports"].asJsonArray.map { it.asString })
+        val output = envelope["clientExtensionResults"].asJsonObject
         assertTrue(output["credProps"].asJsonObject["rk"].asBoolean)
         assertFalse(output["prf"].asJsonObject["enabled"].asBoolean)
         assertFalse(output["largeBlob"].asJsonObject["supported"].asBoolean)
@@ -136,7 +139,9 @@ class ProviderExtensionsTest {
                 assertNull(credential.assertion.hmacSecret)
                 assertNull(credential.assertion.largeBlobKey)
                 assertArrayEquals(ByteArray(64) { (i + 1).toByte() }, credential.extensions.prfResult)
-                val json = JsonParser.parseString(ResponseEncoder.get(credential, data)).asJsonObject["clientExtensionResults"].asJsonObject
+                val envelope = JsonParser.parseString(ResponseEncoder.get(credential, data)).asJsonObject
+                assertEquals("cross-platform", envelope["authenticatorAttachment"].asString)
+                val json = envelope["clientExtensionResults"].asJsonObject
                 assertEquals(setOf("prf", "uvm"), json.keySet())
                 assertFalse(json["prf"].asJsonObject.has("enabled"))
                 assertTrue(json["prf"].asJsonObject["results"].asJsonObject.has("second"))
@@ -220,4 +225,111 @@ class ProviderExtensionsTest {
         assertEquals(FailureCode.TRANSPORT_FAILURE, failure.code)
         assertEquals(1, channel.commands.count { it.first == 12 && it.second?.get(2) != null })
     }
+    @Test fun absentLargeBlobSupportUsesRecommendationPreferredSemantics() {
+        for (supported in listOf(false, true)) {
+            val channel = FidoChannel { code, map -> when (code) {
+                4 -> success(info(mapOf("rk" to true, "largeBlobs" to supported),
+                    extensions = if (supported) listOf("largeBlobKey") else emptyList()))
+                1 -> {
+                    assertEquals(supported, map!![6]?.map()?.get("largeBlobKey")?.bool() ?: false)
+                    success(make(key = if (supported) ByteArray(32) else null))
+                }
+                else -> error("unexpected")
+            } }
+            val result = (performCreate(channel, create("""{"largeBlob":{}}""")) as OperationResult.Completed).value
+            assertEquals(supported, result.extensions.largeBlobSupported)
+            assertEquals(setOf("largeBlob"), result.extensions.json().keySet())
+        }
+    }
+
+    @Test fun failedBlobReadsPreserveAssertionButCancellationStillAborts() {
+        for (kind in listOf("corrupt", "oversize", "removed", "lost", "cancelled")) {
+            val key = ByteArray(32) { 7 }
+            val channel = FidoChannel { code, _ -> when (code) {
+                4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
+                2 -> success(assertion(key = key.copyOf()))
+                12 -> when (kind) {
+                    "corrupt" -> success(cborMap(1 to byteArrayOf(1, 2, 3).cbor()))
+                    "oversize" -> success(cborMap(1 to LargeBlobs.encode(listOf(LargeBlobs.encrypt(key, ByteArray(MAX_PROVIDER_BLOB + 1)))).cbor()))
+                    "removed" -> throw TransportException(Dispatch.NOT_DISPATCHED)
+                    "lost" -> throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+                    else -> throw TransportException(Dispatch.NOT_DISPATCHED, cancelled = true)
+                }
+                else -> error("unexpected")
+            } }
+            val result = performGet(channel, get("""{"largeBlob":{"read":true}}"""))
+            if (kind == "cancelled") assertEquals(FailureCode.CANCELLED, (result as OperationResult.Failed).code)
+            else {
+                val output = (result as OperationResult.Completed).value.single()
+                assertEquals("{}", output.extensions.json()["largeBlob"].toString())
+                assertArrayEquals(byteArrayOf(1), output.assertion.credentialId)
+                assertEquals(Effect.APPLIED, result.effect)
+                output.close()
+            }
+            assertEquals(1, channel.commands.count { it.first == 2 })
+            assertEquals(1, channel.commands.count { it.first == 12 })
+        }
+    }
+
+    @Test fun undispatchedBlobWriteReturnsFalseButReadbackAndCancellationCannotClaimFailure() {
+        for (stage in listOf("before", "write", "readback", "readbackRejected", "cancelled", "unknown")) {
+            var written = false
+            val channel = FidoChannel { code, map -> when (code) {
+                4 -> success(info(mapOf("largeBlobs" to true), extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
+                2 -> success(assertion(key = ByteArray(32)))
+                12 -> if (map!![1] != null) {
+                    if (written && stage == "readbackRejected") throw CardFailure(FailureCode.UNSUPPORTED)
+                    if (stage == "before" || written) throw TransportException(Dispatch.NOT_DISPATCHED)
+                    success(cborMap(1 to LargeBlobs.encode(emptyList()).cbor()))
+                } else {
+                    if (stage != "readback" && stage != "readbackRejected") throw TransportException(
+                        if (stage == "unknown") Dispatch.RESPONSE_UNAVAILABLE else Dispatch.NOT_DISPATCHED,
+                        cancelled = stage == "cancelled")
+                    written = true
+                    success()
+                }
+                else -> error("unexpected")
+            } }
+            val result = performGet(channel, get("""{"largeBlob":{"write":"AQ"}}"""))
+            if (stage == "before" || stage == "write") {
+                val output = (result as OperationResult.Completed).value.single()
+                assertEquals(false, output.extensions.largeBlobWritten)
+                output.close()
+            } else {
+                val failure = result as OperationResult.Failed
+                assertEquals(when (stage) { "cancelled" -> FailureCode.CANCELLED
+                    "readback", "readbackRejected" -> FailureCode.RECOVERY_REQUIRED
+                    else -> FailureCode.TRANSPORT_FAILURE }, failure.code)
+                if (stage == "unknown") assertEquals(Effect.UNKNOWN, failure.effect)
+            }
+            assertEquals(1, channel.commands.count { it.first == 2 })
+            assertEquals(if (stage == "before") 0 else 1, channel.commands.count { it.first == 12 && it.second?.get(2) != null })
+        }
+    }
+
+    @Test fun operationCompletionAndFailureWipeDecodedExtensionInputs() {
+        for (fail in listOf(false, true)) {
+            val creation = create("""{"credBlob":"AQID"}""")
+            val channel = FidoChannel { code, _ -> when (code) {
+                4 -> if (fail) throw CardFailure(FailureCode.CANCELLED) else success(info(mapOf("rk" to true)))
+                1 -> success(make())
+                else -> error("unexpected")
+            } }
+            performCreate(channel, creation)
+            assertArrayEquals(ByteArray(3), creation.extensions.credBlob)
+            val request = get("""{"prf":{"eval":{"first":"AQ","second":"Ag"},"evalByCredential":{"AQ":{"first":"Aw","second":"BA"}}},"largeBlob":{"write":"BQ"}}""")
+            val getChannel = FidoChannel { code, _ -> when (code) {
+                4 -> if (fail) throw CardFailure(FailureCode.CANCELLED) else success(info())
+                2 -> success(assertion())
+                else -> error("unexpected")
+            } }
+            performGet(getChannel, request)
+            assertArrayEquals(byteArrayOf(0), request.extensions.prfInputs!!.first)
+            assertArrayEquals(byteArrayOf(0), request.extensions.prfInputs.second)
+            assertArrayEquals(byteArrayOf(0), request.extensions.prfByCredential["AQ"]!!.first)
+            assertArrayEquals(byteArrayOf(0), request.extensions.prfByCredential["AQ"]!!.second)
+            assertArrayEquals(byteArrayOf(0), request.extensions.largeBlobWrite)
+        }
+    }
+
 }

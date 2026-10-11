@@ -40,6 +40,7 @@ import cc.cardkey.transport.UsbCcidReader
 import cc.cardkey.transport.UsbReaderDescriptor
 import cc.cardkey.ui.CardKeyTheme
 import cc.cardkey.ui.ConfirmationPolicy
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +55,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var create: ParsedCreate? = null
     private var get: ParsedGet? = null
     private var clientData: ClientData? = null
+    private var operationOwnsInputs = false
     private var loading by mutableStateOf(true)
     private var rejected by mutableStateOf(false)
     private var busy by mutableStateOf(false)
@@ -67,6 +69,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var pin by mutableStateOf("")
     private var pendingPin: CharArray? = null
     private var requestCancelled = false
+    private var retryableCancellation = false
     private var presenceWatch: Job? = null
     private var completed = false
     private var active = false
@@ -114,6 +117,9 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                         if (create != null) "webauthn.create" else "webauthn.get", request.hash)
                 }
             } catch (_: Exception) { rejected = true }
+            finally {
+                if (rejected || completed || isDestroyed) closeIdleInputs()
+            }
             loading = false
         }
     }
@@ -225,12 +231,13 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private fun execute(connect: () -> CardChannel) {
         val secret = pendingPin
         pendingPin = null
-        lifecycleScope.launch {
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            operationOwnsInputs = true
             var pendingOutput: OperationResult<ProviderOutput>? = null
             var retained = false
             try {
                 val cardResult = withContext(Dispatchers.IO) {
-                    runner.execute(create, get, requireNotNull(clientData), secret, selected?.device?.deviceName, connect).also { pendingOutput = it }
+                    runner.execute(create, get, requireNotNull(clientData), secret, selected?.device?.deviceName, requireNotNull(extracted).claim, connect).also { pendingOutput = it }
                 }
                 val result = if (requestCancelled && cardResult is OperationResult.Completed)
                     OperationResult.Failed(FailureCode.CANCELLED, cardResult.effect) else cardResult
@@ -257,6 +264,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     }
                 }
             } finally {
+                operationOwnsInputs = false
+                closeIdleInputs()
                 val output = (pendingOutput as? OperationResult.Completed)?.value
                 if (!retained && output is ProviderOutput.Assertions) output.values.forEach { it.close() }
             }
@@ -270,6 +279,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             PendingIntentHandler.setCreateCredentialResponse(result,
                 CreatePublicKeyCredentialResponse(ResponseEncoder.create(credential, requireNotNull(clientData))))
             completed = true
+            extracted?.claim?.finish(cancelled = false)
             setResult(RESULT_OK, result)
             finish()
         } catch (_: Exception) {
@@ -284,6 +294,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             PendingIntentHandler.setGetCredentialResponse(result,
                 GetCredentialResponse(PublicKeyCredential(ResponseEncoder.get(assertion, requireNotNull(clientData)))))
             completed = true
+            extracted?.claim?.finish(cancelled = false)
             assertions.forEach { it.close() }
             assertions = emptyList()
             setResult(RESULT_OK, result)
@@ -302,6 +313,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         assertions.forEach { it.close() }
         assertions = emptyList()
         runner.cancel()
+        retryableCancellation = extracted?.claim?.finish(cancelled = true) == true || retryableCancellation
+        closeIdleInputs()
         if (busy) {
             // Keep the result screen until an in-flight command's outcome is known.
             if (lastTag == null && selected == null) { busy = false; finishException(true) }
@@ -311,6 +324,13 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private fun finishException(cancelled: Boolean) {
         if (completed) return
         completed = true
+        closeIdleInputs()
+        val reopened = extracted?.claim?.finish(cancelled) == true
+        if (cancelled && (reopened || retryableCancellation)) {
+            setResult(RESULT_CANCELED)
+            finish()
+            return
+        }
         val result = Intent()
         if (intent.action == ProviderRequests.ACTION_CREATE) {
             PendingIntentHandler.setCreateCredentialException(result,
@@ -355,10 +375,18 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         super.onPause()
     }
 
+    private fun closeIdleInputs() {
+        if (operationOwnsInputs) return
+        create?.extensions?.close()
+        get?.extensions?.close()
+    }
+
     override fun onDestroy() {
         assertions.forEach { it.close() }
         pendingPin?.fill('\u0000')
         runner.cancel()
+        extracted?.claim?.finish(cancelled = true)
+        closeIdleInputs()
         if (receiverRegistered) unregisterReceiver(receiver)
         super.onDestroy()
     }

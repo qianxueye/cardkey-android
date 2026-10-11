@@ -111,7 +111,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.FIDO_INFO -> info(fido.getInfo())
             ManagerOperation.FIDO_RETRIES -> fido.retries().let {
                 ManagerReport(listOf(ResultRow("PIN 剩余重试次数", "${it.pin} 次")) +
-                    listOfNotNull(it.uv?.let { count -> ResultRow("UV", count.toString()) },
+                    listOfNotNull(it.uv?.let { count -> ResultRow("UV 剩余重试次数", "$count 次") },
                         it.powerCycleState?.takeIf { required -> required }?.let {
                             ResultRow("", "请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。")
                         }))
