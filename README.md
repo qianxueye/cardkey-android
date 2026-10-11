@@ -2,7 +2,7 @@
 
 A native Kotlin and Jetpack Compose Material 3 manager for FIDO2 and PIV smart cards, with an interactive Android Credential Provider. The Android application has its own public protocol implementation and builds without private repositories, applet binaries, provisioning secrets, or private CI artifacts.
 
-The application targets Android 14 and later. NFC uses Android IsoDep. The USB adapter supports the Identiv uTrust 2700R (`04e6:5810`) when its CCID descriptor advertises APDU exchange and its active card parameters identify T=0 or T=1. Physical reader and phone qualification must be recorded separately from a successful build.
+The application targets Android 14 and later. NFC uses Android IsoDep. The USB adapter handles the Identiv uTrust 2700R (`04e6:5810`) through reader-managed APDU exchange or host-managed T=1 TPDU exchange. The recorded TPDU profile (`bcdDevice=0202`, features `0x100BA`) requires valid current T=1 parameters, successful link synchronization, and an acknowledged IFSD of 32 before any APDU. T=0 TPDU exchange is unsupported. Physical reader and phone qualification must be recorded separately from a successful build. [Transport scope](docs/T1-TRANSPORT.md)
 
 ## Build
 

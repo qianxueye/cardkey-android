@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CcidCapabilitiesTest {
+    @Test fun actualUtrust2700DescriptorAdmitsT1Tpdu() {
+        val raw = byteArrayOf(9, 4, 0, 0, 3, 0x0b, 0, 0, 0) +
+            "36211001000703000000c0120000803e00000067320000c027090000fc0000000000000000000000ba0001000f010000ffff00000001"
+                .chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val caps = CcidCapabilities.parse(raw, 0)
+        assertEquals(0x100ba, caps.features)
+        assertEquals(252, caps.maxIfsd)
+        assertEquals(271, caps.maxMessageBytes)
+        assertEquals(65544, caps.maxCommandBytes)
+    }
+
     @Test fun descriptorSelectsItsOwnInterfaceAndCapabilities() {
         val caps = CcidCapabilities.parse(descriptor(), 2)
         assertTrue(caps.extended)
@@ -20,7 +31,8 @@ class CcidCapabilitiesTest {
 
     @Test fun unsupportedOrMalformedDescriptorsAreRejected() {
         val invalid = listOf(
-            descriptor(features = 0x1004a),
+            descriptor(features = 0x1004a, protocols = 1),
+            descriptor(features = 0x1044a),
             descriptor(features = 0x6004a),
             descriptor(features = 0x40048),
             descriptor(features = 0x4000a),
