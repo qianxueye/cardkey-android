@@ -41,4 +41,10 @@
     <string name="provider_attestation_direct">该服务请求卡片证明，响应可能包含可识别这张卡的证书。</string>
     <string name="provider_choose_account">选择用于登录 %1$s 的账户。</string>
     <string name="provider_request_rejected">无法验证请求应用或请求内容，未向卡片发送指令。</string>
+    <string name="error_nfcUnavailable" formatted="false">此设备不支持 NFC。请连接受支持的 USB 读卡器。</string>
+    <string name="error_nfcDisabled" formatted="false">NFC 未开启。请开启 NFC，或连接受支持的 USB 读卡器。</string>
+    <string name="error_capacityExceeded" formatted="false">卡片存储空间不足，或已达到此操作的数量或大小限制。</string>
+    <string name="error_recoveryRequired" formatted="false">卡片状态与预期不符。请先读取卡片状态，勿重复提交更改。</string>
+    <string name="error_cardRejected" formatted="false">卡片拒绝了此操作。请检查卡片状态及操作前提。</string>
+    <string name="confirm_blobWrite" formatted="false">将替换此密钥对应的 Large Blob 数据，原内容无法恢复。确认写入？</string>
 </resources>

@@ -81,7 +81,7 @@ class ManagerOperations {
             })
             ManagerOperation.FIDO_DELETE -> { fido.deleteCredential(input.pin, input.text.hexBytes()); empty() }
             ManagerOperation.FIDO_UPDATE -> {
-                fido.updateUser(input.pin, input.text.hexBytes(), FidoUser(input.bytes, input.secondary, input.secondary)); empty()
+                fido.updateUser(input.pin, input.text.hexBytes(), input.secondary, null); empty()
             }
             ManagerOperation.FIDO_ALWAYS_UV -> info(fido.setAlwaysUv(input.pin.takeIf { it.isNotEmpty() }, input.enabled))
             ManagerOperation.FIDO_MIN_PIN -> info(fido.setMinPinLength(input.pin.takeIf { it.isNotEmpty() }, input.text.toInt(), forceChange = input.enabled))
@@ -97,7 +97,7 @@ class ManagerOperations {
                 ManagerReport(listOf(ResultRow("bytes", (blob?.size ?: 0).toString())), blob, "cardkey-blob.bin")
             }
             ManagerOperation.FIDO_BLOB_WRITE -> {
-                fido.writeLargeBlob(input.pin.takeIf { it.isNotEmpty() }, input.adminKey, input.bytes); empty()
+                fido.writeLargeBlob(input.pin.takeIf { it.isNotEmpty() }, input.adminKey, input.bytes.copyOf()); empty()
             }
             ManagerOperation.PIV_INFO -> piv.readInfo().let {
                 ManagerReport(listOf(ResultRow("版本", it.version), ResultRow("序列号", it.serial.toString()),
