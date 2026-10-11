@@ -15,12 +15,12 @@ class ManagerCredentialMutationTest {
         var deleted = false
         var changed = false
         var user: Cbor.Map? = null
+        var readbackUser: Cbor.Map? = null
         var writes = 0
         lateinit var channel: FidoChannel
     }
 
-    private fun run(operation: ManagerOperation, card: Card): OperationResult<ManagerReport> {
-        card.channel = FidoChannel { code, map -> when (code) {
+    private fun channel(card: Card): FidoChannel = FidoChannel { code, map -> when (code) {
             4 -> success(info(mapOf("pinUvAuthToken" to true, "credMgmt" to true)))
             6 -> card.server.respond(map!!, 4, null)
             10 -> when (map!![1].number().toInt()) {
@@ -28,7 +28,7 @@ class ManagerCredentialMutationTest {
                 4 -> {
                     if (card.readbackFails && card.writes > 0) throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
                     if (card.deleted || !card.known) byteArrayOf(0x2e) else success(cborMap(
-                        6 to (if (card.changed) card.user!! else FidoUser(userId, "old", "old").encode()),
+                        6 to (if (card.changed) card.readbackUser ?: card.user!! else FidoUser(userId, "old", "old").encode()),
                         7 to descriptor(id), 8 to cborMap(), 9 to 1.cbor()))
                 }
                 6 -> { card.writes++; if (card.persist) card.deleted = true; success() }
@@ -37,10 +37,19 @@ class ManagerCredentialMutationTest {
             }
             else -> error("Unexpected CTAP command")
         } }
+
+    private fun run(operation: ManagerOperation, card: Card): OperationResult<ManagerReport> {
+        card.channel = channel(card)
         return OperationInput(operation, pin = "1234".toCharArray(), text = id.hex(),
             secondary = "updated", bytes = byteArrayOf(99)).use { input ->
             CardSession(card.channel).run { ManagerOperations().execute(it, input) }
         }
+    }
+
+    private fun update(card: Card, name: String?, displayName: String?): OperationResult<Unit> {
+        card.channel = channel(card)
+        return CardSession(card.channel).run { FidoClient(it).apply { select() }.updateUser(
+            "1234".toCharArray(), id, name, displayName) }
     }
 
     @Test fun acknowledgedButUnchangedDeletionFailsReadback() {
@@ -85,4 +94,56 @@ class ManagerCredentialMutationTest {
             assertEquals(0, card.writes)
         }
     }
+    @Test fun emptyNameFieldsVerifyAbsentReadbackAsRemoval() {
+        for (field in listOf("name", "displayName")) {
+            val card = Card()
+            card.readbackUser = FidoUser(userId, if (field == "name") null else "unchanged",
+                if (field == "displayName") null else "unchanged").encode()
+            assertTrue(update(card, if (field == "name") "" else "unchanged",
+                if (field == "displayName") "" else "unchanged") is OperationResult.Completed)
+            assertEquals("", card.user!![field].text())
+            assertArrayEquals(userId, card.user!!["id"].bytes())
+            assertEquals(1, card.server.tokenRequests); assertEquals(1, card.writes)
+        }
+    }
+    @Test fun omittedNameFieldsVerifyEmptyReadbackAsRemoval() {
+        for (field in listOf("name", "displayName")) {
+            val card = Card()
+            card.readbackUser = FidoUser(userId, if (field == "name") "" else "unchanged",
+                if (field == "displayName") "" else "unchanged").encode()
+            assertTrue(update(card, if (field == "name") null else "unchanged",
+                if (field == "displayName") null else "unchanged") is OperationResult.Completed)
+            assertNull(card.user!![field])
+            assertArrayEquals(userId, card.user!!["id"].bytes())
+            assertEquals(1, card.server.tokenRequests); assertEquals(1, card.writes)
+        }
+    }
+    @Test fun removalNeverAcceptsRetainedNonemptyNameOrDisplayName() {
+        for (field in listOf("name", "displayName")) for (removed in listOf<String?>(null, "")) {
+            val card = Card()
+            card.readbackUser = FidoUser(userId, "old", "old").encode()
+            assertEquals(OperationResult.Failed(FailureCode.RECOVERY_REQUIRED, Effect.APPLIED, writeAccepted = true),
+                update(card, if (field == "name") removed else "old", if (field == "displayName") removed else "old"))
+            assertEquals(1, card.server.tokenRequests); assertEquals(1, card.writes)
+        }
+    }
+    @Test fun nonemptyNameAndDisplayNameReadbackStillRequiresExactRequestedValue() {
+        for (field in listOf("name", "displayName")) for (wrong in listOf<String?>(null, "", "different")) {
+            val card = Card()
+            card.readbackUser = FidoUser(userId, if (field == "name") wrong else "requested",
+                if (field == "displayName") wrong else "requested").encode()
+            assertEquals(OperationResult.Failed(FailureCode.RECOVERY_REQUIRED, Effect.APPLIED, writeAccepted = true),
+                update(card, "requested", "requested"))
+            assertEquals(1, card.server.tokenRequests); assertEquals(1, card.writes)
+        }
+    }
+    @Test fun removedNamesDoNotRelaxImmutableUserIdReadback() {
+        val card = Card()
+        card.readbackUser = FidoUser(byteArrayOf(99), "", "").encode()
+        assertEquals(OperationResult.Failed(FailureCode.RECOVERY_REQUIRED, Effect.APPLIED, writeAccepted = true),
+            update(card, "", ""))
+        assertArrayEquals(userId, card.user!!["id"].bytes())
+        assertEquals(1, card.server.tokenRequests); assertEquals(1, card.writes)
+    }
+
 }
