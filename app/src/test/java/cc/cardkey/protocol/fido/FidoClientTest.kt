@@ -68,15 +68,22 @@ class FidoClientTest {
         for (version in 1..2) {
             val server = PinServer(version)
             val id = byteArrayOf(9, 8, 7)
+            var deleted = false
             val channel = FidoChannel { code, map -> when (code) {
                 4 -> success(info(mapOf("pinUvAuthToken" to true, "credMgmt" to true), listOf(version)))
                 6 -> server.respond(map!!, expectedPermission = 4, expectedRp = null)
                 0x0a -> {
-                    assertEquals(6L, map!![1].number()); assertEquals(version.toLong(), map[3].number())
-                    assertArrayEquals(id, parseDescriptor(map[2].map()[2]))
-                    val message = byteArrayOf(6) + CborCodec.encode(map[2].map())
+                    val sub = map!![1].number().toInt()
+                    assertEquals(version.toLong(), map[3].number())
+                    val message = byteArrayOf(sub.toByte()) + (map[2]?.map()?.let(CborCodec::encode) ?: byteArrayOf())
                     assertArrayEquals(PinProtocol.authenticate(version, server.token, message), map[4].bytes())
-                    success()
+                    when (sub) {
+                        2 -> success(cborMap(3 to textMap("id" to "example.test".cbor()), 4 to ByteArray(32).cbor(), 5 to 1.cbor()))
+                        4 -> if (deleted) byteArrayOf(0x2e) else success(cborMap(6 to FidoUser(byteArrayOf(1), null, null).encode(),
+                            7 to descriptor(id), 8 to cborMap(), 9 to 1.cbor()))
+                        6 -> { assertArrayEquals(id, parseDescriptor(map[2].map()[2])); deleted = true; success() }
+                        else -> error("Unexpected management command")
+                    }
                 }
                 else -> error("unexpected command")
             } }
@@ -84,7 +91,7 @@ class FidoClientTest {
             val result = CardSession(channel).run { session -> FidoClient(session).apply { select() }.deleteCredential(pin, id) }
             assertTrue(result is OperationResult.Completed); assertArrayEquals(CharArray(4), pin)
             assertEquals(1, server.tokenRequests)
-            assertEquals(listOf(4, 6, 6, 10), channel.commands.map { it.first })
+            assertEquals(listOf(4, 6, 6, 10, 10, 10, 10), channel.commands.map { it.first })
         }
     }
     @Test fun wrongPinDoesNotAcquireAgainAndAlwaysWipesCallerPin() {
@@ -105,7 +112,12 @@ class FidoClientTest {
         val channel = FidoChannel { code, map -> when (code) {
             4 -> success(info(mapOf("pinUvAuthToken" to true, "credMgmt" to true)))
             6 -> server.respond(map!!, 4, null)
-            10 -> byteArrayOf(0x27)
+            10 -> when (map!![1].number().toInt()) {
+                2 -> success(cborMap(3 to textMap("id" to "example.test".cbor()), 4 to ByteArray(32).cbor(), 5 to 1.cbor()))
+                4 -> success(cborMap(6 to FidoUser(byteArrayOf(1), null, null).encode(), 7 to descriptor(byteArrayOf(1)), 8 to cborMap(), 9 to 1.cbor()))
+                6 -> byteArrayOf(0x27)
+                else -> error("Unexpected management command")
+            }
             else -> error("unexpected command")
         } }
         val result = CardSession(channel).run { session -> FidoClient(session).apply { select() }.deleteCredential("1234".toCharArray(), byteArrayOf(1)) }

@@ -92,7 +92,7 @@ class CardSession(private val channel: CardChannel) : Closeable {
         running = true
         return try { OperationResult.Completed(operation(this), effect) }
         catch (e: CardFailure) { OperationResult.Failed(e.code, effect, e.status, writeAccepted = writeAccepted) }
-        catch (e: TransportException) { OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, effect, dispatch = e.dispatch, writeAccepted = writeAccepted) }
+        catch (e: TransportException) { OperationResult.Failed(if (e.cancelled) FailureCode.CANCELLED else FailureCode.TRANSPORT_FAILURE, effect, dispatch = e.dispatch, writeAccepted = writeAccepted) }
         catch (_: java.security.GeneralSecurityException) { OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, effect, writeAccepted = writeAccepted) }
         catch (_: IllegalArgumentException) { OperationResult.Failed(FailureCode.INVALID_INPUT, effect, writeAccepted = writeAccepted) }
         finally { close() }

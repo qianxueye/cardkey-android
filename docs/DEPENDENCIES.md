@@ -18,6 +18,8 @@ Original Kotlin protocol and reader implementations were written for this reposi
 | Gson | 2.13.1 | Apache-2.0; strict bounded JSON parsing and response encoding |
 | OkHttp | 4.12.0 | Apache-2.0; native DAL HTTPS only |
 | AndroidX Test runner / core / JUnit extension | 1.6.2 / 1.6.1 / 1.2.1 | Apache-2.0; scripted instrumentation only |
+| Robolectric | 4.16 | MIT; JVM Android framework simulation, tests only |
+| Kotlin Coroutines Test | 1.10.2 | Apache-2.0; ViewModel dispatcher control, tests only |
 | JUnit | 4.13.2 | EPL-1.0; tests only |
 | Hamcrest Core | 1.3 (JUnit transitive) | BSD-3-Clause; tests only |
 
@@ -43,3 +45,5 @@ The chosen library set stays within the verified AGP 8.13.2 / API 36 toolchain. 
 Credentials brings Fragment transitively. Its version is constrained to 1.8.9 because versions below 1.3.0 do not support the Activity Result API contract used by the app. [Official Fragment releases](https://developer.android.com/jetpack/androidx/releases/fragment#1.8.9)
 
 The Credentials library brings biometric support transitively, but this hardware provider does not invoke it. The manifest removes its unused biometric permissions; it never substitutes a phone biometric result for on-card UV.
+
+Robolectric and Kotlin Coroutines Test are JVM-only dependencies for NFC and ViewModel lifecycle regressions. They are not packaged in the application.

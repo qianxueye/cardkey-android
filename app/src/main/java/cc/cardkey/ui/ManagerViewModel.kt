@@ -2,6 +2,7 @@ package cc.cardkey.ui
 
 import android.app.Application
 import android.hardware.usb.UsbManager
+import android.nfc.NfcAdapter
 import android.nfc.Tag
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -41,7 +42,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private var inProgress = false
     @Volatile private var cancelled = false
     private var presenceBlockedReader: String? = null
-    private val currentChannel = AtomicReference<CardChannel?>(null)
+    private val currentChannel = AtomicReference<CancellableCardChannel?>(null)
     private var retryApproval: CompletableDeferred<Boolean>? = null
     private var presenceWatch: Job? = null
 
@@ -79,6 +80,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (mutable.value.nfc) {
             pending = input
             mutable.value = mutable.value.copy(awaitingNfc = true)
+            refreshNfc()
         } else {
             val reader = mutable.value.selectedReader
             if (reader == null || !usb.hasPermission(reader.device)) {
@@ -93,6 +95,19 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             }
             run(input) { UsbCcidReader.connect(usb, reader, allowInitialPowerOn = true) }
         }
+    }
+
+    fun refreshNfc() {
+        if (!mutable.value.awaitingNfc) return
+        val adapter = NfcAdapter.getDefaultAdapter(getApplication())
+        val failure = when {
+            adapter == null -> FailureCode.NFC_UNAVAILABLE
+            !adapter.isEnabled -> FailureCode.NFC_DISABLED
+            else -> return
+        }
+        pending?.close()
+        pending = null
+        finish(OperationResult.Failed(failure, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED))
     }
 
     fun onTag(tag: Tag) {
@@ -114,17 +129,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                         val lease = CardOperationGate.tryAcquire()
                             ?: return@withContext OperationResult.Failed(FailureCode.BUSY, Effect.NONE)
                         lease.use {
-                            val channel = connect()
+                            val channel = CancellableCardChannel(connect()) { cancelled }
                             currentChannel.set(channel)
                             if (cancelled) {
                                 channel.close()
                                 OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
-                            } else CardSession(object : CardChannel by channel {
-                                override fun transmit(command: ByteArray): ByteArray {
-                                    if (cancelled) throw CardFailure(FailureCode.CANCELLED)
-                                    return channel.transmit(command)
-                                }
-                            }).use sessionUse@ { session ->
+                            } else CardSession(channel).use sessionUse@ { session ->
                                 if (ConfirmationPolicy.pivVerificationReference(input.operation) != null) {
                                     session.requireContact()
                                     val before = PivClient(session).readInfo()
@@ -158,7 +168,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 } catch (e: CardFailure) {
                     OperationResult.Failed(e.code, Effect.NONE, e.status)
                 } catch (e: TransportException) {
-                    OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.NONE, dispatch = e.dispatch)
+                    OperationResult.Failed(if (e.cancelled) FailureCode.CANCELLED else FailureCode.TRANSPORT_FAILURE, Effect.NONE, dispatch = e.dispatch)
                 } catch (_: SecurityException) {
                     OperationResult.Failed(FailureCode.AUTHORIZATION_DENIED, Effect.NONE)
                 } finally { currentChannel.set(null); input.close() }
@@ -176,10 +186,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     if (report.protectedExport) report.export?.fill(0)
                 }
             }
-            finish(if (cancelled) when (result) {
-                is OperationResult.Failed -> result.copy(code = FailureCode.CANCELLED)
-                is OperationResult.Completed -> OperationResult.Failed(FailureCode.CANCELLED, result.effect)
-            } else result)
+            finish(if (cancelled && result is OperationResult.Completed) result.copy(value = result.value.copy(
+                secrets = null, export = result.value.export.takeUnless { result.value.protectedExport })) else result)
         }
     }
 
@@ -221,7 +229,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         presenceWatch?.cancel()
         pending?.close()
         pending = null
-        currentChannel.get()?.let { channel -> viewModelScope.launch(Dispatchers.IO) { channel.close() } }
+        currentChannel.get()?.let { channel -> viewModelScope.launch(Dispatchers.IO) { channel.cancel() } }
         if (!inProgress && mutable.value.busy) finish(OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE))
     }
 
