@@ -182,7 +182,7 @@ class FidoClient(private val session: CardSession) {
         val user = existing.user.copy(name = name, displayName = displayName)
         management(7, cborMap(2 to descriptor(id), 3 to user.encode()), token, true)
         val updated = credentials(token, rp.idHash).singleOrNull { it.id.contentEquals(id) }?.user
-        if (updated == null || !updated.id.contentEquals(user.id) || updated.name != name || updated.displayName != displayName)
+        if (updated == null || !updated.id.contentEquals(user.id) || updated.name.orEmpty() != name.orEmpty() || updated.displayName.orEmpty() != displayName.orEmpty())
             throw CardFailure(FailureCode.RECOVERY_REQUIRED)
     }
 
