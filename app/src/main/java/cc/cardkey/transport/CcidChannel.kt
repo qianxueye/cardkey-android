@@ -18,9 +18,11 @@ internal data class CcidCapabilities(
     val protocols: Int,
     val features: Int,
     val maxMessageBytes: Int,
+    val maxIfsd: Int = 32,
 ) {
+    val tpdu: Boolean get() = features and 0x70000 == 0x10000
     val extended: Boolean get() = features and 0x70000 == 0x40000
-    val maxCommandBytes: Int get() = if (extended) 65544 else minOf(261, maxMessageBytes - 10)
+    val maxCommandBytes: Int get() = if (extended || tpdu) 65544 else minOf(261, maxMessageBytes - 10)
 
     companion object {
         fun parse(raw: ByteArray, interfaceId: Int): CcidCapabilities {
@@ -47,12 +49,18 @@ internal data class CcidCapabilities(
                         val protocols = descriptor.u32(6)
                         val features = descriptor.u32(40)
                         val maxMessage = descriptor.u32(44)
+                        val maxIfsd = descriptor.u32(28)
                         require(protocols in 1L..3L)
-                        require(features and 0x70000 in setOf(0x20000L, 0x40000L))
+                        require(features and 0x70000 in setOf(0x10000L, 0x20000L, 0x40000L))
+                        if (features and 0x70000 == 0x10000L) {
+                            require(protocols and 2 != 0L)
+                            require(maxIfsd in 32L..254L)
+                            require(features and 0x400 == 0L)
+                        }
                         require(features and 2 != 0L)
                         require(features and 0xc0 in setOf(0x40L, 0x80L))
                         require(maxMessage in 271L..65554L)
-                        result = CcidCapabilities(protocols.toInt(), features.toInt(), maxMessage.toInt())
+                        result = CcidCapabilities(protocols.toInt(), features.toInt(), maxMessage.toInt(), maxIfsd.toInt())
                     }
                 }
                 offset += size
@@ -74,6 +82,7 @@ internal class CcidChannel(
     private var sequence = 0
     private val closed = AtomicBoolean(false)
     private var initialized = false
+    private var t1: T1Protocol? = null
     private var deadline = 0L
     private var dispatched = false
 
@@ -116,6 +125,15 @@ internal class CcidChannel(
             require(parameters.data.size == if (parameters.parameter == 0) 5 else 7)
             require(capabilities.protocols and (1 shl parameters.parameter) != 0)
             require(atr == null || parameters.parameter in atr)
+            if (capabilities.tpdu) {
+                require(parameters.parameter == 1)
+                t1 = T1Protocol(T1Parameters.parse(parameters.data)) { block, multiplier ->
+                    require(block.size <= capabilities.maxMessageBytes - 10)
+                    val reply = exchange(0x6f, block, 0x80, bwi = multiplier)
+                    require(reply.cardStatus == 0 && reply.parameter == 0)
+                    reply.data
+                }.also { it.synchronize() }
+            }
             initialized = true
         }
     }
@@ -123,10 +141,11 @@ internal class CcidChannel(
     @Synchronized
     override fun transmit(command: ByteArray): ByteArray {
         if (!initialized || closed.get() || command.size !in 4..maxCommandBytes ||
-            (!capabilities.extended && command.size > 5 && command[4] == 0.toByte())) {
+            (!capabilities.extended && !capabilities.tpdu && command.size > 5 && command[4] == 0.toByte())) {
             throw TransportException(Dispatch.NOT_DISPATCHED)
         }
         return transaction {
+            t1?.let { return@transaction it.transmit(command) }
             val chunkBytes = capabilities.maxMessageBytes - 10
             var offset = 0
             var response: Response
@@ -185,13 +204,14 @@ internal class CcidChannel(
         return minOf(remaining, timeoutMillis.toLong()).toInt()
     }
 
-    private fun exchange(type: Int, data: ByteArray, expected: Int, level: Int = 0): Response {
+    private fun exchange(type: Int, data: ByteArray, expected: Int, level: Int = 0, bwi: Int = 0): Response {
         val seq = sequence
         sequence = (sequence + 1) and 0xff
         val message = ByteArray(10 + data.size)
         message[0] = type.toByte()
         for (i in 0..3) message[1 + i] = (data.size ushr (8 * i)).toByte()
         message[6] = seq.toByte()
+        message[7] = bwi.toByte()
         message[8] = level.toByte()
         message[9] = (level ushr 8).toByte()
         data.copyInto(message, 10)
