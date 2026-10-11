@@ -1,6 +1,6 @@
 # Repository instructions
 
-Implementation status: awaiting Owner approval of the project plan. This repository was initialized with planning documents only. A later direct Owner approval in the conversation authorizes the approved work; update the recorded status and do not ask repeatedly for the same authorization.
+Implementation status: the Owner approved the Android manager package and public repository. The Owner also approved the initial Chinese confirmation/status batch and activation. Subsequent nontrivial copy changes still follow the workspace approval rule. Android Credential Provider integration is a later independent package.
 
 Use English for subagent briefs and internal handoffs, and Chinese for Owner-facing explanations. Follow the parent workspace Git, signing, attribution, review, verification and copy rules. Preserve unrelated work. After bootstrap, use a fresh task branch from the current remote default branch, commit coherent steps, and publish one consolidated tested candidate per package or review round.
 
@@ -12,4 +12,4 @@ Keep management keys, PINs, attestation private keys, signing keys, real credent
 
 Before adopting upstream source, pin the revision and preserve its license/notices. Frontend wording approval remains separate from functional approval.
 
-Repository scope: Self-contained Kotlin/Compose application managing both FIDO2 and PIV through qualified NFC/USB paths; Android 14+ credential-provider integration.
+Repository scope: Self-contained Kotlin/Compose application managing both FIDO2 and PIV through NFC/USB paths. Record physical qualification separately. Android 14+ credential-provider integration is outside this management package.

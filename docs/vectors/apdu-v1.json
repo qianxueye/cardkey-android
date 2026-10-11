@@ -1,0 +1,90 @@
+{
+  "schema": "cardkey.public-apdu.v1",
+  "fixture_origin": "Original synthetic public-standard vectors; no physical card captures.",
+  "cases": [
+    {
+      "name": "fido-select",
+      "operation": "FidoSelect",
+      "request_apdu": "00a4040008a0000006472f000100",
+      "response_apdu": "4649444f5f325f309000",
+      "expected_status": 36864,
+      "expected_effect": "NONE"
+    },
+    {
+      "name": "fido-get-info",
+      "operation": "FidoGetInfo",
+      "request_apdu": "80100000010400",
+      "response_apdu": "00a30181684649444f5f325f3003500000000000000000000000000000000004a162726bf59000",
+      "expected_status": 0,
+      "expected_effect": "NONE"
+    },
+    {
+      "name": "piv-pin-retries",
+      "operation": "PivPinMetadata",
+      "request_apdu": "00f7008000",
+      "response_apdu": "050101060203039000",
+      "expected_status": 36864,
+      "expected_effect": "NONE",
+      "expected_remaining_retries": 3
+    },
+    {
+      "name": "piv-wrong-pin",
+      "operation": "PivVerifyPin",
+      "request_apdu": "0020008008313131313131ffff",
+      "response_apdu": "63c2",
+      "expected_status": 25538,
+      "expected_effect": "APPLIED",
+      "expected_write_accepted": false
+    },
+    {
+      "name": "fido-up-required",
+      "operation": "FidoMakeCredentialResponse",
+      "response_apdu": "3b9000",
+      "expected_status": 59,
+      "expected_error": "PHYSICAL_ACTION_REQUIRED",
+      "expected_session_closed": true,
+      "expected_retry_count": 0
+    },
+    {
+      "name": "not-dispatched-write",
+      "operation": "MutationTransportFailure",
+      "transport_outcome": "NOT_DISPATCHED",
+      "expected_effect": "NONE",
+      "expected_write_accepted": false,
+      "expected_retry_count": 0
+    },
+    {
+      "name": "lost-write-response",
+      "operation": "MutationTransportFailure",
+      "transport_outcome": "RESPONSE_UNAVAILABLE",
+      "expected_effect": "UNKNOWN",
+      "expected_write_accepted": false,
+      "expected_retry_count": 0
+    },
+    {
+      "name": "accepted-write-readback-lost",
+      "operation": "MutationReadbackFailure",
+      "write_response_apdu": "9000",
+      "readback_transport_outcome": "RESPONSE_UNAVAILABLE",
+      "expected_effect": "APPLIED",
+      "expected_write_accepted": true,
+      "expected_retry_count": 0
+    },
+    {
+      "name": "piv-nfc-private-op",
+      "operation": "PivChangePin",
+      "medium": "NFC",
+      "expected_transmitted_apdus": [],
+      "expected_error": "CONTACT_REQUIRED",
+      "expected_effect": "NONE"
+    },
+    {
+      "name": "piv-unknown-private-op",
+      "operation": "PivChangePin",
+      "medium": "UNKNOWN",
+      "expected_transmitted_apdus": [],
+      "expected_error": "CONTACT_REQUIRED",
+      "expected_effect": "NONE"
+    }
+  ]
+}
