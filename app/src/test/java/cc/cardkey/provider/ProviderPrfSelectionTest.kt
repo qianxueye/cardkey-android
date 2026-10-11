@@ -87,6 +87,93 @@ class ProviderPrfSelectionTest {
         }
     }
 
+    @Test fun cancellationAfterSuccessfulPreflightBlocksFurtherDispatchWhenCloseIsAdvisory() {
+        for (version in 1..2) {
+            val runner = ProviderOperationRunner()
+            val server = FidoClientTest.PinServer(version)
+            var assertions = 0
+            var closeCalls = 0
+            var cancelledAtPreflight = false
+            var commandsAtPreflight = 0
+            val underlying = FidoChannel { code, map -> when (code) {
+                4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true), listOf(version), listOf("hmac-secret")))
+                6 -> server.respond(map!!, 2, rp)
+                2 -> {
+                    assertions++
+                    if (assertions == 1) {
+                        assertFalse(map!![5].map()["up"].bool())
+                        assertNull(map[4])
+                        success(response())
+                    } else {
+                        val hmac = map!![4].map()["hmac-secret"].map()
+                        val shared = server.keyFor(hmac[1].map())
+                        val ext = textMap("hmac-secret" to PinProtocol.encrypt(version, shared, ByteArray(64)).cbor())
+                        shared.fill(0)
+                        success(response(up = true, extensions = ext))
+                    }
+                }
+                else -> error("Unexpected command $code")
+            } }
+            val advisoryCloseChannel = object : CardChannel by underlying {
+                override fun transmit(command: ByteArray): ByteArray {
+                    val response = underlying.transmit(command)
+                    if (assertions == 1 && !cancelledAtPreflight) {
+                        cancelledAtPreflight = true
+                        commandsAtPreflight = underlying.commands.size
+                        runner.cancel()
+                        assertNull(CardOperationGate.tryAcquire())
+                    }
+                    return response
+                }
+                override fun close() { closeCalls++ }
+            }
+            val pin = "1234".toCharArray()
+            val result = runner.execute(null, request(), data, pin) { advisoryCloseChannel }
+            assertTrue(result is OperationResult.Failed)
+            val failure = result as OperationResult.Failed
+            assertEquals(FailureCode.CANCELLED, failure.code)
+            assertEquals(Effect.APPLIED, failure.effect)
+            assertTrue(failure.writeAccepted)
+            assertEquals(commandsAtPreflight, underlying.commands.size)
+            assertEquals(1, assertions)
+            assertEquals(1, server.tokenRequests)
+            assertEquals(1, underlying.selectCount)
+            assertFalse(underlying.closed)
+            assertTrue(closeCalls > 0)
+            assertTrue(pin.all { it == '\u0000' })
+            requireNotNull(CardOperationGate.tryAcquire()).close()
+        }
+    }
+
+    @Test fun cancellationAfterFinalDispatchPreservesUnknownOutcomeAndKnownPreflightEffect() {
+        val runner = ProviderOperationRunner()
+        val server = FidoClientTest.PinServer(2)
+        var assertions = 0
+        val channel = FidoChannel { code, map -> when (code) {
+            4 -> success(info(mapOf("uv" to true), extensions = listOf("hmac-secret")))
+            6 -> success(cborMap(1 to server.cose))
+            2 -> if (++assertions == 1) success(response()) else {
+                assertTrue(map!![5].map()["up"].bool())
+                assertArrayEquals(selectedId, parseDescriptor(map[3].array().single()))
+                runner.cancel()
+                assertNull(CardOperationGate.tryAcquire())
+                throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+            }
+            else -> error("Unexpected command $code")
+        } }
+        val result = runner.execute(null, request(), data, null) { channel }
+        assertTrue(result is OperationResult.Failed)
+        val failure = result as OperationResult.Failed
+        assertEquals(FailureCode.TRANSPORT_FAILURE, failure.code)
+        assertEquals(Effect.UNKNOWN, failure.effect)
+        assertEquals(Dispatch.RESPONSE_UNAVAILABLE, failure.dispatch)
+        assertTrue(failure.writeAccepted)
+        assertEquals(2, assertions)
+        assertEquals(1, channel.selectCount)
+        assertTrue(channel.closed)
+        requireNotNull(CardOperationGate.tryAcquire()).close()
+    }
+
     @Test fun preflightMalformedIdentityFlagsExtensionsAndCountAbortBeforeFinalAssertion() {
         val cases = listOf(response(id = byteArrayOf(3)), response(up = true), response(uv = false),
             response(rpId = "wrong.example"), response(count = 2), response(count = 0),

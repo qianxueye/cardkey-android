@@ -34,7 +34,13 @@ internal class ProviderOperationRunner {
                 if (cancelled.get()) return@use OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                 val connected = connect()
                 channel.set(connected)
-                val result = CardSession(connected).use { session ->
+                val guarded = object : CardChannel by connected {
+                    override fun transmit(command: ByteArray): ByteArray {
+                        if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
+                        return connected.transmit(command)
+                    }
+                }
+                val result = CardSession(guarded).use { session ->
                     session.run {
                         if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
                         val result = if (create != null) ProviderOutput.Created(CardCredentialOperation.create(it, create, clientData, pin))
