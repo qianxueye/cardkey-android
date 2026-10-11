@@ -41,8 +41,8 @@ class ProviderExtensionsTest {
         assertEquals("527413ebb48293772df30f031c5ac4650c7de14bf9498671ae163447b6a772b3d68ac03329a10ee5e0ec834492bb9a96a0e547baf563bf78ccbe8789b22e776b",
             PrfInputs(first, second).salts().hex())
         val parsed = get("""{"prf":{"eval":{"first":"Ag"},"evalByCredential":{"AQ":{"first":"Aw","second":""}}}}""")
-        assertArrayEquals(byteArrayOf(3), parsed.extensions.prfInputs!!.first)
-        assertArrayEquals(byteArrayOf(), parsed.extensions.prfInputs.second)
+        assertArrayEquals(byteArrayOf(3), parsed.extensions.inputsFor(byteArrayOf(1))!!.first)
+        assertArrayEquals(byteArrayOf(), parsed.extensions.inputsFor(byteArrayOf(1))!!.second)
     }
 
     @Test fun rejectsMalformedAndUnsupportedInputsBeforeIo() {
@@ -56,9 +56,7 @@ class ProviderExtensionsTest {
         val noAllow = """{"rpId":"cardkey.example","challenge":"AQ"}"""
         assertThrows(ProviderRequestException::class.java) { get("""{"largeBlob":{"write":"AA"}}""", noAllow) }
         val multi = getJson.replace("}]", "},{\"type\":\"public-key\",\"id\":\"Ag\"}]")
-        assertTrue(assertThrows(ProviderRequestException::class.java) {
-            get("""{"prf":{"eval":{"first":"AQ"},"evalByCredential":{"Ag":{"first":"Ag"}}}}""", multi)
-        }.unsupported)
+        assertNotNull(get("""{"prf":{"eval":{"first":"AQ"},"evalByCredential":{"Ag":{"first":"Ag"}}}}""", multi))
         assertNotNull(get("""{"prf":{"eval":{"first":"AQ"},"evalByCredential":{"Ag":{"first":"AQ"}}}}""", multi))
     }
 

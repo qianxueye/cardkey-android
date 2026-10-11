@@ -72,15 +72,39 @@ object CardCredentialOperation {
             client.select()
             val info = client.getInfo()
             val input = request.extensions
-            val requireUv = requireUv(if (input.prfInputs != null && "hmac-secret" in info.extensions)
+            val effectiveInputs = if (request.allowIds.isEmpty()) listOf(input.prfInputs)
+                else request.allowIds.map(input::inputsFor)
+            val initialInputs = effectiveInputs.first()
+            var prfInputs = initialInputs
+            val supportsPrf = "hmac-secret" in info.extensions
+            val requireUv = requireUv(if (supportsPrf && effectiveInputs.any { it != null })
                 UserVerificationRequirement.REQUIRED else request.userVerification, info, pin)
+            var allowIds = request.allowIds
+            var selected: Assertion? = null
+            if (supportsPrf && effectiveInputs.any { if (initialInputs == null) it != null else !initialInputs.sameAs(it) }) {
+                val preflight = client.getAssertion(GetAssertionRequest(request.rpId, clientData.hash,
+                    allowIds, requireUv = true, userPresence = false), pin?.copyOf()).singleOrNull() ?: malformed()
+                val auth = validateAuth(preflight.authData, request.rpId, requireUv = true, requireUp = false)
+                if (auth.userPresent || auth.credentialId != null || auth.extensions?.value?.isNotEmpty() == true ||
+                    allowIds.none { it.contentEquals(preflight.credentialId) } ||
+                    (preflight.user != null && preflight.user.id.size !in 1..64)) malformed()
+                validateSignature(preflight.signature)
+                selected = preflight
+                allowIds = listOf(preflight.credentialId)
+                prfInputs = input.inputsFor(preflight.credentialId)
+            }
             val extensions = AssertionExtensions(
                 input.getCredBlob && "credBlob" in info.extensions,
-                input.prfInputs?.takeIf { "hmac-secret" in info.extensions }?.salts(),
+                prfInputs?.takeIf { supportsPrf }?.salts(),
                 (input.largeBlobRead || input.largeBlobWrite != null) && info.supportsLargeBlob(),
                 input.uvm && "uvm" in info.extensions)
             results = client.getAssertion(GetAssertionRequest(request.rpId, clientData.hash,
-                request.allowIds, requireUv, extensions), pin?.copyOf())
+                allowIds, requireUv, extensions), pin?.copyOf())
+            if (selected != null) {
+                val final = results.singleOrNull() ?: malformed()
+                if (!final.credentialId.contentEquals(selected.credentialId) ||
+                    (selected.user != null && final.user != null && !selected.user.id.contentEquals(final.user.id))) malformed()
+            }
             val seen = mutableSetOf<Cbor.Bytes>()
             // Validate every account before issuing any large-blob write.
             for (result in results) {
@@ -153,10 +177,10 @@ object CardCredentialOperation {
             (requirement == UserVerificationRequirement.PREFERRED && available)
     }
 
-    private fun validateAuth(data: ByteArray, rpId: String, requireUv: Boolean): AuthenticatorData {
+    private fun validateAuth(data: ByteArray, rpId: String, requireUv: Boolean, requireUp: Boolean = true): AuthenticatorData {
         val auth = AuthenticatorData.parse(data)
         if (!auth.rpIdHash.contentEquals(sha256(rpId.toByteArray(Charsets.UTF_8))) ||
-            !auth.userPresent || (requireUv && !auth.userVerified))
+            (requireUp && !auth.userPresent) || (requireUv && !auth.userVerified))
             throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
         if (auth.flags and 0x18 != 0) malformed()
         return auth

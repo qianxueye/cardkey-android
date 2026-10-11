@@ -22,7 +22,10 @@ class CreateExtensionInputs(val credProps: Boolean = false, val protection: Int?
 
 class GetExtensionInputs(val getCredBlob: Boolean = false, val uvm: Boolean = false,
     val prf: Boolean = false, val prfInputs: PrfInputs? = null,
-    val largeBlobRead: Boolean = false, val largeBlobWrite: ByteArray? = null)
+    val largeBlobRead: Boolean = false, val largeBlobWrite: ByteArray? = null,
+    val prfByCredential: Map<String, PrfInputs> = emptyMap()) {
+    fun inputsFor(id: ByteArray): PrfInputs? = prfByCredential[encodeExtensionBytes(id)] ?: prfInputs
+}
 
 internal object ExtensionParser {
     fun create(value: JsonElement?): CreateExtensionInputs {
@@ -70,13 +73,7 @@ internal object ExtensionParser {
             key to prfValues(item)
         } ?: emptyMap()
         if (perCredential.isNotEmpty() && allowIds.isEmpty()) unsupportedRequest()
-        val effective = if (allowIds.isEmpty()) listOf(fallback) else allowIds.map {
-            perCredential[encodeExtensionBytes(it)] ?: fallback
-        }
-        val selected = effective.first()
-        // This card grants one user-presence assertion per physical session.
-        if (effective.any { if (selected == null) it != null else !selected.sameAs(it) }) unsupportedRequest()
-        return GetExtensionInputs(ext.flag("getCredBlob"), ext.flag("uvm"), prf != null, selected, read, write)
+        return GetExtensionInputs(ext.flag("getCredBlob"), ext.flag("uvm"), prf != null, fallback, read, write, perCredential)
     }
 
     private fun prfValues(value: JsonElement): PrfInputs = value.objectValue().let {

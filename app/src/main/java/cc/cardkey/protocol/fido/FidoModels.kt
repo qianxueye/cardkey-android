@@ -29,7 +29,7 @@ data class MakeExtensions(val credentialProtection: Int? = null, val credentialB
 }
 data class GetAssertionRequest(val rpId: String, val clientDataHash: ByteArray,
     val allowIds: List<ByteArray> = emptyList(), val requireUv: Boolean = true,
-    val extensions: AssertionExtensions = AssertionExtensions())
+    val extensions: AssertionExtensions = AssertionExtensions(), val userPresence: Boolean = true)
 data class AssertionExtensions(val credentialBlob: Boolean = false, val hmacSalts: ByteArray? = null,
     val largeBlobKey: Boolean = false, val uvm: Boolean = false) {
     override fun toString() = "AssertionExtensions(redacted)"

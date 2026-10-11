@@ -275,13 +275,13 @@ class FidoClient(private val session: CardSession) {
             val params = cborMap(1 to request.rpId.cbor(), 2 to request.clientDataHash.cbor(),
                 3 to request.allowIds.takeIf { it.isNotEmpty() }?.let { Cbor.Array(it.map(::descriptor)) },
                 4 to Cbor.Map(extensionPairs).takeIf { it.value.isNotEmpty() },
-                5 to textMap("up" to true.cbor(), "uv" to if (pin == null) request.requireUv.cbor() else null))
+                5 to textMap("up" to request.userPresence.cbor(), "uv" to if (pin == null) request.requireUv.cbor() else null))
             fun execute(token: PinToken?): List<Assertion> {
                 val authenticated = Cbor.Map(params.value + if (token == null) emptyMap() else cborMap(
                     6 to token.authenticate(request.clientDataHash).cbor(), 7 to token.version.cbor()).value)
                 val first = command(2, authenticated, effectful = true, applied = true)
                 val count = first[5]?.count() ?: 1
-                if (count == 0) malformed()
+                if (count == 0 || (request.allowIds.isNotEmpty() && count != 1)) malformed()
                 val assertions = mutableListOf<Assertion>()
                 try {
                     repeat(count) { index ->
@@ -290,7 +290,7 @@ class FidoClient(private val session: CardSession) {
                         if (request.allowIds.isNotEmpty() && request.allowIds.none { it.contentEquals(id) }) malformed()
                         val data = response[2].bytes(); val auth = AuthenticatorData.parse(data)
                         if (auth.credentialId != null || !auth.rpIdHash.contentEquals(sha256(request.rpId.toByteArray(Charsets.UTF_8))) ||
-                            !auth.userPresent || (request.requireUv && !auth.userVerified)) malformed()
+                            (request.userPresence && !auth.userPresent) || (request.requireUv && !auth.userVerified)) malformed()
                         val hmacOutput = auth.extensions?.get("hmac-secret")?.let {
                             val protocol = hmacProtocol ?: malformed()
                             protocol.decrypt(it.bytes()).also { plain -> if (plain.size != salts?.size) { plain.fill(0); malformed() } }
