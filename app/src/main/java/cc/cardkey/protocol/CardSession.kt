@@ -93,8 +93,10 @@ class CardSession(private val channel: CardChannel) : Closeable {
         if (!supportsCtap1) throw CardFailure(FailureCode.UNSUPPORTED)
         require(apdu.data.size <= 65535 && apdu.le in listOf(null, 256))
         invalidateSecure()
-        val command = byteArrayOf(apdu.cla.toByte(), apdu.ins.toByte(), apdu.p1.toByte(), apdu.p2.toByte(),
-            0, (apdu.data.size ushr 8).toByte(), apdu.data.size.toByte()) + apdu.data +
+        val header = byteArrayOf(apdu.cla.toByte(), apdu.ins.toByte(), apdu.p1.toByte(), apdu.p2.toByte())
+        val command = if (apdu.data.isEmpty()) header +
+            (if (apdu.le == null) byteArrayOf() else byteArrayOf(0, 0, 0))
+        else header + byteArrayOf(0, (apdu.data.size ushr 8).toByte(), apdu.data.size.toByte()) + apdu.data +
             (if (apdu.le == null) byteArrayOf() else byteArrayOf(0, 0))
         val response = parseResponse(exchangeTyped(command, effectful, channel::exchangeCtap1), effectful)
         if (effectful && response.status == 0x6f00) securityStateUncertain()

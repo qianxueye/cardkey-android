@@ -9,6 +9,44 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FidoClientTest {
+    @Test fun malformedErrorPayloadCannotProveWriteOutcome() {
+        for (wire in CardWire.entries) for (effectful in listOf(false, true)) for (accepted in listOf(false, true)) {
+            for (suffix in listOf("ff", "a000", "a101")) {
+                val response = byteArrayOf(0x31) + suffix.hexBytes()
+                val apdu = FidoChannel { _, _ -> response }
+                var nativeCount = 0
+                val channel = if (wire == CardWire.APDU) apdu else object : CardChannel {
+                    override val wire = CardWire.CTAP
+                    override val medium = Medium.CONTACT
+                    override val maxCommandBytes = 7609
+                    override val supportsCtap2 = true
+                    override fun transmit(command: ByteArray): ByteArray = error("Unexpected APDU")
+                    override fun exchangeCtap2(command: ByteArray): ByteArray { nativeCount++; return response }
+                    override fun close() = Unit
+                }
+                val result = CardSession(channel).run { session ->
+                    val client = FidoClient(session).apply { select() }
+                    if (accepted) session.applied()
+                    client.command(6, effectful = effectful)
+                } as OperationResult.Failed
+                assertEquals(FailureCode.MALFORMED_RESPONSE, result.code)
+                assertEquals(if (effectful) Effect.UNKNOWN else if (accepted) Effect.APPLIED else Effect.NONE, result.effect)
+                assertEquals(accepted, result.writeAccepted)
+                assertEquals(1, if (wire == CardWire.APDU) apdu.commands.size else nativeCount)
+            }
+        }
+    }
+
+    @Test fun optionalValidErrorCborRetainsStatusSemantics() {
+        for (suffix in listOf("", "a0", "a10101")) {
+            val channel = FidoChannel { _, _ -> byteArrayOf(0x31) + suffix.hexBytes() }
+            val result = CardSession(channel).run { session ->
+                FidoClient(session).apply { select() }.command(6, effectful = true)
+            }
+            assertEquals(OperationResult.Failed(FailureCode.PIN_INVALID, Effect.APPLIED, 0x31), result)
+        }
+    }
+
     @Test fun advertisedLimitRejectsOversizedRegistrationBeforeMutationDispatch() {
         for (wire in CardWire.entries) {
             val apdu = FidoChannel { code, _ ->

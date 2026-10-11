@@ -32,6 +32,14 @@ class FidoClient(private val session: CardSession) {
             malformed()
         }
         val status = response[0].toInt() and 255
+        if (status != 0 && response.size > 1) {
+            val encoded = response.copyOfRange(1, response.size)
+            try { CborCodec.decode(encoded).map() }
+            catch (failure: CardFailure) {
+                if (effectful) session.securityStateUncertain()
+                throw failure
+            } finally { encoded.fill(0); response.fill(0) }
+        }
         if (effectful && status in setOf(0x7f, 0x2d)) session.securityStateUncertain()
         if (effectful && code == 6) when (status) {
             0x31, 0x34 -> session.securityStateChanged()

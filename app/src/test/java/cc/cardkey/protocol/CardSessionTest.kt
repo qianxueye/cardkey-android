@@ -57,7 +57,7 @@ class CardSessionTest {
         val session = CardSession(channel)
         session.exchangeCtap1(Apdu(ins = 3))
         session.exchangeCtap1(Apdu(ins = 2, p1 = 3, data = ByteArray(320) { 7 }))
-        assertArrayEquals("000300000000000000".hexBytes(), channel.commands[0].second)
+        assertArrayEquals("00030000000000".hexBytes(), channel.commands[0].second)
         assertArrayEquals("00020300000140".hexBytes() + ByteArray(320) { 7 } + byteArrayOf(0, 0), channel.commands[1].second)
         assertEquals(2, channel.commands.size)
         session.close()

@@ -24,7 +24,7 @@ class U2fClientTest {
             override fun transmit(command: ByteArray): ByteArray = error("Unexpected APDU SELECT")
             override fun exchangeCtap1(command: ByteArray): ByteArray {
                 count++
-                assertArrayEquals("000300000000000000".hexBytes(), command)
+                assertArrayEquals("00030000000000".hexBytes(), command)
                 return "U2F_V2".toByteArray() + "9000".hexBytes()
             }
             override fun close() = Unit
