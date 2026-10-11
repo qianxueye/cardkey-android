@@ -10,6 +10,7 @@ object ConfirmationPolicy {
             ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
             ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK -> R.string.confirm_pinChange
             ManagerOperation.PIV_ADMIN -> R.string.confirm_adminChange
+            ManagerOperation.FIDO_BLOB_WRITE -> R.string.confirm_blobWrite
             ManagerOperation.FIDO_DELETE -> R.string.confirm_credentialDelete
             ManagerOperation.FIDO_UPDATE -> R.string.confirm_credentialUpdate
             ManagerOperation.FIDO_ALWAYS_UV -> if (input.enabled) R.string.confirm_alwaysUvEnable else R.string.confirm_alwaysUvDisable
@@ -24,7 +25,11 @@ object ConfirmationPolicy {
         val pinWarning = input.pin.isNotEmpty() && primary != R.string.confirm_pinChange &&
             input.operation !in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN,
                 ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET)
-        return listOfNotNull(primary) + if (pinWarning) listOf(R.string.confirm_authenticate) else emptyList()
+        val secretWarning = input.operation == ManagerOperation.FIDO_ASSERT &&
+            (input.assertionExtensions.hmacSalts != null || input.assertionExtensions.largeBlobKey) ||
+            input.operation == ManagerOperation.FIDO_REGISTER && input.makeExtensions.largeBlobKey ||
+            input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)
+        return listOfNotNull(primary) + (if (secretWarning) listOf(R.string.confirm_secretRead) else emptyList()) + if (pinWarning) listOf(R.string.confirm_authenticate) else emptyList()
     }
 
     fun pivVerificationReference(operation: ManagerOperation): String? = when (operation) {

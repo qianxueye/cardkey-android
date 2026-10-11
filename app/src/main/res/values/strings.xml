@@ -26,7 +26,7 @@
     <string name="confirm_credentialUpdate" formatted="false">更新所选凭据的用户信息，用户 ID 保留。确认更新？</string>
     <string name="confirm_alwaysUvEnable" formatted="false">开启后，创建凭据和登录验证始终要求用户验证，U2F 将不可用。确认开启？</string>
     <string name="confirm_alwaysUvDisable" formatted="false">关闭后，创建凭据和登录验证按卡片和凭据各自的策略要求用户验证。确认关闭？</string>
-    <string name="confirm_minPin" formatted="false">最短 PIN 长度不能降低。提高长度后，卡片可能要求修改 PIN；选择强制修改时，须先修改 PIN 才能再次进行 PIN 验证。确认应用？</string>
+    <string name="confirm_minPin" formatted="false">最短 PIN 长度不能降低。提高长度后，卡片可能要求修改 PIN；选择强制修改时，须先修改 PIN 才能再次进行 PIN 验证。同时替换最短 PIN 长度的披露名单。确认应用？</string>
     <string name="confirm_enterprise" formatted="false">按卡内既有策略开启企业证明，允许的服务可能据此识别这张卡。确认开启？</string>
     <string name="confirm_keyGenerate" formatted="false">生成新密钥将覆盖所选槽位的现有私钥，原证书可能不再匹配。此操作不可撤销。确认生成？</string>
     <string name="confirm_certificateImport" formatted="false">公钥匹配验证通过后，将替换所选槽位的证书。确认导入？</string>
@@ -41,4 +41,14 @@
     <string name="provider_attestation_direct">该服务请求卡片证明，响应可能包含可识别这张卡的证书。</string>
     <string name="provider_choose_account">选择用于登录 %1$s 的账户。</string>
     <string name="provider_request_rejected">无法验证请求应用或请求内容，未向卡片发送指令。</string>
+    <string name="minPin_rps" formatted="false">披露最短 PIN 长度的 RP ID（每行一个，最多 2 个）</string>
+    <string name="minPin_rpsHelp" formatted="false">仅这些 RP 可读取最短 PIN 长度。留空将清空名单；名单保存在卡内，客户端无法回读。</string>
+    <string name="enterprise_mode" formatted="false">企业证明模式</string>
+    <string name="user_updateHelp" formatted="false">此卡仅支持修改用户名，不支持修改显示名称。</string>
+    <string name="confirm_secretRead" formatted="false">将读取凭据的秘密输出。它不会显示在普通结果中，也不会自动导出。确认读取？</string>
+    <string name="secret_view" formatted="false">查看秘密输出</string>
+    <string name="confirm_secretShow" formatted="false">秘密输出可用于派生密钥，请勿分享或粘贴到日志。确认显示？</string>
+    <string name="blob_help" formatted="false">Large Blob 按所选凭据加密。读取或写入前，请先验证该凭据并读取 largeBlobKey；密钥仅供下一次操作使用。</string>
+    <string name="confirm_blobExport" formatted="false">将导出此凭据解密后的 Large Blob 内容。请保存在受保护的位置。确认导出？</string>
+    <string name="confirm_blobWrite" formatted="false">将写入此凭据的 Large Blob。若共享数据已损坏，写入会重建存储，其他凭据的 Large Blob 数据可能丢失。确认写入？</string>
 </resources>

@@ -75,8 +75,6 @@ class RequestParserTest {
             create.replace("\"alg\":-7", "\"alg\":-8"),
             create.replace("cross-platform", "platform"),
             create.replace("\"attestation\":\"direct\"", "\"attestation\":\"enterprise\""),
-            create.dropLast(1) + ",\"extensions\":{\"enforceCredentialProtectionPolicy\":true}}",
-            create.dropLast(1) + ",\"extensions\":{\"largeBlob\":{\"support\":\"required\"}}}",
         ).forEach {
             val failure = assertThrows(ProviderRequestException::class.java) { RequestParser.parseCreate(it) }
             assertTrue(failure.unsupported)

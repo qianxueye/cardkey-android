@@ -36,7 +36,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val usb = application.getSystemService(UsbManager::class.java)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
-    private val operations = ManagerOperations()
+    private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
     private var inProgress = false
     @Volatile private var cancelled = false
@@ -50,6 +50,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val selected = mutable.value.selectedReader?.let { prior -> readers.firstOrNull {
             it.device.deviceName == prior.device.deviceName && it.interfaceId == prior.interfaceId
         } }
+        if (mutable.value.selectedReader != null && selected == null) cancel()
         if (presenceBlockedReader != null && readers.none { it.device.deviceName == presenceBlockedReader }) {
             CardOperationGate.observedRemoval(requireNotNull(presenceBlockedReader))
             presenceBlockedReader = null
@@ -64,6 +65,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
+        operations.clearSession()
         mutable.value = mutable.value.copy(selectedReader = reader, nfc = reader == null, result = null)
     }
 
@@ -117,7 +119,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                             if (cancelled) {
                                 channel.close()
                                 OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
-                            } else CardSession(channel).use sessionUse@ { session ->
+                            } else CardSession(object : CardChannel by channel {
+                                override fun transmit(command: ByteArray): ByteArray {
+                                    if (cancelled) throw CardFailure(FailureCode.CANCELLED)
+                                    return channel.transmit(command)
+                                }
+                            }).use sessionUse@ { session ->
                                 if (ConfirmationPolicy.pivVerificationReference(input.operation) != null) {
                                     session.requireContact()
                                     val before = PivClient(session).readInfo()
@@ -162,7 +169,17 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 presenceBlockedReader?.let(CardOperationGate::requireRemoval)
                 mutable.value.selectedReader?.let(::observeCardRemoval)
             }
-            finish(if (cancelled && result is OperationResult.Failed) result.copy(code = FailureCode.CANCELLED) else result)
+            if (cancelled) {
+                operations.clearSession()
+                (result as? OperationResult.Completed)?.value?.let { report ->
+                    report.secrets?.close()
+                    if (report.protectedExport) report.export?.fill(0)
+                }
+            }
+            finish(if (cancelled) when (result) {
+                is OperationResult.Failed -> result.copy(code = FailureCode.CANCELLED)
+                is OperationResult.Completed -> OperationResult.Failed(FailureCode.CANCELLED, result.effect)
+            } else result)
         }
     }
 
@@ -195,6 +212,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun cancel() {
         cancelled = true
+        operations.clearSession()
+        (mutable.value.result as? OperationResult.Completed)?.value?.export?.takeIf {
+            (mutable.value.result as? OperationResult.Completed)?.value?.protectedExport == true
+        }?.fill(0)
+        mutable.value = mutable.value.copy(result = null)
         retryApproval?.complete(false)
         presenceWatch?.cancel()
         pending?.close()
