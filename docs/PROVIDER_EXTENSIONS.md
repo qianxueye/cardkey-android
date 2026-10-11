@@ -26,3 +26,11 @@ Decrypted PRF and blob results remain in provider-only output objects. They are 
 - [W3C WebAuthn Level 2 UVM definition](https://www.w3.org/TR/webauthn-2/#sctn-uvm-extension)
 - [FIDO CTAP 2.1 extension definitions](https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-extensions)
 - [Android credential-provider integration](https://developer.android.com/identity/sign-in/credential-provider)
+
+## Local verification
+
+The four repository targets passed under JDK 17: `assembleDebug`, `testDebugUnitTest`, `lintDebug`, and `assembleDebugAndroidTest`. The final forced rebuild used `--offline --no-watch-fs --rerun-tasks --console=plain` and took 313.45 seconds, including daemon startup; 192 unit tests passed with no failures, errors, or skips. Ten provider extension tests cover W3C salt/ciphertext vectors, both PIN protocols, mandatory PRF user verification, credential-specific input precedence, capability fallback, malformed extension output, multiple accounts, encrypted blob round trips, and unknown-write non-replay.
+
+The published diagnostic verification fix `46e01273810aa5366488fd35b8bf25f9e20be911` is included by normal merge. Its six regression tests pass. A prior incremental run reused stale manager classes after that merge and failed four negative tests; the fresh compile resolved this without source or test changes.
+
+Android-test APK compilation is not an emulator/device test run. Physical transport, browser/native RP interoperability, and account acceptance remain separate qualification steps.

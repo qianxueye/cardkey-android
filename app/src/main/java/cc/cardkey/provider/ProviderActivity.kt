@@ -225,32 +225,39 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         val secret = pendingPin
         pendingPin = null
         lifecycleScope.launch {
-            val cardResult = withContext(Dispatchers.IO) {
-                runner.execute(create, get, requireNotNull(clientData), secret, selected?.device?.deviceName, connect)
-            }
-            val result = if (requestCancelled && cardResult is OperationResult.Completed)
-                OperationResult.Failed(FailureCode.CANCELLED, cardResult.effect) else cardResult
-            busy = false
-            if (completed || requestCancelled) {
-                if (cardResult is OperationResult.Completed && cardResult.value is ProviderOutput.Assertions)
-                    cardResult.value.values.forEach { it.close() }
-                if (completed) return@launch
-            }
-            when (result) {
-                is OperationResult.Completed -> when (val output = result.value) {
-                    is ProviderOutput.Created -> completeCreate(output.credential)
-                    is ProviderOutput.Assertions -> {
-                        if (output.values.size == 1) completeAssertion(output.values.single())
-                        else assertions = output.values
+            var pendingOutput: OperationResult<ProviderOutput>? = null
+            var retained = false
+            try {
+                val cardResult = withContext(Dispatchers.IO) {
+                    runner.execute(create, get, requireNotNull(clientData), secret, selected?.device?.deviceName, connect).also { pendingOutput = it }
+                }
+                val result = if (requestCancelled && cardResult is OperationResult.Completed)
+                    OperationResult.Failed(FailureCode.CANCELLED, cardResult.effect) else cardResult
+                busy = false
+                if (completed || requestCancelled) {
+                    if (cardResult is OperationResult.Completed && cardResult.value is ProviderOutput.Assertions)
+                        cardResult.value.values.forEach { it.close() }
+                    if (completed) return@launch
+                }
+                when (result) {
+                    is OperationResult.Completed -> when (val output = result.value) {
+                        is ProviderOutput.Created -> completeCreate(output.credential)
+                        is ProviderOutput.Assertions -> {
+                            if (output.values.size == 1) completeAssertion(output.values.single())
+                            else { assertions = output.values; retained = true }
+                        }
+                    }
+                    is OperationResult.Failed -> {
+                        failure = result
+                        if (result.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
+                            selected?.let { CardOperationGate.requireRemoval(it.device.deviceName); observeRemoval(it) }
+                            lastTag?.let { nfc?.ignore(it, 250, { lastTag = null }, Handler(mainLooper)) }
+                        }
                     }
                 }
-                is OperationResult.Failed -> {
-                    failure = result
-                    if (result.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
-                        selected?.let { CardOperationGate.requireRemoval(it.device.deviceName); observeRemoval(it) }
-                        lastTag?.let { nfc?.ignore(it, 250, { lastTag = null }, Handler(mainLooper)) }
-                    }
-                }
+            } finally {
+                val output = (pendingOutput as? OperationResult.Completed)?.value
+                if (!retained && output is ProviderOutput.Assertions) output.values.forEach { it.close() }
             }
         }
     }

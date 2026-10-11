@@ -157,6 +157,17 @@ class ProviderExtensionsTest {
         assertFalse(absent.commands.any { it.first == 2 || it.first == 6 })
     }
 
+    @Test fun prfCipherOutputMatchesW3cIndependentVectorAndDebugStringsAreRedacted() {
+        val shared = "0c63083de8170101d38bcf8bd72309568ddb4550867e23404b35d85712f7c20d8bc911ee23c06034cbc14290b9669bec07739053c5a416e313ef905c79955876".hexBytes()
+        val ciphertext = "3bfaa48f7952330d63e35ff8cd5bca48d2a12823828915749287256ab146272f9fb437bf65691243c3f504bd7ea6d5e6".hexBytes()
+        assertEquals("3c33e07d202c3b029cc21f1722767021bf27d595933b3d2b6a1b9d5dddc77fae", PinProtocol.decrypt(2, shared, ciphertext).hex())
+        assertThrows(CardFailure::class.java) { PinProtocol.decrypt(2, shared, ciphertext.copyOf(31)) }
+        assertEquals("AssertionExtensions(redacted)", AssertionExtensions(hmacSalts = shared).toString())
+        assertEquals("MakeExtensions(redacted)", MakeExtensions(credentialBlob = shared).toString())
+        assertEquals("Assertion(redacted)", Assertion(byteArrayOf(1), byteArrayOf(1), byteArrayOf(1), null, shared, shared).toString())
+        assertEquals("MakeCredentialResult(redacted)", MakeCredentialResult("none", byteArrayOf(1), cborMap(), shared, false).toString())
+    }
+
     @Test fun malformedAuthenticatorExtensionsFailAndDoNotWrite() {
         val bad = listOf(textMap("uvm" to Cbor.Array(listOf(Cbor.Array(listOf(1.cbor(), 2.cbor()))))),
             textMap("uvm" to Cbor.Array(listOf(Cbor.Array(listOf(1.cbor(), 65536.cbor(), 1.cbor()))))),
