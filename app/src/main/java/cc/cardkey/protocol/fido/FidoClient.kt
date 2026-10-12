@@ -23,7 +23,7 @@ class FidoClient(private val session: CardSession) {
     }
 
     internal fun command(code: Int, parameters: Cbor.Map? = null, effectful: Boolean = false, applied: Boolean = false, securityState: Boolean = false): Cbor.Map {
-        require(code in setOf(1, 2, 4, 6, 8, 0x0a, 0x0c, 0x0d))
+        require(code in setOf(1, 2, 4, 6, 7, 8, 0x0a, 0x0c, 0x0d))
         check(selected)
         val bytes = byteArrayOf(code.toByte()) + (parameters?.let(CborCodec::encode) ?: byteArrayOf())
         val response = session.exchangeCtap2(bytes, effectful)
@@ -59,6 +59,11 @@ class FidoClient(private val session: CardSession) {
         }, status)
         if (securityState) session.securityStateChanged()
         if (applied) session.applied()
+        if (code == 7 && response.size != 1) {
+            // The success status acknowledges reset even when its forbidden body is malformed.
+            response.fill(0)
+            malformed()
+        }
         if (response.size == 1) { response.fill(0); return cborMap() }
         val encoded = response.copyOfRange(1, response.size)
         return try { CborCodec.decode(encoded).map() }
@@ -66,6 +71,15 @@ class FidoClient(private val session: CardSession) {
             if (effectful) session.securityStateUncertain()
             throw failure
         } finally { encoded.fill(0); response.fill(0) }
+    }
+
+    fun reset(): FidoInfo {
+        try { command(7, effectful = true, applied = true) }
+        catch (failure: CardFailure) {
+            if (failure.status == 0x6f00) session.securityStateUncertain()
+            throw failure
+        }
+        return getInfo()
     }
 
     fun getInfo(): FidoInfo {

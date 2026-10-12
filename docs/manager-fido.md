@@ -15,3 +15,7 @@ Import plaintext before the verification workflow. Importing a document pauses t
 Decrypted content export requires the approved confirmation and an explicit document destination. Only the authorized export buffer survives the document picker; it is cleared after writing, cancellation or activity destruction. The manager does not export `largeBlobKey` or hmac-secret output.
 
 Local software tests and physical card/account qualification are separate. The management no-UP proof does not establish physical user-presence acceptance for RP login.
+
+The protocol client provides `FidoClient.reset()`: send one CTAP `07`, accept only the single-byte `00` acknowledgement, then read `getInfo` once on the same session. It performs no PIN exchange, status preflight, reconnect or replay. A success status with extra bytes retains the accepted write but fails without readback. A lost or ambiguous reset reply leaves the outcome unknown; a failed readback after acceptance preserves the accepted write. The returned status does not prove credential invalidation, factory settings or preservation of other device functions.
+
+The reset protocol has APDU and direct CTAP fixtures, including HID report lengths of 7, 8, 16 and 64 bytes. The manager does not yet expose this action. Its confirmation, result wording, route admission and cache retirement remain part of the unfinished caller package. Existing bare-card APDU/NFC reset restrictions and hardware qualification requirements remain in force.
