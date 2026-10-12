@@ -10,7 +10,7 @@ class FidoHidDescriptorTest {
 
     @Test fun acceptsUnnumberedFido64ByteInputAndOutput() { FidoHidDescriptor.validate(report) }
 
-    @Test fun rejectsWrongUsageNumberedReportsWrongSizeAndTruncation() {
+    @Test fun rejectsWrongUsageZeroReportIdWrongSizeAndTruncation() {
         val invalid = listOf(
             report.copyOf().also { it[1] = 1 },
             report.copyOf().also { it[4] = 2 },
@@ -20,7 +20,7 @@ class FidoHidDescriptorTest {
             report.copyOf().also { it[32] = 1 },
             report.copyOf(report.size - 1),
             report + report,
-            bytes(0x85, 1) + report,
+            bytes(0x85, 0) + report,
             report + bytes(0x06, 0xd0),
             report + bytes(0xfe),
         )

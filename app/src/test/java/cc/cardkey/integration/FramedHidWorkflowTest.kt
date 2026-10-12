@@ -5,6 +5,8 @@ import cc.cardkey.protocol.fido.*
 import cc.cardkey.transport.CtaphidChannel
 import cc.cardkey.transport.CtaphidIo
 import cc.cardkey.transport.FidoHidReports
+import cc.cardkey.transport.HidInterruptIo
+import cc.cardkey.transport.SyntheticNativeHidConnection
 import cc.cardkey.ui.*
 import java.io.ByteArrayOutputStream
 import java.security.KeyPairGenerator
@@ -92,15 +94,16 @@ internal class SyntheticHidPeer(private val reports: FidoHidReports = FidoHidRep
     }
     override fun interrupt() = Unit
     override fun close() { closed = true }
-    fun connect() = CtaphidChannel(this, reports = reports).also { it.initialize() }
+    val native = SyntheticNativeHidConnection(this, reports)
+    fun connect() = CtaphidChannel(HidInterruptIo(native, reports), reports = reports).also { it.initialize() }
 }
 
 @org.junit.runner.RunWith(org.junit.runners.Parameterized::class)
-class FramedHidWorkflowTest(input: Int, output: Int) {
-    private val reports = FidoHidReports(input, output)
+class FramedHidWorkflowTest(input: Int, output: Int, inputId: Int, outputId: Int) {
+    private val reports = FidoHidReports(input, output, inputId, outputId)
     companion object {
         @JvmStatic @org.junit.runners.Parameterized.Parameters(name = "reports={0}")
-        fun reports() = listOf(arrayOf(64, 64), arrayOf(16, 32))
+        fun reports() = listOf(arrayOf(64, 64, 0, 0), arrayOf(16, 32, 0, 0), arrayOf(16, 32, 3, 9))
     }
     private fun peer(respond: (Int, Cbor.Map?) -> ByteArray) = SyntheticHidPeer(reports, respond)
 
@@ -166,6 +169,43 @@ class FramedHidWorkflowTest(input: Int, output: Int) {
         assertEquals(FailureCode.INVALID_INPUT,
             (run(peer, OperationInput(ManagerOperation.FIDO_ASSERT)) as OperationResult.Failed).code)
         assertTrue(peer.commands.isEmpty())
+    }
+
+    @Test fun managerPinSetAndChangeAuthenticateEncryptedMutationsOnce() {
+        for (version in 1..2) for (changing in listOf(false, true)) {
+            val server = FidoClientTest.PinServer(version)
+            var mutations = 0
+            val peer = peer { code, parameters -> when (code) {
+                4 -> success(info(mapOf("clientPin" to changing), protocols = listOf(version)))
+                6 -> if (parameters!![2].number() == 2L) server.respond(parameters, 0, null) else {
+                    assertEquals(if (changing) 4L else 3L, parameters[2].number())
+                    val shared = server.keyFor(parameters[3].map())
+                    try {
+                        val encryptedNew = parameters[5].bytes()
+                        val encryptedOld = parameters[6]?.bytes()
+                        assertArrayEquals("5678".toByteArray().copyOf(64), PinProtocol.decrypt(version, shared, encryptedNew))
+                        if (changing) assertArrayEquals(sha256("1234".toByteArray()).copyOf(16),
+                            PinProtocol.decrypt(version, shared, requireNotNull(encryptedOld)))
+                        else assertNull(encryptedOld)
+                        assertArrayEquals(PinProtocol.authenticate(version, shared,
+                            encryptedNew + (encryptedOld ?: byteArrayOf())), parameters[4].bytes())
+                        mutations++
+                        success()
+                    } finally { shared.fill(0) }
+                }
+                else -> error("Unexpected PIN workflow command $code")
+            } }
+            val old = "1234".toCharArray()
+            val next = "5678".toCharArray()
+            val result = run(peer, OperationInput(if (changing) ManagerOperation.FIDO_CHANGE_PIN else ManagerOperation.FIDO_SET_PIN,
+                pin = old, newPin = next)) as OperationResult.Completed
+            assertEquals(Effect.APPLIED, result.effect)
+            assertEquals(1, mutations)
+            assertEquals(1, peer.initializationCount)
+            assertTrue(peer.closed)
+            assertArrayEquals(CharArray(4), old)
+            assertArrayEquals(CharArray(4), next)
+        }
     }
 
     @Test fun freshSignedBlobProofAndReadShareOneInitializedConnection() {

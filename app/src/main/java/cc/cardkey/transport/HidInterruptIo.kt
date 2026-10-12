@@ -32,8 +32,14 @@ internal class HidInterruptIo(private val connection: HidInterruptConnection, pr
     private fun transfer(report: ByteArray, timeoutMillis: Int, input: Boolean, allowInterrupted: Boolean = false): Int =
         synchronized(transferLock) {
             require(report.size == (if (input) reports.inputBytes else reports.outputBytes) && timeoutMillis > 0)
-            val buffer = ByteBuffer.allocateDirect(report.size)
-            if (!input) { buffer.put(report); buffer.flip() }
+            val reportID = if (input) reports.inputReportID else reports.outputReportID
+            val nativeBytes = if (input) reports.inputNativeBytes else reports.outputNativeBytes
+            val buffer = ByteBuffer.allocateDirect(nativeBytes)
+            if (!input) {
+                if (reportID != 0) buffer.put(reportID.toByte())
+                buffer.put(report)
+                buffer.flip()
+            }
             var request: HidInterruptRequest? = null
             var queued = false
             var reaped = false
@@ -53,9 +59,13 @@ internal class HidInterruptIo(private val connection: HidInterruptConnection, pr
                     if (interrupted && !allowInterrupted) throw IOException("USB interrupted")
                 }
                 val transferred = buffer.position()
-                if (transferred != report.size) throw IOException()
-                if (input) { buffer.flip(); buffer.get(report, 0, transferred) }
-                transferred
+                if (transferred != nativeBytes) throw IOException()
+                if (input) {
+                    buffer.flip()
+                    if (reportID != 0 && (buffer.get().toInt() and 255) != reportID) throw IOException()
+                    buffer.get(report)
+                }
+                report.size
             } finally {
                 if (queued && !reaped) {
                     runCatching { request!!.cancel() }

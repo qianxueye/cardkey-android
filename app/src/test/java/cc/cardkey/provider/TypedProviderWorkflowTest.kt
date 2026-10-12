@@ -13,7 +13,17 @@ import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.*
 import org.junit.Test
 
-class TypedProviderWorkflowTest {
+@org.junit.runner.RunWith(org.junit.runners.Parameterized::class)
+class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) {
+    private val reports = if (numbered) cc.cardkey.transport.FidoHidReports(16, 32, 3, 9) else cc.cardkey.transport.FidoHidReports()
+    companion object {
+        @JvmStatic @org.junit.runners.Parameterized.Parameters(name = "reports={0},PIN={1}")
+        fun reports() = listOf(
+            arrayOf<Any>(false, 2),
+            arrayOf<Any>(true, 2),
+            arrayOf<Any>(true, 1),
+        )
+    }
     private val rp = "cardkey.example"
     private val credential = ByteArray(100) { it.toByte() }
     private val data = ClientData(byteArrayOf(1, 2, 3), sha256(byteArrayOf(1, 2, 3)), false)
@@ -42,7 +52,7 @@ class TypedProviderWorkflowTest {
             CallerSnapshot("test.package", setOf("certificate"), null), "option")))
 
     @Test fun framedRegistrationAndAssertionKeepRealSignaturesAndOneInitializationPerOperation() {
-        val registration = SyntheticHidPeer { code, parameters ->
+        val registration = SyntheticHidPeer(reports) { code, parameters ->
             assertNull(CardOperationGate.tryAcquire())
             when (code) {
                 4 -> success(info(mapOf("uv" to true)))
@@ -70,7 +80,7 @@ class TypedProviderWorkflowTest {
         assertEquals(1, registration.initializationCount)
         assertTrue(registration.closed)
 
-        val authentication = SyntheticHidPeer { code, parameters ->
+        val authentication = SyntheticHidPeer(reports) { code, parameters ->
             assertNull(CardOperationGate.tryAcquire())
             when (code) {
                 4 -> success(info(mapOf("uv" to true)))
@@ -95,23 +105,23 @@ class TypedProviderWorkflowTest {
     }
 
     @Test fun framedPinTokensAssertionAndFragmentedBlobWriteHoldOneLeaseAndConnection() {
-        val server = FidoClientTest.PinServer(2)
+        val server = FidoClientTest.PinServer(pinVersion)
         val blobKey = ByteArray(32) { 11 }
         val plaintext = ByteArray(600).also { java.util.Random(23).nextBytes(it) }
         val inputs = GetExtensionInputs(largeBlobWrite = plaintext.copyOf())
         var stored = LargeBlobs.encode(emptyList())
         var asserted = false
         var writes = 0
-        val peer = SyntheticHidPeer { code, parameters ->
+        val peer = SyntheticHidPeer(reports) { code, parameters ->
             assertNull(CardOperationGate.tryAcquire())
             when (code) {
                 4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true, "largeBlobs" to true),
-                    protocols = listOf(2), extensions = listOf("largeBlobKey"),
+                    protocols = listOf(pinVersion), extensions = listOf("largeBlobKey"),
                     extra = cborMap(5 to 256.cbor(), 11 to 4096.cbor())))
                 6 -> server.respond(parameters!!, if (asserted) 16 else 2, if (asserted) null else rp)
                 2 -> {
-                    assertEquals(2L, parameters!![7].number())
-                    assertArrayEquals(PinProtocol.authenticate(2, server.token, data.hash), parameters[6].bytes())
+                    assertEquals(pinVersion.toLong(), parameters!![7].number())
+                    assertArrayEquals(PinProtocol.authenticate(pinVersion, server.token, data.hash), parameters[6].bytes())
                     assertTrue(parameters[4].map()["largeBlobKey"].bool())
                     asserted = true
                     success(assertion(blobKey.copyOf()))
@@ -127,8 +137,8 @@ class TypedProviderWorkflowTest {
                         val fragment = parameters[2].bytes()
                         val authenticated = ByteArray(32) { -1 } + byteArrayOf(12, 0) +
                             ByteArray(4) { (offset ushr (it * 8)).toByte() } + sha256(fragment)
-                        assertArrayEquals(PinProtocol.authenticate(2, server.token, authenticated), parameters[5].bytes())
-                        assertEquals(2L, parameters[6].number())
+                        assertArrayEquals(PinProtocol.authenticate(pinVersion, server.token, authenticated), parameters[5].bytes())
+                        assertEquals(pinVersion.toLong(), parameters[6].number())
                         if (offset == 0) stored = ByteArray(parameters[4].number().toInt())
                         fragment.copyInto(stored, offset)
                         writes++
@@ -156,9 +166,26 @@ class TypedProviderWorkflowTest {
         provided.close()
     }
 
+    @Test fun incorrectPinIsKnownWithoutAssertionOrReplay() {
+        val server = FidoClientTest.PinServer(pinVersion)
+        val peer = SyntheticHidPeer(reports) { code, parameters -> when (code) {
+            4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true), protocols = listOf(pinVersion)))
+            6 -> if (parameters!![2].number() == 2L) server.respond(parameters, 2, rp) else byteArrayOf(0x31)
+            else -> error("Incorrect PIN must not dispatch an assertion")
+        } }
+        val pin = "9999".toCharArray()
+        val result = ProviderOperationRunner().execute(null, request(), data, pin) { peer.connect() } as OperationResult.Failed
+        assertEquals(FailureCode.PIN_INVALID, result.code)
+        assertEquals(Effect.APPLIED, result.effect)
+        assertEquals(1, peer.initializationCount)
+        assertEquals(listOf(4, 4, 6, 6), peer.commands)
+        assertTrue(peer.closed)
+        assertArrayEquals(CharArray(4), pin)
+    }
+
     @Test fun framedUncertainAssertionTerminalsNeverPublishOrReplay() {
         for (terminal in listOf("bridge", "cancelled", "malformed", "lost")) {
-            val peer = SyntheticHidPeer { code, _ -> when (code) {
+            val peer = SyntheticHidPeer(reports) { code, _ -> when (code) {
                 4 -> success(info(mapOf("uv" to true)))
                 2 -> when (terminal) {
                     "bridge" -> byteArrayOf(0x7f)
@@ -255,7 +282,7 @@ class TypedProviderWorkflowTest {
 
     @Test fun cancellationWhileClosingSuppressesKnownSuccessfulAssertion() {
         val runner = ProviderOperationRunner()
-        val peer = SyntheticHidPeer { code, _ -> when (code) {
+        val peer = SyntheticHidPeer(reports) { code, _ -> when (code) {
             4 -> success(info(mapOf("uv" to true)))
             2 -> success(assertion())
             else -> error("Unexpected command $code")
@@ -274,7 +301,7 @@ class TypedProviderWorkflowTest {
 
     @Test fun hidPresenceFailureNeverRequiresCcidRemoval() {
         val readerId = "synthetic-hid-interface"
-        val peer = SyntheticHidPeer { code, _ -> when (code) {
+        val peer = SyntheticHidPeer(reports) { code, _ -> when (code) {
             4 -> success(info(mapOf("uv" to true)))
             2 -> byteArrayOf(0x2f)
             else -> error("Unexpected command $code")
