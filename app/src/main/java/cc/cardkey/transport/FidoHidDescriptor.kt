@@ -41,6 +41,7 @@ internal object FidoHidDescriptor {
         var reportSize = 0L
         var reportCount = 0L
         var reportID = 0
+        var hasReportIDs = false
         var inputReportID = 0
         var outputReportID = 0
         var inCollection = false
@@ -62,7 +63,11 @@ internal object FidoHidDescriptor {
                     0 -> usagePage = value
                     1, 2 -> Unit
                     7 -> reportSize = value
-                    8 -> { require(size > 0 && value in 1L..255L); reportID = value.toInt() }
+                    8 -> {
+                        require(size > 0 && value in 1L..255L)
+                        reportID = value.toInt()
+                        hasReportIDs = true
+                    }
                     9 -> reportCount = value
                     else -> throw IllegalArgumentException("Unsupported HID report layout")
                 }
@@ -98,6 +103,7 @@ internal object FidoHidDescriptor {
             }
         }
         require(!inCollection && collections == 1 && usage == null)
+        require(!hasReportIDs || (inputReportID != 0 && outputReportID != 0))
         return FidoHidReports(requireNotNull(inputBytes), requireNotNull(outputBytes), inputReportID, outputReportID)
     }
 }
