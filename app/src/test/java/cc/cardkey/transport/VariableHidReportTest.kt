@@ -4,7 +4,12 @@ import cc.cardkey.protocol.*
 import org.junit.Assert.*
 import org.junit.Test
 
-class VariableHidReportTest {
+@org.junit.runner.RunWith(org.junit.runners.Parameterized::class)
+class VariableHidReportTest(private val numbered: Boolean) {
+    companion object {
+        @JvmStatic @org.junit.runners.Parameterized.Parameters(name = "numbered={0}")
+        fun modes() = listOf(false, true)
+    }
     private val nonce = ByteArray(8) { it.toByte() }
     private val init = nonce + byteArrayOf(0, 0, 0, 1, 2, 0, 0, 0, 4)
 
@@ -13,7 +18,7 @@ class VariableHidReportTest {
             assertEquals(FidoHidReports(size, 32), FidoHidDescriptor.validate(descriptor(size, 32)))
         }
         for (invalid in listOf(descriptor(6, 64), descriptor(1025, 64),
-            byteArrayOf(0x85.toByte(), 1) + descriptor(64, 64),
+            byteArrayOf(0x85.toByte(), 0) + descriptor(64, 64),
             byteArrayOf(0xa4.toByte()) + descriptor(64, 64),
             byteArrayOf(0xb4.toByte()) + descriptor(64, 64),
             descriptor(64, 64).copyOf(23),
@@ -124,7 +129,7 @@ class VariableHidReportTest {
         var time = 0L
         val io = Peer(8, frames(8, 6, foreign, -1))
         io.afterRead = { time += 10_000_000L }
-        val channel = CtaphidChannel(io, 60, { time }, { nonce.copyOf() }, FidoHidReports(8, 8))
+        val channel = CtaphidChannel(native(io, FidoHidReports(8, 8)), 60, { time }, { nonce.copyOf() }, layout(FidoHidReports(8, 8)))
         assertEquals(Dispatch.RESPONSE_UNAVAILABLE, failure { channel.initialize() }.dispatch)
         assertEquals(6, io.reads)
         assertTrue(io.closed)
@@ -172,14 +177,38 @@ class VariableHidReportTest {
         assertEquals(255, command[71].toInt() and 255)
         assertArrayEquals(handle, command.drop(72).take(255).toByteArray())
         assertTrue(io.closed)
+        val small = Peer(7, frames(16, 6, init, -1))
+        val smallChannel = ready(small, FidoHidReports(16, 7))
+        val before = small.writes.size
+        val key = cc.cardkey.protocol.fido.cborMap(1 to cc.cardkey.protocol.fido.Cbor.Integer(2),
+            3 to cc.cardkey.protocol.fido.Cbor.Integer(-7), -1 to cc.cardkey.protocol.fido.Cbor.Integer(1),
+            -2 to cc.cardkey.protocol.fido.Cbor.Bytes(point.copyOfRange(1, 33)),
+            -3 to cc.cardkey.protocol.fido.Cbor.Bytes(point.copyOfRange(33, 65)))
+        val refused = CardSession(smallChannel).run {
+            cc.cardkey.protocol.fido.U2fClient(it).apply { select() }.authenticate(challenge, application, handle, key, 8)
+        } as OperationResult.Failed
+        assertEquals(FailureCode.CAPACITY_EXCEEDED, refused.code)
+        assertNull(refused.dispatch)
+        assertEquals(Effect.NONE, refused.effect)
+        assertEquals(before, small.writes.size)
+        assertTrue(small.closed)
     }
 
     @Test fun cancelUsesOutputLengthAndEmptyInitialPayload() {
         for (size in listOf(7, 8, 16, 32, 64, 1024)) {
             val io = Peer(size, frames(16, 6, init, -1))
             val channel = ready(io, FidoHidReports(16, size))
-            io.afterWrite = { channel.cancel() }
+            val interrupted = java.util.concurrent.CountDownLatch(1)
+            io.afterInterrupt = { interrupted.countDown() }
+            val canceller = Thread { channel.cancel() }
+            io.afterWrite = {
+                io.afterWrite = {}
+                canceller.start()
+                check(interrupted.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            }
             val failed = failure { channel.exchangeCtap2(byteArrayOf(4)) }
+            canceller.join(5000)
+            assertFalse(canceller.isAlive)
             assertTrue(failed.cancelled)
             val cancel = io.writes.last()
             assertEquals(size, cancel.size)
@@ -188,7 +217,28 @@ class VariableHidReportTest {
         }
     }
 
-    private fun ready(io: Peer, reports: FidoHidReports) = CtaphidChannel(io, nonce = { nonce.copyOf() }, reports = reports).also { it.initialize() }
+    @Test fun nativeEnvelopeFailureAfterDispatchRemainsUncertainWithoutReplay() {
+        for (partialWrite in listOf(false, true)) {
+            val reports = FidoHidReports(16, 32, 3, 9)
+            val peer = Peer(32, frames(16, 6, init, -1) + frames(16, 0x10, byteArrayOf(0)))
+            val native = SyntheticNativeHidConnection(peer, reports)
+            val channel = CtaphidChannel(HidInterruptIo(native, reports), nonce = { nonce.copyOf() }, reports = reports)
+            channel.initialize()
+            val before = peer.writes.size
+            if (partialWrite) native.outputLength = reports.outputNativeBytes - 1 else native.inputID = 4
+            val result = CardSession(channel).run { it.exchangeCtap2(byteArrayOf(1), effectful = true) } as OperationResult.Failed
+            assertEquals(Effect.UNKNOWN, result.effect)
+            assertEquals(Dispatch.RESPONSE_UNAVAILABLE, result.dispatch)
+            assertEquals(before + 1, peer.writes.size)
+            assertTrue(peer.closed)
+            assertTrue(native.buffers.all { buffer -> (0 until buffer.capacity()).all { buffer.get(it) == 0.toByte() } })
+        }
+    }
+
+    private fun layout(reports: FidoHidReports) = if (numbered) reports.copy(inputReportID = 3, outputReportID = 9) else reports
+    private fun native(io: Peer, reports: FidoHidReports): CtaphidIo =
+        HidInterruptIo(SyntheticNativeHidConnection(io, layout(reports)), layout(reports))
+    private fun ready(io: Peer, reports: FidoHidReports) = CtaphidChannel(native(io, reports), nonce = { nonce.copyOf() }, reports = layout(reports)).also { it.initialize() }
     private fun failure(block: () -> Unit): TransportException {
         try { block(); fail() } catch (failure: TransportException) { return failure }
         error("unreachable")
@@ -199,6 +249,7 @@ class VariableHidReportTest {
         var reads = 0
         var afterRead: () -> Unit = {}
         var afterWrite: () -> Unit = {}
+        var afterInterrupt: () -> Unit = {}
         var closed = false
         override fun write(report: ByteArray, timeoutMillis: Int): Int {
             assertEquals(outputSize, report.size); writes += report.copyOf(); afterWrite(); return report.size
@@ -207,7 +258,7 @@ class VariableHidReportTest {
             val next = incoming.removeFirst(); assertEquals(next.size, report.size)
             next.copyInto(report); reads++; afterRead(); return report.size
         }
-        override fun interrupt() = Unit
+        override fun interrupt() { afterInterrupt() }
         override fun close() { closed = true }
     }
     private fun frames(size: Int, command: Int, payload: ByteArray, cid: Int = 1): List<ByteArray> {
