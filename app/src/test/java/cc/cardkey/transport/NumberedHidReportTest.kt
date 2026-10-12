@@ -20,6 +20,18 @@ class NumberedHidReportTest {
         assertEquals(FidoHidReports(16, 32, 255, 9), FidoHidDescriptor.validate(reversed.toByteArray()))
     }
 
+    @Test fun reportIdAfterUnnumberedStreamsBeforeEndCollectionIsRejected() {
+        val unnumbered = unnumberedDescriptor()
+        assertEquals(FidoHidReports(16, 32), FidoHidDescriptor.validate(unnumbered))
+        val trailingId = unnumbered.dropLast(1).toByteArray() + byteArrayOf(0x85.toByte(), 1, 0xc0.toByte())
+        assertThrows(IllegalArgumentException::class.java) { FidoHidDescriptor.validate(trailingId) }
+    }
+
+    @Test fun reportIdAfterUnnumberedEndCollectionIsRejected() {
+        val trailingId = unnumberedDescriptor() + byteArrayOf(0x85.toByte(), 1)
+        assertThrows(IllegalArgumentException::class.java) { FidoHidDescriptor.validate(trailingId) }
+    }
+
     @Test fun invalidIdsMixedStreamsAndRichLayoutsAreRejected() {
         val normal = numberedDescriptor(16, 32, 3, 9)
         val invalid = listOf(
@@ -82,6 +94,10 @@ class NumberedHidReportTest {
             assertArrayEquals(ByteArray(16) { 77 }, target)
             assertTrue(native.buffers.all { buffer -> (0 until buffer.capacity()).all { buffer.get(it) == 0.toByte() } })
         }
+    }
+
+    private fun unnumberedDescriptor() = numberedDescriptor(16, 32, 3, 9).let {
+        (it.take(7) + it.slice(9..17) + it.drop(20)).toByteArray()
     }
 
     private fun numberedDescriptor(input: Int, output: Int, inputId: Int, outputId: Int) = listOf(
