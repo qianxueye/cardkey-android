@@ -1,5 +1,6 @@
 package cc.cardkey.protocol.fido
 
+import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.Apdu
 import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.CardSession
@@ -11,6 +12,11 @@ class FidoClient(private val session: CardSession) {
     private var selected = false
 
     fun select() {
+        if (session.wire == CardWire.CTAP) {
+            if (!session.supportsCtap2) throw CardFailure(FailureCode.UNSUPPORTED)
+            selected = true
+            return
+        }
         val result = session.exchange(Apdu(ins = 0xa4, p1 = 4, data = byteArrayOf(0xa0.toByte(), 0, 0, 6, 0x47, 0x2f, 0, 1))).requireSuccess()
         if (!result.contentEquals("FIDO_2_0".toByteArray()) && !result.contentEquals("U2F_V2".toByteArray())) malformed()
         selected = true
@@ -20,12 +26,21 @@ class FidoClient(private val session: CardSession) {
         require(code in setOf(1, 2, 4, 6, 8, 0x0a, 0x0c, 0x0d))
         check(selected)
         val bytes = byteArrayOf(code.toByte()) + (parameters?.let(CborCodec::encode) ?: byteArrayOf())
-        val response = session.exchange(Apdu(cla = 0x80, ins = 0x10, data = bytes), effectful).requireSuccess()
+        val response = session.exchangeCtap2(bytes, effectful)
         if (response.isEmpty()) {
             if (effectful) session.securityStateUncertain()
             malformed()
         }
         val status = response[0].toInt() and 255
+        if (status != 0 && response.size > 1) {
+            val encoded = response.copyOfRange(1, response.size)
+            try { CborCodec.decode(encoded).map() }
+            catch (failure: CardFailure) {
+                if (effectful) session.securityStateUncertain()
+                throw failure
+            } finally { encoded.fill(0); response.fill(0) }
+        }
+        if (effectful && status in setOf(0x7f, 0x2d)) session.securityStateUncertain()
         if (effectful && code == 6) when (status) {
             0x31, 0x34 -> session.securityStateChanged()
             0x32 -> session.securityStateUncertain()
@@ -46,7 +61,11 @@ class FidoClient(private val session: CardSession) {
         if (applied) session.applied()
         if (response.size == 1) { response.fill(0); return cborMap() }
         val encoded = response.copyOfRange(1, response.size)
-        return try { CborCodec.decode(encoded).map() } finally { encoded.fill(0); response.fill(0) }
+        return try { CborCodec.decode(encoded).map() }
+        catch (failure: CardFailure) {
+            if (effectful) session.securityStateUncertain()
+            throw failure
+        } finally { encoded.fill(0); response.fill(0) }
     }
 
     fun getInfo(): FidoInfo {
@@ -54,9 +73,11 @@ class FidoClient(private val session: CardSession) {
         val versions = map[1].array().map { it.text() }
         if (versions.isEmpty() || map[3].bytes().size != 16) malformed()
         val options = map[4]?.map()?.value?.map { (key, value) -> key.text() to value.bool() }?.toMap() ?: emptyMap()
-        return FidoInfo(versions, map[2]?.array()?.map { it.text() }?.toSet() ?: emptySet(), options,
+        val info = FidoInfo(versions, map[2]?.array()?.map { it.text() }?.toSet() ?: emptySet(), options,
             map[6]?.array()?.map { it.count(255) } ?: emptyList(), map[13]?.count(63) ?: 4,
             map[15]?.count(65535), map)
+        session.setCtap2MaxCommandBytes(map[5]?.count(CborCodec.MAX_BYTES) ?: 1024)
+        return info
     }
 
     fun retries(): PinRetries {

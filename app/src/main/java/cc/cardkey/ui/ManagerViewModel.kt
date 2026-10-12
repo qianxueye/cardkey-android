@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -31,7 +32,11 @@ data class ManagerState(
     val requiresInspection: Boolean = false,
     val operation: ManagerOperation? = null,
     val permissionPending: Boolean = false,
-)
+    val resultWire: CardWire = CardWire.APDU,
+    val userPresenceRequired: Boolean = false,
+) {
+    val supportsPiv get() = nfc || selectedReader?.wire != CardWire.CTAP
+}
 
 class ManagerViewModel(application: Application) : AndroidViewModel(application) {
     private val usb = application.getSystemService(UsbManager::class.java)
@@ -45,30 +50,37 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val currentChannel = AtomicReference<CancellableCardChannel?>(null)
     private var retryApproval: CompletableDeferred<Boolean>? = null
     private var presenceWatch: Job? = null
+    private var operationRoute = "nfc"
+    private var operationWire = CardWire.APDU
+    private var recoveryRoute: String? = null
+    private var recoveryWire: CardWire? = null
+    private var presenceGeneration = 0L
+    private val presenceLock = Any()
 
     fun refreshReaders() {
-        val readers = UsbCcidReader.discover(usb)
+        val readers = UsbAuthenticatorReader.discover(usb)
         val selected = mutable.value.selectedReader?.let { prior -> readers.firstOrNull {
-            it.device.deviceName == prior.device.deviceName && it.interfaceId == prior.interfaceId
+            it.routeKey == prior.routeKey
         } }
         if (mutable.value.selectedReader != null && selected == null) cancel()
-        if (presenceBlockedReader != null && readers.none { it.device.deviceName == presenceBlockedReader }) {
+        if (presenceBlockedReader != null && readers.none { it.routeKey == presenceBlockedReader }) {
             CardOperationGate.observedRemoval(requireNotNull(presenceBlockedReader))
             presenceBlockedReader = null
         }
         if (presenceBlockedReader == null) presenceBlockedReader = readers.firstOrNull {
-            CardOperationGate.isRemovalRequired(it.device.deviceName)
-        }?.device?.deviceName
+            it.wire == CardWire.APDU && CardOperationGate.isRemovalRequired(it.routeKey)
+        }?.routeKey
         mutable.value = mutable.value.copy(readers = readers, selectedReader = selected)
         if (presenceBlockedReader != null && presenceWatch?.isActive != true)
-            readers.firstOrNull { it.device.deviceName == presenceBlockedReader }?.let(::observeCardRemoval)
+            readers.firstOrNull { it.wire == CardWire.APDU && it.routeKey == presenceBlockedReader }?.let(::observeCardRemoval)
     }
 
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
         retireResult()
         operations.clearSession()
-        mutable.value = mutable.value.copy(selectedReader = reader, nfc = reader == null, result = null)
+        presenceGeneration++
+        mutable.value = mutable.value.copy(userPresenceRequired = false, selectedReader = reader, nfc = reader == null, result = null)
     }
 
     fun submit(input: OperationInput) {
@@ -77,8 +89,15 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             input.close(); return
         }
         cancelled = false
+        operationRoute = mutable.value.selectedReader?.routeKey ?: "nfc"
+        operationWire = mutable.value.selectedReader?.wire ?: CardWire.APDU
         retireResult()
-        mutable.value = mutable.value.copy(busy = true, result = null, operation = input.operation)
+        mutable.value = mutable.value.copy(busy = true, result = null, operation = input.operation, resultWire = operationWire)
+        if (input.operation.piv && !mutable.value.supportsPiv) {
+            input.close()
+            finish(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED))
+            return
+        }
         if (mutable.value.nfc) {
             pending = input
             mutable.value = mutable.value.copy(awaitingNfc = true)
@@ -90,12 +109,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 finish(OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.NONE))
                 return
             }
-            if (reader.device.deviceName == presenceBlockedReader || CardOperationGate.isRemovalRequired(reader.device.deviceName)) {
+            if (reader.wire == CardWire.APDU && (reader.routeKey == presenceBlockedReader || CardOperationGate.isRemovalRequired(reader.routeKey))) {
                 input.close()
                 finish(OperationResult.Failed(FailureCode.PHYSICAL_ACTION_REQUIRED, Effect.NONE))
                 return
             }
-            run(input) { UsbCcidReader.connect(usb, reader, allowInitialPowerOn = true) }
+            run(input) { UsbAuthenticatorReader.connect(usb, reader, allowInitialPowerOn = true) }
         }
     }
 
@@ -123,7 +142,10 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     private fun run(input: OperationInput, connect: () -> CardChannel) {
         inProgress = true
+        val generation = ++presenceGeneration
+        val reader = mutable.value.selectedReader
         viewModelScope.launch {
+            var writeAccepted = false
             val result = withContext(Dispatchers.IO) {
                 try {
                     if (cancelled) OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
@@ -133,36 +155,58 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                         lease.use {
                             val channel = CancellableCardChannel(connect()) { cancelled }
                             currentChannel.set(channel)
-                            if (cancelled) {
-                                channel.close()
-                                OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
-                            } else CardSession(channel).use sessionUse@ { session ->
-                                if (ConfirmationPolicy.pivVerificationReference(input.operation) != null) {
-                                    session.requireContact()
-                                    val before = PivClient(session).readInfo()
-                                    val warning = ConfirmationPolicy.lastRetry(input.operation, before)
-                                    if (warning != null) {
-                                        val approval = CompletableDeferred<Boolean>()
-                                        withContext(Dispatchers.Main) {
-                                            retryApproval = approval
-                                            mutable.value = mutable.value.copy(lastRetry = warning)
-                                            if (cancelled) approval.complete(false)
+                            try {
+                                channel.setUserPresenceListener { required ->
+                                    viewModelScope.launch(Dispatchers.Main) {
+                                        synchronized(presenceLock) {
+                                            if (generation == presenceGeneration && currentChannel.get() === channel && !cancelled) {
+                                                val sameRoute = mutable.value.selectedReader?.routeKey == reader?.routeKey &&
+                                                    (reader == null || UsbAuthenticatorReader.isCurrent(usb, reader))
+                                                mutable.value = mutable.value.copy(userPresenceRequired = required && sameRoute)
+                                            }
                                         }
-                                        val approved = withTimeoutOrNull(120_000) { approval.await() } == true
-                                        withContext(Dispatchers.Main) {
-                                            retryApproval = null
-                                            mutable.value = mutable.value.copy(lastRetry = null)
-                                        }
-                                        if (!approved || cancelled) return@sessionUse OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
-                                        val current = PivClient(session).readInfo()
-                                        if (!ConfirmationPolicy.retryFactsUnchanged(before, current))
-                                            return@sessionUse OperationResult.Failed(FailureCode.RECOVERY_REQUIRED, Effect.NONE)
                                     }
                                 }
-                                if (cancelled) OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
-                                else session.run { operations.execute(it, input) }.also { outcome ->
-                                    if (outcome is OperationResult.Failed && outcome.code == FailureCode.PHYSICAL_ACTION_REQUIRED)
-                                        mutable.value.selectedReader?.device?.deviceName?.let(CardOperationGate::requireRemoval)
+                                if (cancelled) {
+                                    channel.close()
+                                    OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
+                                } else CardSession(channel).use sessionUse@ { session ->
+                                    if (input.operation.piv && session.wire == CardWire.CTAP)
+                                        return@sessionUse OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
+                                    if (ConfirmationPolicy.pivVerificationReference(input.operation) != null) {
+                                        session.requireContact()
+                                        val before = PivClient(session).readInfo()
+                                        val warning = ConfirmationPolicy.lastRetry(input.operation, before)
+                                        if (warning != null) {
+                                            val approval = CompletableDeferred<Boolean>()
+                                            withContext(Dispatchers.Main) {
+                                                retryApproval = approval
+                                                mutable.value = mutable.value.copy(lastRetry = warning)
+                                                if (cancelled) approval.complete(false)
+                                            }
+                                            val approved = withTimeoutOrNull(120_000) { approval.await() } == true
+                                            withContext(Dispatchers.Main) {
+                                                retryApproval = null
+                                                mutable.value = mutable.value.copy(lastRetry = null)
+                                            }
+                                            if (!approved || cancelled) return@sessionUse OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
+                                            val current = PivClient(session).readInfo()
+                                            if (!ConfirmationPolicy.retryFactsUnchanged(before, current))
+                                                return@sessionUse OperationResult.Failed(FailureCode.RECOVERY_REQUIRED, Effect.NONE)
+                                        }
+                                    }
+                                    if (cancelled) OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
+                                    else session.run { operations.execute(it, input) }.also { outcome ->
+                                        writeAccepted = session.hasAcceptedWrite
+                                        if (reader?.wire == CardWire.APDU && outcome is OperationResult.Failed && outcome.code == FailureCode.PHYSICAL_ACTION_REQUIRED)
+                                            CardOperationGate.requireRemoval(reader.routeKey)
+                                    }
+                                }
+                            } finally {
+                                channel.setUserPresenceListener(null)
+                                synchronized(presenceLock) {
+                                    if (currentChannel.compareAndSet(channel, null))
+                                        mutable.update { it.copy(userPresenceRequired = false) }
                                 }
                             }
                         }
@@ -173,13 +217,13 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     OperationResult.Failed(if (e.cancelled) FailureCode.CANCELLED else FailureCode.TRANSPORT_FAILURE, Effect.NONE, dispatch = e.dispatch)
                 } catch (_: SecurityException) {
                     OperationResult.Failed(FailureCode.AUTHORIZATION_DENIED, Effect.NONE)
-                } finally { currentChannel.set(null); input.close() }
+                } finally { input.close() }
             }
             inProgress = false
-            if (result is OperationResult.Failed && result.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
-                presenceBlockedReader = mutable.value.selectedReader?.device?.deviceName
+            if (reader?.wire == CardWire.APDU && result is OperationResult.Failed && result.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
+                presenceBlockedReader = reader.routeKey
                 presenceBlockedReader?.let(CardOperationGate::requireRemoval)
-                mutable.value.selectedReader?.let(::observeCardRemoval)
+                observeCardRemoval(reader)
             }
             if (cancelled) {
                 operations.clearSession()
@@ -188,8 +232,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     if (report.protectedExport) report.export?.fill(0)
                 }
             }
-            finish(if (cancelled && result is OperationResult.Completed) result.copy(value = result.value.copy(
-                secrets = null, export = result.value.export.takeUnless { result.value.protectedExport })) else result)
+            finish(if (cancelled && result is OperationResult.Completed)
+                OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result)
         }
     }
 
@@ -201,14 +245,26 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun finish(result: OperationResult<ManagerReport>) {
+        presenceGeneration++
         val previous = mutable.value
+        if (result is OperationResult.Failed && (result.effect == Effect.UNKNOWN || result.writeAccepted)) {
+            if (!previous.requiresInspection) {
+                recoveryRoute = operationRoute
+                recoveryWire = operationWire
+            } else {
+                if (recoveryRoute != operationRoute) recoveryRoute = null
+                if (operationWire == CardWire.CTAP) recoveryWire = CardWire.CTAP
+            }
+        }
         val requiresInspection = when {
             result is OperationResult.Failed && (result.effect == Effect.UNKNOWN || result.writeAccepted) -> true
-            result is OperationResult.Completed && previous.operation?.let(ConfirmationPolicy::canInspect) == true -> false
+            result is OperationResult.Completed && recoveryWire != CardWire.CTAP &&
+                recoveryRoute == operationRoute && previous.operation?.let(ConfirmationPolicy::canInspect) == true -> false
             else -> previous.requiresInspection
         }
+        if (!requiresInspection) { recoveryRoute = null; recoveryWire = null }
         retireResult(result)
-        mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null,
+        mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null, userPresenceRequired = false,
             result = result, requiresInspection = requiresInspection)
     }
 
@@ -216,13 +272,14 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun permissionPending(pending: Boolean) { mutable.value = mutable.value.copy(permissionPending = pending) }
 
     private fun observeCardRemoval(reader: UsbReaderDescriptor) {
+        if (reader.wire != CardWire.APDU) return
         presenceWatch?.cancel()
         presenceWatch = viewModelScope.launch {
-            while (presenceBlockedReader == reader.device.deviceName) {
+            while (presenceBlockedReader == reader.routeKey) {
                 val absent = withContext(Dispatchers.IO) {
                     CardOperationGate.tryAcquire()?.use { UsbCcidReader.isCardAbsent(usb, reader) } == true
                 }
-                if (absent) { CardOperationGate.observedRemoval(reader.device.deviceName); presenceBlockedReader = null; break }
+                if (absent) { CardOperationGate.observedRemoval(reader.routeKey); presenceBlockedReader = null; break }
                 delay(750)
             }
         }
@@ -230,14 +287,18 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun cancel() {
         cancelled = true
+        presenceGeneration++
         operations.clearSession()
         retireResult()
-        mutable.value = mutable.value.copy(result = null)
+        mutable.value = mutable.value.copy(result = null, userPresenceRequired = false)
         retryApproval?.complete(false)
         presenceWatch?.cancel()
         pending?.close()
         pending = null
-        currentChannel.get()?.let { channel -> viewModelScope.launch(Dispatchers.IO) { channel.cancel() } }
+        currentChannel.get()?.let { channel -> viewModelScope.launch(Dispatchers.IO) {
+            channel.setUserPresenceListener(null)
+            channel.cancel()
+        } }
         if (!inProgress && mutable.value.busy) finish(OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE))
     }
 

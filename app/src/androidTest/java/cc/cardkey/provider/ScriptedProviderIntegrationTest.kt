@@ -38,8 +38,14 @@ class ScriptedProviderIntegrationTest {
         ResidentKeyRequirement.DISCOURAGED, UserVerificationRequirement.REQUIRED,
         emptyList(), AttestationPreference.NONE)
 
-    @Test fun scriptedRegistrationAndNonresidentAssertionSurviveAndroidIntentRoundTrip() {
-        val card = ScriptedAuthenticator()
+    @Test fun scriptedRegistrationAndNonresidentAssertionSurviveAndroidIntentRoundTrip() =
+        registrationAndAssertion(CardWire.APDU)
+
+    @Test fun typedCtapRegistrationAndNonresidentAssertionSurviveAndroidIntentRoundTrip() =
+        registrationAndAssertion(CardWire.CTAP)
+
+    private fun registrationAndAssertion(wire: CardWire) {
+        val card = ScriptedAuthenticator(wire)
         val createData = clientData("webauthn.create", "AQID")
         val createChannel = card.channel(createData.hash)
         val createdResult = ProviderOperationRunner().execute(create = createRequest, get = null,
@@ -182,7 +188,7 @@ class ScriptedProviderIntegrationTest {
             initVerify(key); update(auth); update(hash); verify(signature)
         }
 
-    private inner class ScriptedAuthenticator {
+    private inner class ScriptedAuthenticator(private val wire: CardWire = CardWire.APDU) {
         private val pair = KeyPairGenerator.getInstance("EC").run {
             initialize(ECGenParameterSpec("secp256r1")); generateKeyPair()
         }
@@ -196,7 +202,7 @@ class ScriptedProviderIntegrationTest {
             initSign(pair.private); update(data); sign()
         }
 
-        fun channel(hash: ByteArray, loseCreationResponse: Boolean = false) = ScriptedChannel { command, params ->
+        fun channel(hash: ByteArray, loseCreationResponse: Boolean = false) = ScriptedChannel(wire) { command, params ->
             when (command) {
                 4 -> cborMap(1 to Cbor.Array(listOf("FIDO_2_1".cbor())), 3 to ByteArray(16).cbor(),
                     4 to textMap("rk" to true.cbor(), "uv" to true.cbor()))
@@ -228,9 +234,10 @@ class ScriptedProviderIntegrationTest {
         }
     }
 
-    private class ScriptedChannel(private val respond: (Int, Cbor.Map?) -> Cbor.Map) : CardChannel {
+    private class ScriptedChannel(override val wire: CardWire, private val respond: (Int, Cbor.Map?) -> Cbor.Map) : CardChannel {
         override val medium = Medium.CONTACT
-        override val maxCommandBytes = 261
+        override val maxCommandBytes = if (wire == CardWire.CTAP) 7609 else 261
+        override val supportsCtap2 get() = wire == CardWire.CTAP
         val commands = mutableListOf<Int>()
         var makeParameters: Cbor.Map? = null
         var closed = false
@@ -238,6 +245,7 @@ class ScriptedProviderIntegrationTest {
 
         override fun transmit(command: ByteArray): ByteArray {
             check(!closed)
+            check(wire == CardWire.APDU)
             if (command[1].toInt() and 255 == 0xa4)
                 return "FIDO_2_0".toByteArray() + byteArrayOf(0x90.toByte(), 0)
             assertEquals(0x10, command[1].toInt() and 255)
@@ -246,11 +254,17 @@ class ScriptedProviderIntegrationTest {
             if (command[0].toInt() and 0x10 != 0) return byteArrayOf(0x90.toByte(), 0)
             val payload = chained.toByteArray()
             chained.reset()
+            return exchangeCtap2(payload) + byteArrayOf(0x90.toByte(), 0)
+        }
+
+        override fun exchangeCtap2(command: ByteArray): ByteArray {
+            check(!closed)
+            val payload = command
             val operation = payload[0].toInt() and 255
             val params = if (payload.size == 1) null else CborCodec.decode(payload.copyOfRange(1, payload.size)).map()
             commands += operation
             if (operation == 1) makeParameters = params
-            return byteArrayOf(0) + CborCodec.encode(respond(operation, params)) + byteArrayOf(0x90.toByte(), 0)
+            return byteArrayOf(0) + CborCodec.encode(respond(operation, params))
         }
 
         override fun close() { closed = true }

@@ -1,6 +1,6 @@
 # Android credential provider
 
-The provider targets Android 14 (API 34) and later. It supports interactive public-key creation and sign-in using the same public Kotlin FIDO/APDU implementation as the manager. It stores no passkeys, private keys, PIN tokens, credential index or account database on the phone. Each operation opens one card session after user confirmation.
+The provider targets Android 14 (API 34) and later. It supports interactive public-key creation and sign-in using the same public Kotlin FIDO implementation as the manager over NFC/CCID APDUs or direct USB CTAPHID. It stores no passkeys, private keys, PIN tokens, credential index or account database on the phone. Each operation opens one card session after user confirmation.
 
 ## Android integration
 
@@ -34,7 +34,7 @@ Registration verifies RP binding, user presence, required UV, the ES256 credenti
 
 Assertion validation checks RP binding, required UP/UV, credential IDs, user handles, authenticator-data structure and ES256 DER signature shape. Authenticator data and signature bytes are returned unchanged. The RP verifies the signature using its registered public key; the provider cannot establish account acceptance from a stateless assertion alone. GetAssertion and every GetNextAssertion remain contiguous in one card session. Multiple results remain transient while the user selects an account. CardKey rejects backup-eligible/backed-up flags because this provider's credentials are hardware-bound.
 
-The provider and manager share an exclusive transport lease, including card-removal probes. PIN authorization is scoped to the operation and cleared afterward. PIN verification does not satisfy physical presence. No error path resets, power-cycles or reconnects the card to manufacture presence. Lost creation responses remain uncertain and are never recreated automatically. Cancellation does not undo a command already sent.
+The provider and manager share a process-wide transport lease through native request retirement and channel closure. It covers APDU card-removal probes; HID presence results do not start those probes. HID PIN, token, assertion and blob phases use one initialization and connection. [CTAPHID scope](CTAPHID-TRANSPORT.md) PIN authorization is scoped to the operation and cleared afterward. PIN verification does not satisfy physical presence. No error path resets, power-cycles or reconnects the card to manufacture presence. Lost creation responses remain uncertain and are never recreated automatically. Cancellation does not undo a command already sent.
 
 ## Verification and acceptance
 

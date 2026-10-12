@@ -81,6 +81,27 @@ class ConfirmationPolicyTest {
         assertEquals(listOf(R.string.operation_unknown, R.string.error_transport), ConfirmationPolicy.resultMessages(result))
     }
 
+    @Test fun hidPresenceNeverUsesSmartCardRemovalOrSuggestsReplayOfUncertainWrites() {
+        val failure = OperationResult.Failed(FailureCode.PHYSICAL_ACTION_REQUIRED, Effect.NONE)
+        assertEquals(listOf(R.string.error_physicalActionRequired), ConfirmationPolicy.resultMessages(failure))
+        assertEquals(listOf(R.string.error_cardRejected), ConfirmationPolicy.resultMessages(failure, CardWire.CTAP))
+        assertEquals(listOf(R.string.error_recoveryRequired),
+            ConfirmationPolicy.resultMessages(failure.copy(effect = Effect.UNKNOWN), CardWire.CTAP))
+        assertEquals(listOf(R.string.operation_appliedReadbackFailed, R.string.error_recoveryRequired),
+            ConfirmationPolicy.resultMessages(failure.copy(effect = Effect.APPLIED, writeAccepted = true), CardWire.CTAP))
+    }
+
+    @Test fun ambiguousBridgeAndCancellationStatusesRetainRecoveryContext() {
+        for (status in listOf(0x7f, 0x6f00, 0x2d)) {
+            val code = if (status == 0x2d) FailureCode.CANCELLED else FailureCode.CARD_REJECTED
+            val reason = if (status == 0x2d) R.string.error_cancelled else R.string.error_recoveryRequired
+            val result = OperationResult.Failed(code, Effect.UNKNOWN, status = status)
+            assertEquals(listOf(R.string.operation_unknown, reason), ConfirmationPolicy.resultMessages(result, CardWire.CTAP))
+            assertEquals(listOf(R.string.operation_appliedReadbackFailed, reason),
+                ConfirmationPolicy.resultMessages(result.copy(writeAccepted = true), CardWire.CTAP))
+        }
+    }
+
     @Test fun acceptedWriteRemainsDistinctFromUnknownReadbackResponse() {
         val result = OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN,
             dispatch = Dispatch.RESPONSE_UNAVAILABLE, writeAccepted = true)

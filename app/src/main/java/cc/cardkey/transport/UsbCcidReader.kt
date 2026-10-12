@@ -5,12 +5,20 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
+import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.CardChannel
 import cc.cardkey.protocol.Dispatch
 import cc.cardkey.protocol.TransportException
 import java.util.concurrent.atomic.AtomicBoolean
 
-class UsbReaderDescriptor internal constructor(val device: UsbDevice, val interfaceId: Int)
+class UsbReaderDescriptor internal constructor(
+    val device: UsbDevice,
+    val interfaceId: Int,
+    val wire: CardWire = CardWire.APDU,
+) {
+    internal val attachment = UsbAuthenticatorReader.attachment(device.deviceName)
+    val routeKey: String = "usb:${device.deviceName.length}:${device.deviceName}:$attachment:$interfaceId:${wire.name}"
+}
 
 object UsbCcidReader {
     fun discover(manager: UsbManager): List<UsbReaderDescriptor> = manager.deviceList.values
@@ -29,6 +37,7 @@ object UsbCcidReader {
     ): CardChannel {
         val channel = openChannel(manager, descriptor, timeoutMillis)
         try {
+            if (!UsbAuthenticatorReader.isCurrent(manager, descriptor)) throw TransportException(Dispatch.NOT_DISPATCHED)
             channel.initialize(allowInitialPowerOn)
             return channel
         } catch (error: Exception) {
@@ -53,7 +62,7 @@ object UsbCcidReader {
         timeoutMillis: Int,
     ): CcidChannel {
         val device = descriptor.device
-        if (device.vendorId != 0x04e6 || device.productId != 0x5810 ||
+        if (!UsbAuthenticatorReader.isCurrent(manager, descriptor) || descriptor.wire != CardWire.APDU || device.vendorId != 0x04e6 || device.productId != 0x5810 ||
             !manager.hasPermission(device) || Thread.currentThread().isInterrupted) {
             throw TransportException(Dispatch.NOT_DISPATCHED)
         }

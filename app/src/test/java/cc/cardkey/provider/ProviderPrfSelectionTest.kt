@@ -125,6 +125,7 @@ class ProviderPrfSelectionTest {
                     }
                     return response
                 }
+                override fun cancel() { closeCalls++ }
                 override fun close() { closeCalls++ }
             }
             val pin = "1234".toCharArray()

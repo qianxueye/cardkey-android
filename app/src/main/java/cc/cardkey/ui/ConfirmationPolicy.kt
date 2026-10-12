@@ -56,19 +56,22 @@ object ConfirmationPolicy {
         ManagerOperation.U2F_INFO, ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT,
     )
 
-    fun resultMessages(result: OperationResult<*>): List<Int> = when (result) {
+    fun resultMessages(result: OperationResult<*>, wire: CardWire = CardWire.APDU): List<Int> = when (result) {
         is OperationResult.Completed -> listOf(R.string.operation_completed)
         is OperationResult.Failed -> {
             val effect = when {
                 result.writeAccepted -> R.string.operation_appliedReadbackFailed
                 result.effect == Effect.UNKNOWN && (result.dispatch == Dispatch.RESPONSE_UNAVAILABLE ||
-                    result.code == FailureCode.MALFORMED_RESPONSE) -> R.string.operation_unknown
+                    result.code == FailureCode.MALFORMED_RESPONSE || result.status in setOf(0x7f, 0x6f00, 0x2d)) -> R.string.operation_unknown
                 result.dispatch == Dispatch.NOT_DISPATCHED -> R.string.operation_notDispatched
                 else -> null
             }
             val reason = when (result.code) {
                 FailureCode.CONTACT_REQUIRED -> R.string.error_contactRequired
-                FailureCode.PHYSICAL_ACTION_REQUIRED -> R.string.error_physicalActionRequired
+                FailureCode.PHYSICAL_ACTION_REQUIRED -> if (wire == CardWire.CTAP) {
+                    if (result.effect == Effect.UNKNOWN || result.writeAccepted) R.string.error_recoveryRequired
+                    else R.string.error_cardRejected
+                } else R.string.error_physicalActionRequired
                 FailureCode.PIN_INVALID -> R.string.error_pinInvalid
                 FailureCode.PIN_BLOCKED -> R.string.error_pinBlocked
                 FailureCode.AUTHORIZATION_DENIED -> R.string.error_authorization
@@ -81,7 +84,7 @@ object ConfirmationPolicy {
                 FailureCode.NFC_DISABLED -> R.string.error_nfcDisabled
                 FailureCode.CAPACITY_EXCEEDED -> R.string.error_capacityExceeded
                 FailureCode.RECOVERY_REQUIRED -> R.string.error_recoveryRequired
-                FailureCode.CARD_REJECTED -> R.string.error_cardRejected
+                FailureCode.CARD_REJECTED -> if (result.effect == Effect.UNKNOWN) R.string.error_recoveryRequired else R.string.error_cardRejected
                 else -> R.string.error_unsupported
             }
             listOfNotNull(effect, reason).distinct()
