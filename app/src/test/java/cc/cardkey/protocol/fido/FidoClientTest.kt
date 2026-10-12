@@ -9,6 +9,55 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FidoClientTest {
+    @Test fun getInfoPreservesOptionalAlgorithmsAndPinChangeState() {
+        val lists = listOf(null, listOf(FidoAlgorithmParameter("public-key", -7)),
+            listOf(FidoAlgorithmParameter("public-key", -257), FidoAlgorithmParameter("public-key", -7),
+                FidoAlgorithmParameter("future-type", 12345), FidoAlgorithmParameter("public-key", Int.MIN_VALUE),
+                FidoAlgorithmParameter("public-key", Int.MAX_VALUE), FidoAlgorithmParameter("public-key", 0)))
+        for (algorithms in lists) for (forced in listOf(null, false, true)) {
+            val channel = FidoChannel { code, _ ->
+                assertEquals(4, code)
+                success(info(extra = cborMap(
+                    10 to algorithms?.let { Cbor.Array(it.map { parameter ->
+                        textMap("type" to parameter.type.cbor(), "alg" to parameter.algorithm.cbor()) }) },
+                    12 to forced?.cbor())))
+            }
+            val result = CardSession(channel).run { FidoClient(it).apply { select() }.getInfo() } as OperationResult.Completed
+            assertEquals(algorithms, result.value.algorithms)
+            assertEquals(forced, result.value.forcePinChange)
+            assertEquals(Effect.NONE, result.effect)
+            assertEquals(listOf(4), channel.commands.map { it.first })
+        }
+    }
+
+    @Test fun getInfoRejectsMalformedAdvertisedAlgorithms() {
+        val valid = textMap("type" to "public-key".cbor(), "alg" to (-7).cbor())
+        val malformedEntries = listOf(Cbor.Null, (-7).cbor(), textMap(),
+            textMap("type" to "public-key".cbor()), textMap("alg" to (-7).cbor()),
+            textMap("type" to 1.cbor(), "alg" to (-7).cbor()),
+            textMap("type" to "public-key".cbor(), "alg" to "-7".cbor()),
+            textMap("type" to "public-key".cbor(), "alg" to true.cbor()),
+            textMap("type" to "public-key".cbor(), "alg" to Cbor.Integer(Int.MAX_VALUE.toLong() + 1)),
+            textMap("type" to "public-key".cbor(), "alg" to Cbor.Integer(Int.MIN_VALUE.toLong() - 1)))
+        val malformedFields = listOf(Cbor.Null, valid, Cbor.Array(emptyList()), Cbor.Array(listOf(valid, valid)),
+            Cbor.Array(listOf(valid, Cbor.Map(valid.value + ("extra".cbor() to true.cbor()))))) +
+            malformedEntries.map { Cbor.Array(listOf(valid, it)) }
+        for (field in malformedFields) {
+            val channel = FidoChannel { _, _ -> success(info(extra = cborMap(10 to field))) }
+            val result = CardSession(channel).run { FidoClient(it).apply { select() }.getInfo() }
+            assertEquals(OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, Effect.NONE), result)
+            assertEquals(listOf(4), channel.commands.map { it.first })
+        }
+    }
+
+    @Test fun getInfoRejectsNonBooleanForcedPinState() {
+        for (field in listOf(Cbor.Null, 0.cbor(), "false".cbor(), Cbor.Array(emptyList()))) {
+            val channel = FidoChannel { _, _ -> success(info(extra = cborMap(12 to field))) }
+            val result = CardSession(channel).run { FidoClient(it).apply { select() }.getInfo() }
+            assertEquals(OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, Effect.NONE), result)
+        }
+    }
+
     @Test fun getInfoAcceptsMessageLimitsAboveGenericCollectionCount() {
         for (maximum in listOf(4097, 7609)) {
             val channel = FidoChannel { _, _ -> success(info(extra = cborMap(5 to maximum.cbor()))) }

@@ -196,6 +196,11 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ResultRow("支持的扩展", info.extensions.joinToString().ifEmpty { "无" }),
             ResultRow("PIN · 协议", info.pinProtocols.joinToString())) +
             listOfNotNull(
+                info.algorithms?.let { parameters -> ResultRow("算法", parameters.joinToString { parameter ->
+                    if (parameter.type == "public-key") parameter.algorithm.toString()
+                    else "${parameter.type}: ${parameter.algorithm}"
+                }) },
+                info.forcePinChange?.let { ResultRow("需要修改 PIN", if (it) "是" else "否") },
                 info.options["clientPin"]?.let { ResultRow("PIN", if (it) "已设置" else "未设置") },
                 info.options["alwaysUv"]?.let { ResultRow("始终验证", if (it) "开启" else "关闭") },
                 info.options["ep"]?.let { ResultRow("企业证明", if (it) "开启" else "关闭") },

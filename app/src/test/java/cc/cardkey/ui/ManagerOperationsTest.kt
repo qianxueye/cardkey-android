@@ -62,6 +62,83 @@ class ManagerOperationsTest {
         assertEquals("关闭", rows["企业证明"])
     }
 
+    @Test fun advertisedAlgorithmsAndPinChangeUseActualOptionalStatus() {
+        for (algorithms in listOf(null, listOf(-7), listOf(-257, -7, 12345))) {
+            for (forced in listOf(null, false, true)) {
+                val channel = FidoChannel { code, _ ->
+                    assertEquals(4, code)
+                    success(info(extra = cborMap(
+                        10 to algorithms?.let { Cbor.Array(it.map { id -> textMap("type" to "public-key".cbor(), "alg" to id.cbor()) }) },
+                        12 to forced?.cbor())))
+                }
+                val result = CardSession(channel).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.FIDO_INFO)) }
+                val rows = (result as OperationResult.Completed).value.rows.associate { it.label to it.value }
+                assertEquals(algorithms?.joinToString(), rows["算法"])
+                assertEquals(forced?.let { if (it) "是" else "否" }, rows["需要修改 PIN"])
+                assertEquals(listOf(4), channel.commands.map { it.first })
+            }
+        }
+    }
+
+    @Test fun minimumPinConfigurationRendersReturnedAlgorithmsAndPinChange() {
+        for (forced in listOf(null, false, true)) {
+            var configured = false
+            val channel = FidoChannel { code, parameters -> when (code) {
+                4 -> success(info(mapOf("authnrCfg" to true, "setMinPINLength" to true), extensions = listOf("minPinLength"), extra = cborMap(
+                    13 to (if (configured) 6 else 4).cbor(),
+                    10 to Cbor.Array(listOf(textMap("type" to "public-key".cbor(), "alg" to 12345.cbor()))),
+                    12 to (if (configured) forced?.cbor() else null))))
+                13 -> {
+                    assertEquals(3L, parameters!![1].number())
+                    assertEquals(6L, parameters[2].map()[1].number())
+                    configured = true
+                    success()
+                }
+                else -> error("Unexpected command")
+            } }
+            val input = OperationInput(ManagerOperation.FIDO_MIN_PIN, text = "6", enabled = forced == true)
+            val result = CardSession(channel).run { ManagerOperations().execute(it, input) } as OperationResult.Completed
+            val rows = result.value.rows.associate { it.label to it.value }
+            assertEquals(Effect.APPLIED, result.effect)
+            assertEquals("12345", rows["算法"])
+            assertEquals(forced?.let { if (it) "是" else "否" }, rows["需要修改 PIN"])
+            assertEquals("6 个字符", rows["最短 PIN 长度"])
+            assertEquals(listOf(4, 13, 4), channel.commands.map { it.first })
+        }
+    }
+
+    @Test fun statusPreservesUnknownCredentialTypeWithItsAlgorithm() {
+        val channel = FidoChannel { _, _ -> success(info(extra = cborMap(10 to Cbor.Array(listOf(
+            textMap("type" to "future-type".cbor(), "alg" to (-7).cbor()),
+            textMap("type" to "public-key".cbor(), "alg" to (-7).cbor())))))) }
+        val result = CardSession(channel).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.FIDO_INFO)) }
+        assertEquals("future-type: -7, -7", (result as OperationResult.Completed).value.rows.first { it.label == "算法" }.value)
+    }
+
+    @Test fun malformedAlgorithmStatusFailsWithoutWriting() {
+        for (field in listOf(Cbor.Null, Cbor.Array(emptyList()), Cbor.Array(listOf(textMap("type" to "public-key".cbor()))))) {
+            val channel = FidoChannel { _, _ -> success(info(extra = cborMap(10 to field))) }
+            val result = CardSession(channel).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.FIDO_INFO)) }
+            assertEquals(OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, Effect.NONE), result)
+            assertEquals(listOf(4), channel.commands.map { it.first })
+        }
+    }
+
+    @Test fun malformedConfigurationStatusPreservesAcceptedWriteAndDoesNotRetry() {
+        var configured = false
+        val channel = FidoChannel { code, _ -> when (code) {
+            4 -> success(info(mapOf("authnrCfg" to true, "alwaysUv" to configured), extra =
+                if (configured) cborMap(10 to Cbor.Array(emptyList())) else cborMap()))
+            13 -> { configured = true; success() }
+            else -> error("Unexpected command")
+        } }
+        val result = CardSession(channel).run {
+            ManagerOperations().execute(it, OperationInput(ManagerOperation.FIDO_ALWAYS_UV, enabled = true))
+        }
+        assertEquals(OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, Effect.APPLIED, writeAccepted = true), result)
+        assertEquals(listOf(4, 13, 4), channel.commands.map { it.first })
+    }
+
     @Test fun pinRetriesOnlyShowPhysicalInstructionWhenRequired() {
         for (required in listOf(null, false, true)) {
             val channel = FidoChannel { code, _ -> when (code) {
