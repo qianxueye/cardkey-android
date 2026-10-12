@@ -33,7 +33,7 @@ internal object FidoHidDescriptor {
         return requireNotNull(length).also { require(it in 1..4096) }
     }
 
-    fun validate(report: ByteArray) {
+    fun validate(report: ByteArray): FidoHidReports {
         require(report.isNotEmpty() && report.size <= 4096)
         var offset = 0
         var usagePage = 0L
@@ -42,8 +42,8 @@ internal object FidoHidDescriptor {
         var reportCount = 0L
         var inCollection = false
         var collections = 0
-        var inputBits = 0L
-        var outputBits = 0L
+        var inputBytes: Int? = null
+        var outputBytes: Int? = null
         while (offset < report.size) {
             val prefix = report[offset++].toInt() and 255
             require(prefix != 0xfe)
@@ -57,7 +57,7 @@ internal object FidoHidDescriptor {
             when (type) {
                 1 -> when (tag) {
                     0 -> usagePage = value
-                    1, 2, 3, 4, 5, 6 -> Unit
+                    1, 2 -> Unit
                     7 -> reportSize = value
                     9 -> reportCount = value
                     else -> throw IllegalArgumentException("Unsupported HID report layout")
@@ -74,9 +74,15 @@ internal object FidoHidDescriptor {
                         }
                         12 -> { require(inCollection && size == 0); inCollection = false }
                         8, 9 -> {
-                            require(inCollection && value == 2L && reportSize == 8L && reportCount == 64L)
+                            require(inCollection && value == 2L && reportSize == 8L && reportCount in 7L..1024L)
                             require(usage == if (tag == 8) 0xf1d00020L else 0xf1d00021L)
-                            if (tag == 8) inputBits += reportSize * reportCount else outputBits += reportSize * reportCount
+                            if (tag == 8) {
+                                require(inputBytes == null)
+                                inputBytes = reportCount.toInt()
+                            } else {
+                                require(outputBytes == null)
+                                outputBytes = reportCount.toInt()
+                            }
                         }
                         else -> throw IllegalArgumentException("Unsupported HID main item")
                     }
@@ -85,6 +91,7 @@ internal object FidoHidDescriptor {
                 else -> throw IllegalArgumentException("Invalid HID item")
             }
         }
-        require(!inCollection && collections == 1 && inputBits == 512L && outputBits == 512L && usage == null)
+        require(!inCollection && collections == 1 && usage == null)
+        return FidoHidReports(requireNotNull(inputBytes), requireNotNull(outputBytes))
     }
 }

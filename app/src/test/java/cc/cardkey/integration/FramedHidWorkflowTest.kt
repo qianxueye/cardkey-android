@@ -4,6 +4,7 @@ import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.transport.CtaphidChannel
 import cc.cardkey.transport.CtaphidIo
+import cc.cardkey.transport.FidoHidReports
 import cc.cardkey.ui.*
 import java.io.ByteArrayOutputStream
 import java.security.KeyPairGenerator
@@ -13,7 +14,7 @@ import java.security.spec.ECGenParameterSpec
 import org.junit.Assert.*
 import org.junit.Test
 
-internal class SyntheticHidPeer(private val respond: (Int, Cbor.Map?) -> ByteArray) : CtaphidIo {
+internal class SyntheticHidPeer(private val reports: FidoHidReports = FidoHidReports(), private val respond: (Int, Cbor.Map?) -> ByteArray) : CtaphidIo {
     private val responseReports = ArrayDeque<ByteArray>()
     private val pending = ByteArrayOutputStream()
     private var expected = 0
@@ -26,7 +27,7 @@ internal class SyntheticHidPeer(private val respond: (Int, Cbor.Map?) -> ByteArr
         private set
     override fun write(report: ByteArray, timeoutMillis: Int): Int {
         check(!closed)
-        assertEquals(64, report.size)
+        assertEquals(reports.outputBytes, report.size)
         val marker = report[4].toInt() and 255
         val offset: Int
         if (marker and 128 != 0) {
@@ -66,7 +67,7 @@ internal class SyntheticHidPeer(private val respond: (Int, Cbor.Map?) -> ByteArr
         var offset = 0
         var sequence = -1
         do {
-            val report = ByteArray(64)
+            val report = ByteArray(reports.inputBytes)
             cid.copyInto(report)
             val start = if (sequence == -1) {
                 report[4] = command.toByte()
@@ -77,7 +78,7 @@ internal class SyntheticHidPeer(private val respond: (Int, Cbor.Map?) -> ByteArr
                 report[4] = sequence.toByte()
                 5
             }
-            val count = minOf(payload.size - offset, 64 - start)
+            val count = minOf(payload.size - offset, reports.inputBytes - start)
             payload.copyInto(report, start, offset, offset + count)
             responseReports += report
             offset += count
@@ -87,14 +88,22 @@ internal class SyntheticHidPeer(private val respond: (Int, Cbor.Map?) -> ByteArr
     override fun read(report: ByteArray, timeoutMillis: Int): Int {
         check(!closed)
         responseReports.removeFirst().copyInto(report)
-        return 64
+        return reports.inputBytes
     }
     override fun interrupt() = Unit
     override fun close() { closed = true }
-    fun connect() = CtaphidChannel(this).also { it.initialize() }
+    fun connect() = CtaphidChannel(this, reports = reports).also { it.initialize() }
 }
 
-class FramedHidWorkflowTest {
+@org.junit.runner.RunWith(org.junit.runners.Parameterized::class)
+class FramedHidWorkflowTest(input: Int, output: Int) {
+    private val reports = FidoHidReports(input, output)
+    companion object {
+        @JvmStatic @org.junit.runners.Parameterized.Parameters(name = "reports={0}")
+        fun reports() = listOf(arrayOf(64, 64), arrayOf(16, 32))
+    }
+    private fun peer(respond: (Int, Cbor.Map?) -> ByteArray) = SyntheticHidPeer(reports, respond)
+
     private val pair = KeyPairGenerator.getInstance("EC").run {
         initialize(ECGenParameterSpec("secp256r1")); generateKeyPair()
     }
@@ -107,7 +116,7 @@ class FramedHidWorkflowTest {
     private fun sign(bytes: ByteArray, valid: Boolean = true) = Signature.getInstance("SHA256withECDSA").run {
         initSign(pair.private); update(bytes); if (!valid) update(1); sign()
     }
-    private fun registration(valid: Boolean = true) = SyntheticHidPeer { code, parameters ->
+    private fun registration(valid: Boolean = true) = peer { code, parameters ->
         when (code) {
             4 -> success(info(mapOf("rk" to true, "uv" to true), extensions = listOf("largeBlobKey")))
             1 -> {
@@ -132,7 +141,7 @@ class FramedHidWorkflowTest {
         assertEquals(1, first.initializationCount)
         assertEquals(listOf(4, 1), first.commands)
         assertTrue(first.closed)
-        val second = SyntheticHidPeer { code, parameters -> when (code) {
+        val second = peer { code, parameters -> when (code) {
             4 -> success(info())
             2 -> {
                 assertArrayEquals(credential, parameters!![3].array().single().map()["id"].bytes())
@@ -153,7 +162,7 @@ class FramedHidWorkflowTest {
         assertEquals(FailureCode.MALFORMED_RESPONSE, result.code)
         assertEquals(Effect.APPLIED, result.effect)
         assertTrue(result.writeAccepted)
-        val peer = SyntheticHidPeer { _, _ -> error("Unverified credential must not be used") }
+        val peer = peer { _, _ -> error("Unverified credential must not be used") }
         assertEquals(FailureCode.INVALID_INPUT,
             (run(peer, OperationInput(ManagerOperation.FIDO_ASSERT)) as OperationResult.Failed).code)
         assertTrue(peer.commands.isEmpty())
@@ -163,7 +172,7 @@ class FramedHidWorkflowTest {
         assertTrue(register() is OperationResult.Completed)
         val plaintext = ByteArray(250) { (it * 3).toByte() }
         val stored = LargeBlobs.encode(listOf(LargeBlobs.encrypt(blobKey, plaintext)))
-        val peer = SyntheticHidPeer { code, parameters -> when (code) {
+        val peer = peer { code, parameters -> when (code) {
             4 -> success(info(mapOf("largeBlobs" to true, "uv" to true),
                 extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
             2 -> {

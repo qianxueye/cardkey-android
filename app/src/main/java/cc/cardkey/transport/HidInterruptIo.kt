@@ -15,7 +15,7 @@ internal interface HidInterruptConnection : Closeable {
     fun releaseInterface()
 }
 
-internal class HidInterruptIo(private val connection: HidInterruptConnection) : CtaphidIo {
+internal class HidInterruptIo(private val connection: HidInterruptConnection, private val reports: FidoHidReports = FidoHidReports()) : CtaphidIo {
     private val state = Any()
     private val transferLock = Any()
     private var pending: HidInterruptRequest? = null
@@ -31,7 +31,7 @@ internal class HidInterruptIo(private val connection: HidInterruptConnection) : 
 
     private fun transfer(report: ByteArray, timeoutMillis: Int, input: Boolean, allowInterrupted: Boolean = false): Int =
         synchronized(transferLock) {
-            require(report.size == CtaphidChannel.REPORT_BYTES && timeoutMillis > 0)
+            require(report.size == (if (input) reports.inputBytes else reports.outputBytes) && timeoutMillis > 0)
             val buffer = ByteBuffer.allocateDirect(report.size)
             if (!input) { buffer.put(report); buffer.flip() }
             var request: HidInterruptRequest? = null
@@ -53,6 +53,7 @@ internal class HidInterruptIo(private val connection: HidInterruptConnection) : 
                     if (interrupted && !allowInterrupted) throw IOException("USB interrupted")
                 }
                 val transferred = buffer.position()
+                if (transferred != report.size) throw IOException()
                 if (input) { buffer.flip(); buffer.get(report, 0, transferred) }
                 transferred
             } finally {

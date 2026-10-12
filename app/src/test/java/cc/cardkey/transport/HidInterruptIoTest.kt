@@ -104,6 +104,75 @@ class HidInterruptIoTest {
         assertEquals(listOf("queue", "complete", "request-close", "release", "connection-close"), native.events)
     }
 
+    @Test fun unequalReportsUseExactNativeAllocationsAndRejectPartialCompletions() {
+        for (reports in listOf(FidoHidReports(7, 8), FidoHidReports(16, 32), FidoHidReports(1024, 7))) {
+            val native = FakeConnection()
+            val io = HidInterruptIo(native, reports)
+            assertEquals(reports.outputBytes, io.write(ByteArray(reports.outputBytes), 100))
+            assertEquals(reports.inputBytes, io.read(ByteArray(reports.inputBytes), 100))
+            assertEquals(listOf(reports.outputBytes, reports.inputBytes), native.buffers.map { it.capacity() })
+            assertTrue(native.buffers.all { buffer -> (0 until buffer.capacity()).all { buffer.get(it) == 0.toByte() } })
+            for (input in listOf(false, true)) {
+                native.waits += { native.current.buffer!!.position(1); native.current }
+                val target = ByteArray(if (input) reports.inputBytes else reports.outputBytes)
+                expectFailure { if (input) io.read(target, 100) else io.write(target, 100) }
+                assertArrayEquals(ByteArray(target.size), target)
+            }
+            io.close()
+        }
+    }
+
+    @Test fun unequalCancelledReportsReapOrCloseBeforeWipingEntireAllocation() {
+        for (reap in listOf(false, true)) {
+            val native = FakeConnection()
+            native.waits += { throw TimeoutException() }
+            native.waits += {
+                val buffer = native.current.buffer!!
+                assertEquals(1024, buffer.capacity())
+                assertTrue((0 until buffer.capacity()).all { buffer.get(it) == 42.toByte() })
+                if (reap) { native.events += "reap"; native.current } else null
+            }
+            val io = HidInterruptIo(native, FidoHidReports(7, 1024))
+            expectFailure { io.write(ByteArray(1024) { 42 }, 100) }
+            assertTrue(native.events.indexOf(if (reap) "reap" else "connection-close") < native.events.indexOf("request-close"))
+            assertTrue((0 until 1024).all { native.buffers.single().get(it) == 0.toByte() })
+            io.close()
+        }
+    }
+
+    @Test fun lateUnequalInputCannotReleaseOutputBeforeNativeRetirement() {
+        val native = FakeConnection()
+        val entered = CountDownLatch(1)
+        val cancelled = CountDownLatch(1)
+        val complete = CountDownLatch(1)
+        native.onCancel = { cancelled.countDown() }
+        native.waits += {
+            entered.countDown()
+            check(complete.await(5, TimeUnit.SECONDS))
+            native.current.buffer!!.put(ByteArray(1024) { 77 })
+            native.events += "late-complete"
+            native.current
+        }
+        val io = HidInterruptIo(native, FidoHidReports(1024, 7))
+        val target = ByteArray(1024)
+        val failure = AtomicReference<Exception>()
+        val reader = Thread { try { io.read(target, 1000) } catch (e: Exception) { failure.set(e) } }
+        reader.start()
+        assertTrue(entered.await(5, TimeUnit.SECONDS))
+        val closer = Thread { io.close() }
+        closer.start()
+        assertTrue(cancelled.await(5, TimeUnit.SECONDS))
+        assertTrue(closer.isAlive)
+        assertFalse(native.events.contains("request-close"))
+        complete.countDown()
+        reader.join(5000); closer.join(5000)
+        assertFalse(reader.isAlive); assertFalse(closer.isAlive)
+        assertNotNull(failure.get())
+        assertArrayEquals(ByteArray(1024), target)
+        assertTrue(native.events.indexOf("late-complete") < native.events.indexOf("request-close"))
+        assertTrue((0 until 1024).all { native.buffers.single().get(it) == 0.toByte() })
+    }
+
     private fun expectFailure(block: () -> Unit) {
         try { block(); fail("Expected failure") } catch (_: IOException) { } catch (_: TimeoutException) { }
     }
@@ -124,7 +193,7 @@ class HidInterruptIoTest {
         override fun await(timeoutMillis: Int): HidInterruptRequest? {
             if (waits.isNotEmpty()) return waits.removeFirst()()
             val buffer = current.buffer!!
-            if (current.input) buffer.put(ByteArray(64) { 7 }) else buffer.position(64)
+            if (current.input) buffer.put(ByteArray(buffer.capacity()) { 7 }) else buffer.position(buffer.capacity())
             events += "complete"
             return current
         }

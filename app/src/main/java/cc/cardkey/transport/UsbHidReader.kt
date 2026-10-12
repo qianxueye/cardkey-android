@@ -35,10 +35,10 @@ object UsbHidReader {
         var claimed = false
         var channel: CtaphidChannel? = null
         try {
-            validateDescriptor(connection, intf, timeoutMillis)
+            val reports = validateDescriptor(connection, intf, timeoutMillis)
             claimed = connection.claimInterface(intf, false)
             check(claimed)
-            channel = CtaphidChannel(HidInterruptIo(AndroidInterruptConnection(connection, intf, endpoints)), timeoutMillis)
+            channel = CtaphidChannel(HidInterruptIo(AndroidInterruptConnection(connection, intf, endpoints), reports), timeoutMillis, reports = reports)
             if (!UsbAuthenticatorReader.isCurrent(manager, descriptor)) throw TransportException(Dispatch.NOT_DISPATCHED)
             channel.initialize()
             return channel
@@ -53,11 +53,11 @@ object UsbHidReader {
         }
     }
 
-    private fun validateDescriptor(connection: UsbDeviceConnection, intf: UsbInterface, timeoutMillis: Int) {
+    private fun validateDescriptor(connection: UsbDeviceConnection, intf: UsbInterface, timeoutMillis: Int): FidoHidReports {
         val report = ByteArray(FidoHidDescriptor.reportLength(connection.rawDescriptors, intf.id))
         val count = connection.controlTransfer(0x81, 6, 0x2200, intf.id, report, report.size, timeoutMillis)
         require(count == report.size)
-        FidoHidDescriptor.validate(report)
+        return FidoHidDescriptor.validate(report)
     }
 
     private fun isHid(intf: UsbInterface): Boolean = intf.interfaceClass == UsbConstants.USB_CLASS_HID &&
@@ -66,7 +66,7 @@ object UsbHidReader {
     private fun endpoints(intf: UsbInterface): Pair<UsbEndpoint, UsbEndpoint>? {
         if (intf.endpointCount != 2) return null
         val endpoints = (0 until intf.endpointCount).map { intf.getEndpoint(it) }
-        if (endpoints.any { it.type != UsbConstants.USB_ENDPOINT_XFER_INT || it.maxPacketSize != 64 || it.interval <= 0 }) return null
+        if (endpoints.any { it.type != UsbConstants.USB_ENDPOINT_XFER_INT || it.maxPacketSize <= 0 || it.interval <= 0 }) return null
         val input = endpoints.singleOrNull { it.direction == UsbConstants.USB_DIR_IN } ?: return null
         val output = endpoints.singleOrNull { it.direction == UsbConstants.USB_DIR_OUT } ?: return null
         return input to output

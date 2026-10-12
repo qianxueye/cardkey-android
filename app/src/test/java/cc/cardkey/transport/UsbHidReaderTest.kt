@@ -84,7 +84,7 @@ class UsbHidReaderTest {
     @Test fun discoveryRejectsNonInterruptWrongSizeDuplicateDirectionAndAlternateInterfaces() {
         val invalid = listOf(
             intf(arrayOf(endpoint(0x81, type = 2), endpoint(1))),
-            intf(arrayOf(endpoint(0x81, size = 63), endpoint(1))),
+            intf(arrayOf(endpoint(0x81, size = 0), endpoint(1))),
             intf(arrayOf(endpoint(0x81), endpoint(0x82))),
             intf(arrayOf(endpoint(0x81))),
             intf(arrayOf(endpoint(0x81), endpoint(1), endpoint(2))),
@@ -97,6 +97,30 @@ class UsbHidReaderTest {
         }
         assertTrue(UsbHidReader.discover(manager).isEmpty())
         assertEquals(0, DescriptorConnection.rawReads)
+    }
+
+    @Test fun discoveryAllowsVendorEndpointLengthsWithoutOpeningReports() {
+        for ((index, size) in listOf(8, 32, 64, 512).withIndex()) {
+            shadowOf(manager).addOrUpdateUsbDevice(device(arrayOf(intf(arrayOf(
+                endpoint(0x81, size = size), endpoint(1, size = 8)
+            ))), "/dev/bus/usb/002/${index + 1}"), false)
+        }
+        assertEquals(4, UsbHidReader.discover(manager).size)
+        assertEquals(0, DescriptorConnection.rawReads)
+        assertEquals(0, DescriptorConnection.claims)
+    }
+
+    @Test fun connectValidatesReportsSmallerAndLargerThanEndpointBeforeClaim() {
+        shadowOf(manager).addOrUpdateUsbDevice(device(), true)
+        val candidate = UsbHidReader.discover(manager).single()
+        for (size in listOf(7, 8, 16, 32, 128)) {
+            DescriptorConnection.report[17] = size.toByte()
+            DescriptorConnection.report[30] = 32
+            val before = DescriptorConnection.claims
+            try { UsbHidReader.connect(manager, candidate); fail() }
+            catch (failure: TransportException) { assertEquals(Dispatch.NOT_DISPATCHED, failure.dispatch) }
+            assertEquals(before + 1, DescriptorConnection.claims)
+        }
     }
 
     @Test fun samePathReattachHasNewRouteAndOldDescriptorCannotOpenEitherBackend() {

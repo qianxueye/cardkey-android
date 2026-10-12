@@ -24,10 +24,11 @@ internal class CtaphidChannel(
     private val timeoutMillis: Int = 15000,
     private val nanoTime: () -> Long = System::nanoTime,
     private val nonce: () -> ByteArray = { ByteArray(8).also { SecureRandom().nextBytes(it) } },
+    private val reports: FidoHidReports = FidoHidReports(),
 ) : CardChannel {
     override val medium = Medium.CONTACT
     override val wire = CardWire.CTAP
-    override val maxCommandBytes = MAX_MESSAGE_BYTES
+    override val maxCommandBytes = minOf(MAX_MESSAGE_BYTES, reports.outputCapacity)
     override var supportsCtap2 = false
         private set
     override var supportsCtap1 = false
@@ -54,7 +55,7 @@ internal class CtaphidChannel(
         try {
             transaction(INIT) {
                 send(INIT, challenge)
-                val reply = receive(INIT)
+                val reply = receive(INIT, challenge)
                 try {
                     require(reply.size >= 17 && reply.copyOfRange(0, 8).contentEquals(challenge))
                     val assigned = readCid(reply, 8)
@@ -98,7 +99,7 @@ internal class CtaphidChannel(
             throw TransportException(Dispatch.NOT_DISPATCHED, cancelled = cancelled.get())
         }
         if (!supported) throw CardFailure(FailureCode.UNSUPPORTED)
-        if (payload.isEmpty() || payload.size > MAX_MESSAGE_BYTES) throw TransportException(Dispatch.NOT_DISPATCHED)
+        if (payload.isEmpty() || payload.size > maxCommandBytes) throw TransportException(Dispatch.NOT_DISPATCHED)
         return transaction(command) {
             send(command, payload)
             val result = receive(command)
@@ -135,59 +136,70 @@ internal class CtaphidChannel(
     private fun send(command: Int, payload: ByteArray) {
         var offset = 0
         var sequence = 0
+        var first = true
+        require(payload.size <= maxCommandBytes)
         do {
-            val report = if (offset == 0) initialReport(cid, command, payload.size)
-                else ByteArray(REPORT_BYTES).also { putCid(it, cid); it[4] = sequence++.toByte() }
+            val report = if (first) initialReport(cid, command, payload.size)
+                else ByteArray(reports.outputBytes).also { putCid(it, cid); it[4] = sequence++.toByte() }
             try {
-                val header = if (offset == 0) 7 else 5
-                val count = minOf(payload.size - offset, REPORT_BYTES - header)
+                val header = if (first) 7 else 5
+                val count = minOf(payload.size - offset, reports.outputBytes - header)
                 payload.copyInto(report, header, offset, offset + count)
                 val timeout = remainingMillis()
                 // Once the native queue is attempted, loss of completion cannot prove no dispatch.
+                require(sequence <= 128)
                 dispatched = true
-                require(io.write(report, timeout) == REPORT_BYTES)
+                require(io.write(report, timeout) == reports.outputBytes)
                 offset += count
+                first = false
             } finally { report.fill(0) }
         } while (offset < payload.size)
     }
 
-    private fun receive(command: Int): ByteArray {
-        val report = ByteArray(REPORT_BYTES)
+    private fun receive(command: Int, challenge: ByteArray? = null): ByteArray {
+        val report = ByteArray(reports.inputBytes)
         var output: ByteArray? = null
         var success = false
         try {
             while (true) {
-                require(io.read(report, remainingMillis()) == REPORT_BYTES)
-                remainingMillis()
-                require(readCid(report) == cid && u8(report[4]) and 0x80 != 0)
+                readOwnedReport(report)
+                require(u8(report[4]) and 0x80 != 0)
                 val receivedCommand = u8(report[4]) and 0x7f
                 val length = (u8(report[5]) shl 8) or u8(report[6])
-                require(length <= MAX_MESSAGE_BYTES)
-                if (receivedCommand == KEEPALIVE) {
-                    require(command != INIT && length == 1 && u8(report[7]) in 1..2)
-                    processingObserved = true
-                    reportUserPresence(u8(report[7]) == 2)
-                    continue
-                }
-                if (receivedCommand == ERROR) {
-                    require(length == 1)
-                    if (u8(report[7]) == 6 && !processingObserved) throw CardFailure(FailureCode.BUSY, 6)
-                    throw IOException("CTAPHID error ${u8(report[7])}")
-                }
-                require(receivedCommand == command)
+                require(length <= minOf(MAX_MESSAGE_BYTES, reports.inputCapacity))
+                require(receivedCommand == command || receivedCommand == KEEPALIVE || receivedCommand == ERROR)
                 output = ByteArray(length)
-                var offset = minOf(length, 57)
+                var offset = minOf(length, reports.inputBytes - 7)
                 report.copyInto(output, 0, 7, 7 + offset)
                 var sequence = 0
                 while (offset < length) {
-                    require(io.read(report, remainingMillis()) == REPORT_BYTES)
-                    remainingMillis()
-                    require(readCid(report) == cid && u8(report[4]) == sequence++)
-                    val count = minOf(length - offset, 59)
+                    readOwnedReport(report)
+                    require(sequence <= 127 && u8(report[4]) == sequence++)
+                    val count = minOf(length - offset, reports.inputBytes - 5)
                     report.copyInto(output, offset, 5, 5 + count)
                     offset += count
                 }
                 ensureAvailable()
+                if (command == INIT && receivedCommand == INIT && length >= 8 &&
+                    !output.copyOfRange(0, 8).contentEquals(challenge)) {
+                    output.fill(0)
+                    output = null
+                    continue
+                }
+                if (receivedCommand == KEEPALIVE || receivedCommand == ERROR) {
+                    try {
+                        require(length == 1)
+                        val status = u8(output[0])
+                        if (receivedCommand == ERROR) {
+                            if (status == 6 && !processingObserved) throw CardFailure(FailureCode.BUSY, 6)
+                            throw IOException("CTAPHID error $status")
+                        }
+                        require(command != INIT && status in 1..2)
+                        processingObserved = true
+                        reportUserPresence(status == 2)
+                    } finally { output.fill(0); output = null }
+                    continue
+                }
                 success = true
                 return output
             }
@@ -195,6 +207,13 @@ internal class CtaphidChannel(
             report.fill(0)
             if (!success) output?.fill(0)
         }
+    }
+
+    private fun readOwnedReport(report: ByteArray) {
+        do {
+            require(io.read(report, remainingMillis()) == reports.inputBytes)
+            remainingMillis()
+        } while (readCid(report) != cid)
     }
 
     private fun ensureAvailable() {
@@ -229,7 +248,6 @@ internal class CtaphidChannel(
     }
 
     companion object {
-        const val REPORT_BYTES = 64
         const val MAX_MESSAGE_BYTES = 7609
         private const val BROADCAST_CID = 0xffffffffL
         private const val MSG = 0x03
@@ -244,11 +262,12 @@ internal class CtaphidChannel(
         private fun putCid(bytes: ByteArray, cid: Long) {
             for (index in 0..3) bytes[index] = (cid ushr (24 - index * 8)).toByte()
         }
-        private fun initialReport(cid: Long, command: Int, length: Int) = ByteArray(REPORT_BYTES).also {
-            putCid(it, cid)
-            it[4] = (command or 0x80).toByte()
-            it[5] = (length ushr 8).toByte()
-            it[6] = length.toByte()
-        }
+    }
+
+    private fun initialReport(cid: Long, command: Int, length: Int) = ByteArray(reports.outputBytes).also {
+        putCid(it, cid)
+        it[4] = (command or 0x80).toByte()
+        it[5] = (length ushr 8).toByte()
+        it[6] = length.toByte()
     }
 }

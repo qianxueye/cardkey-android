@@ -15,7 +15,7 @@ class FidoHidDescriptorTest {
             report.copyOf().also { it[1] = 1 },
             report.copyOf().also { it[4] = 2 },
             report.copyOf().also { it[8] = 0x21 },
-            report.copyOf().also { it[17] = 63 },
+            report.copyOf().also { it[17] = 6 },
             report.copyOf().also { it[19] = 3 },
             report.copyOf().also { it[32] = 1 },
             report.copyOf(report.size - 1),
