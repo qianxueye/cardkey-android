@@ -2,6 +2,8 @@
 
 The manager can replace the minimum-PIN disclosure RP list, request enterprise attestation mode 1 or 2, and select credential protection policies 1, 2 or 3. An empty disclosure field sends an empty list; it does not retain the previous list. The card advertises its list capacity and enforces authentication, minimum length and force-change policy. The client cannot read the stored disclosure list back.
 
+Status and configuration results display the algorithms and PIN-change requirement actually returned by `getInfo`. Missing optional fields are omitted. Algorithm parameters retain their preference order, credential type and signed 32-bit COSE identifier, including unknown values; this readback does not add or select cryptographic algorithms. The client rejects empty or duplicate parameter lists and malformed entries at the response boundary. These fields follow [CTAP 2.1 §6.4](https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#authenticatorGetInfo) and [WebAuthn Level 2 §5.3](https://www.w3.org/TR/2021/REC-webauthn-2-20210408/#dictdef-publickeycredentialparameters).
+
 The Owner approved the FIDO extension text and activation batch on 2026-10-10. Username updates omit the unsupported display-name field. Product display names come from `app_name`.
 
 Secrets never enter ordinary result rows or automatic exports. Reading and viewing secret outputs use separate confirmations. Result buffers and the diagnostic session are cleared on cancellation, activity pause, reader change or reader removal. Ordinary operations clear the preceding secret output. Secret views use the existing secure-window policy.

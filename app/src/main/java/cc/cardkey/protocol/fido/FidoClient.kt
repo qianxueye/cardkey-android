@@ -73,9 +73,16 @@ class FidoClient(private val session: CardSession) {
         val versions = map[1].array().map { it.text() }
         if (versions.isEmpty() || map[3].bytes().size != 16) malformed()
         val options = map[4]?.map()?.value?.map { (key, value) -> key.text() to value.bool() }?.toMap() ?: emptyMap()
+        val algorithms = map[10]?.array()?.map { entry ->
+            val parameter = entry.map()
+            val type = parameter["type"].text()
+            val algorithm = parameter["alg"].number()
+            if (algorithm !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) malformed()
+            FidoAlgorithmParameter(type, algorithm.toInt())
+        }?.also { if (it.isEmpty() || it.distinct().size != it.size) malformed() }
         val info = FidoInfo(versions, map[2]?.array()?.map { it.text() }?.toSet() ?: emptySet(), options,
             map[6]?.array()?.map { it.count(255) } ?: emptyList(), map[13]?.count(63) ?: 4,
-            map[15]?.count(65535), map)
+            map[15]?.count(65535), map, algorithms, map[12]?.bool())
         session.setCtap2MaxCommandBytes(map[5]?.count(CborCodec.MAX_BYTES) ?: 1024)
         return info
     }
@@ -253,7 +260,7 @@ class FidoClient(private val session: CardSession) {
         require(rpIds == null || rpIds.size <= maxRps)
         configuration(pin, info, 3, cborMap(1 to length.cbor(),
             2 to rpIds?.let { Cbor.Array(it.map { rp -> rp.cbor() }) }, 3 to forceChange.cbor()))
-        getInfo().also { if (it.minPinLength != length || (forceChange && it.raw[12]?.bool() != true)) throw CardFailure(FailureCode.RECOVERY_REQUIRED) }
+        getInfo().also { if (it.minPinLength != length || (forceChange && it.forcePinChange != true)) throw CardFailure(FailureCode.RECOVERY_REQUIRED) }
     } finally { pin?.fill('\u0000') }
 
     fun makeCredential(request: MakeCredentialRequest, pin: CharArray? = null): MakeCredentialResult = try {

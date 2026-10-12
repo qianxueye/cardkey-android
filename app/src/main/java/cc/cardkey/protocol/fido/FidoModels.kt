@@ -4,11 +4,13 @@ import cc.cardkey.protocol.CardFailure
 import cc.cardkey.protocol.FailureCode
 
 data class FidoInfo(val versions: List<String>, val extensions: Set<String>, val options: Map<String, Boolean>,
-    val pinProtocols: List<Int>, val minPinLength: Int, val maxCredentialBlobLength: Int?, val raw: Cbor.Map) {
+    val pinProtocols: List<Int>, val minPinLength: Int, val maxCredentialBlobLength: Int?, val raw: Cbor.Map,
+    val algorithms: List<FidoAlgorithmParameter>?, val forcePinChange: Boolean?) {
     internal fun protocol() = pinProtocols.firstOrNull { it == 2 } ?: pinProtocols.firstOrNull { it == 1 }
         ?: throw CardFailure(FailureCode.UNSUPPORTED)
     internal fun requireOption(name: String) { if (options[name] != true) throw CardFailure(FailureCode.UNSUPPORTED) }
 }
+data class FidoAlgorithmParameter(val type: String, val algorithm: Int)
 data class PinRetries(val pin: Int, val powerCycleState: Boolean?, val uv: Int?)
 data class CredentialCapacity(val existing: Int, val remaining: Int)
 data class RelyingParty(val id: String, val name: String?, val idHash: ByteArray)
