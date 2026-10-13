@@ -5,6 +5,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FidoExtensionsTest {
+    @Test fun nonresidentLargeBlobKeyIsStillRejectedBeforeCredentialMutation() {
+        val channel = FidoChannel { code, _ ->
+            assertEquals(4, code)
+            success(info(extensions = listOf("largeBlobKey")))
+        }
+        val result = CardSession(channel).run { session -> FidoClient(session).apply { select() }.makeCredential(
+            MakeCredentialRequest("cardkey.example", "CardKey", FidoUser(byteArrayOf(1), "user", null),
+                ByteArray(32), residentKey = false, extensions = MakeExtensions(largeBlobKey = true))) }
+        assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), result)
+        assertEquals(listOf(4), channel.commands.map { it.first })
+    }
+
     @Test fun hmacSecretEncryptsSaltsAndDecryptsOutputForBothProtocols() {
         for (version in 1..2) {
             val server = FidoClientTest.PinServer(version); val salts = ByteArray(64) { it.toByte() }; val expectedSalts = salts.copyOf()

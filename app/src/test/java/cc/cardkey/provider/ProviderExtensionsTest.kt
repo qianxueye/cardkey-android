@@ -35,6 +35,17 @@ class ProviderExtensionsTest {
     private fun performGet(channel: FidoChannel, request: ParsedGet) = CardSession(channel).run { CardCredentialOperation.get(it, request, data) }
     private fun performCreate(channel: FidoChannel, request: ParsedCreate) = CardSession(channel).run { CardCredentialOperation.create(it, request, data) }
 
+    @Test fun largeBlobRecommendationRemainsResidentOnlyAndRequiredStillRejectsNonresident() {
+        val capabilities = FidoInfo(listOf("FIDO_2_1"), setOf("largeBlobKey"), mapOf("rk" to true, "largeBlobs" to true),
+            listOf(2), 4, null, cborMap(), null, null)
+        val preferred = create("""{"largeBlob":{"support":"preferred"}}""").extensions
+        assertFalse(preferred.forCard(capabilities, resident = false).largeBlobKey)
+        assertTrue(preferred.forCard(capabilities, resident = true).largeBlobKey)
+        val required = create("""{"largeBlob":{"support":"required"}}""").extensions
+        assertThrows(CardFailure::class.java) { required.forCard(capabilities, resident = false) }
+        assertTrue(required.forCard(capabilities, resident = true).largeBlobKey)
+    }
+
     @Test fun prfSaltsMatchIndependentW3cVectorsAndCredentialOverrideWins() {
         val first = "576562417574686e20505246207465737420766563746f727302".hexBytes()
         val second = "576562417574686e20505246207465737420766563746f727303".hexBytes()
