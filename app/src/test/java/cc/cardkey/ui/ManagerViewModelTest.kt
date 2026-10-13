@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], manifest = Config.NONE)
+@Config(sdk = [34], manifest = Config.NONE)
 class ManagerViewModelTest {
     private val application get() = RuntimeEnvironment.getApplication()
 
