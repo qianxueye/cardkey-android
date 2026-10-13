@@ -87,9 +87,11 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                         admin = ""; pin = ""; token = ""; pending = PendingOperation(input)
                     } catch (_: IllegalArgumentException) { admin = ""; invalid = true }
                 }, enabled = !busy && canUseCard) { Text(stringResource(R.string.enrollment_import)) }
-                OutlinedButton(onClick = { state.bundle?.let {
-                    onExport(ManagerReport(emptyList(), it.pem().toByteArray(), "piv-9a-chain.pem"))
-                } }, enabled = !busy) { Text("导出") }
+            }
+            state.bundle?.let { bundle ->
+                OutlinedButton(onClick = {
+                    onExport(ManagerReport(emptyList(), bundle.pem().toByteArray(), "piv-9a-chain.pem"))
+                }, enabled = !busy) { Text("导出") }
             }
             val message = when (state.stage) {
                 EnrollmentStage.CSR -> R.string.enrollment_csrReady

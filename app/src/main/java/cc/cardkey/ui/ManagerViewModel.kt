@@ -4,6 +4,7 @@ import android.app.Application
 import android.hardware.usb.UsbManager
 import android.nfc.NfcAdapter
 import android.nfc.Tag
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cc.cardkey.protocol.*
@@ -47,6 +48,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
     val enrollment = EnrollmentWorkflow()
+    private var pendingEnrollmentRoot: Pair<Long, Long>? = null
     private val networkCall = AtomicReference<okhttp3.Call?>(null)
     private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
@@ -92,6 +94,19 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun enrollmentSettings(address: String, cn: String) {
         if (!mutable.value.busy) enrollment.settings(address, cn)
+    }
+    fun requestEnrollmentRoot() { pendingEnrollmentRoot = enrollment.rootRequest() }
+    fun receiveEnrollmentRoot(uri: Uri?) {
+        val request = pendingEnrollmentRoot
+        pendingEnrollmentRoot = null
+        if (uri != null && request != null) viewModelScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching {
+                    getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readNBytes(32769) }
+                }.getOrNull()
+            }
+            if (bytes != null) enrollmentRoot(request, bytes)
+        }
     }
     fun enrollmentRoot(request: Pair<Long, Long>, bytes: ByteArray) {
         if (!mutable.value.busy) runCatching { enrollment.acceptRoot(request, bytes) }.onFailure {

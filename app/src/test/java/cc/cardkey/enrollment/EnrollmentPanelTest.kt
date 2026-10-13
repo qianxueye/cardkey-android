@@ -34,6 +34,7 @@ class EnrollmentPanelTest {
     private val fixture = EnrollmentFixtures()
     private fun render(width: Int, height: Int,
                        initial: EnrollmentState = EnrollmentState(address = "https://localhost", cn = fixture.csr.cn, hasRoot = true, csr = fixture.csr, stage = EnrollmentStage.CSR),
+                       onExport: (ManagerReport) -> Unit = {},
                        check: (() -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
@@ -45,7 +46,7 @@ class EnrollmentPanelTest {
             MaterialTheme {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
                     ManagerScreen(ManagerState(selectedReader = reader, nfc = false), clear.intValue,
-                        {}, {}, {}, {}, {}, null, {}, {}, {}, {}, state.value,
+                        {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, state.value,
                         { address, cn -> state.value = state.value.copy(address = address, cn = cn) }, {},
                         { error("A cancelled confirmation must not submit") }, { it.fill('\u0000') }, {})
                 }
@@ -85,6 +86,29 @@ class EnrollmentPanelTest {
             compose.onNodeWithText("https://localhost/1.0/sign").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("未确认签发结果。请先向 CA 管理员核实，勿重复提交。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("导出 CSR").assertDoesNotExist()
+        }
+    }
+
+    @Test fun importedPanelExportsTheExactChainWithoutOfferingReimport() {
+        val flow = EnrollmentWorkflow()
+        flow.settings("https://localhost", fixture.csr.cn)
+        flow.acceptRoot(flow.rootRequest(), fixture.root)
+        flow.settleCsr(flow.startCsr(), fixture.csr)
+        val (owner, _) = flow.startIssuance(fixture.token())
+        val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate), fixture.root, fixture.csr)
+        flow.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
+        flow.imported(owner)
+        assertTrue(runCatching { flow.importRequest() }.isFailure)
+        var exported: ManagerReport? = null
+        render(360, 640, flow.state.value, { exported = it }) {
+            compose.onNodeWithText("证书已写入所选槽位，并完成回读。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("导出").performScrollTo().assertIsEnabled().performClick()
+            val report = requireNotNull(exported)
+            assertEquals("piv-9a-chain.pem", report.fileName)
+            assertArrayEquals(bundle.pem().toByteArray(), report.export)
+            assertEquals(2, EnrollmentProfile.certificates(requireNotNull(report.export).toString(Charsets.UTF_8)).size)
+            compose.onNodeWithText("导入证书").assertDoesNotExist()
+            compose.onNodeWithText("管理密钥").assertDoesNotExist()
         }
     }
 

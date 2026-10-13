@@ -48,17 +48,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var lastNfcTag: android.nfc.Tag? = null
     private val permissionAction get() = "$packageName.USB_PERMISSION"
 
-    private var rootRequest: Pair<Long, Long>? = null
-    private val rootImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val request = rootRequest
-        rootRequest = null
-        if (uri != null && request != null) lifecycleScope.launch {
-            val bytes = withContext(Dispatchers.IO) {
-                runCatching { contentResolver.openInputStream(uri)?.use { it.readNBytes(32769) } }.getOrNull()
-            }
-            if (bytes != null) model.enrollmentRoot(request, bytes)
-        }
-    }
+    private val rootImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> model.receiveEnrollmentRoot(uri) }
     private val importer = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) lifecycleScope.launch {
             imported = withContext(Dispatchers.IO) {
@@ -150,7 +140,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     { secure -> if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
                         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) },
                     { showProviderSettings = true }, enrollment, model::enrollmentSettings,
-                    { rootRequest = model.enrollment.rootRequest(); rootImporter.launch(arrayOf("*/*")) },
+                    { model.requestEnrollmentRoot(); rootImporter.launch(arrayOf("*/*")) },
                     model::submitEnrollment, model::issueEnrollment, model::abandonEnrollment)
                 if (showProviderSettings) AlertDialog(
                     onDismissRequest = { showProviderSettings = false },
