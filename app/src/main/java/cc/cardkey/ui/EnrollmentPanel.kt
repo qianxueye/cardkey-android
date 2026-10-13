@@ -82,7 +82,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                 Button(onClick = {
                     try {
                         val key = admin.hexBytes()
-                        require(key.size == algorithm.keySize)
+                        if (key.size != algorithm.keySize) { key.fill(0); throw IllegalArgumentException() }
                         val input = OperationInput(ManagerOperation.PIV_ENROLL_IMPORT, adminKey = key, managementAlgorithm = algorithm)
                         admin = ""; pin = ""; token = ""; pending = PendingOperation(input)
                     } catch (_: IllegalArgumentException) { admin = ""; invalid = true }

@@ -82,7 +82,8 @@ internal class StepCaFixture : AutoCloseable {
         server?.let { process ->
             process.destroy()
             if (!process.waitFor(10, TimeUnit.SECONDS)) { process.destroyForcibly(); process.waitFor(5, TimeUnit.SECONDS) }
+            check(!process.isAlive) { "Owned CA did not terminate" }
         }
-        directory.deleteRecursively()
+        check(directory.deleteRecursively()) { "Owned CA temporary directory was not removed" }
     }
 }

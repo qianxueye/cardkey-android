@@ -133,6 +133,29 @@ class EnrollmentViewModelTest {
         assertEquals(FailureCode.PIN_INVALID, result.code); assertEquals(0x63c2, result.status)
         assertNull(model.enrollment.state.value.csr)
     }
+    @Test fun enrollmentImportRetainsUnknownAndAcceptedReadbackRecoveryFences() {
+        val fixture = EnrollmentFixtures()
+        for (lost in listOf(true, false)) {
+            val model = model(fixture)
+            val card = EnrollmentCard().apply { lostWrite = lost; corruptReadback = !lost }
+            val csr = fixture.csr(key = card.keyPair)
+            val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(key = card.keyPair), fixture.intermediate), fixture.root, csr)
+            model.enrollment.settleCsr(model.enrollment.startCsr(), csr)
+            val (owner, _) = model.enrollment.startIssuance(fixture.token(csr))
+            model.enrollment.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
+            val input = OperationInput(ManagerOperation.PIV_ENROLL_IMPORT, adminKey = card.managementKey.copyOf(),
+                enrollmentImport = model.enrollment.importRequest())
+            run(model, input, card); await(model)
+            val result = model.state.value.result as OperationResult.Failed
+            assertEquals(if (lost) Effect.UNKNOWN else Effect.APPLIED, result.effect)
+            assertEquals(!lost, result.writeAccepted)
+            assertTrue(model.state.value.requiresInspection)
+            assertNotEquals(EnrollmentStage.IMPORTED, model.enrollment.state.value.stage)
+            assertTrue(input.adminKey.all { it == 0.toByte() })
+            CardOperationGate.tryAcquire()!!.close()
+        }
+    }
+
     @Test fun lastPinAttemptUsesExistingWarningAndRejectsBeforeVerification() {
         val fixture = EnrollmentFixtures()
         val model = model(fixture)

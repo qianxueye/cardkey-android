@@ -67,7 +67,13 @@ class EnrollmentCA(address: String, root: ByteArray) {
     fun call(csr: EnrollmentCsr, token: String): Call {
         checkToken(token, csr)
         val body = JsonObject().apply { addProperty("csr", csr.pem()); addProperty("ott", token) }.toString()
-        return client().newCall(Request.Builder().url(endpoint).post(body.toRequestBody("application/json".toMediaType())).build())
+        val dispatched = java.util.concurrent.atomic.AtomicBoolean(false)
+        val singleAttempt = client().newBuilder().addNetworkInterceptor { chain ->
+            // Some HTTP follow-ups (for example 503 Retry-After: 0) are independent of connection retry policy.
+            if (!dispatched.compareAndSet(false, true)) throw java.io.IOException()
+            chain.proceed(chain.request())
+        }.build()
+        return singleAttempt.newCall(Request.Builder().url(endpoint).post(body.toRequestBody("application/json".toMediaType())).build())
     }
     fun execute(call: Call, csr: EnrollmentCsr): EnrollmentBundle {
         try {

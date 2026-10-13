@@ -79,6 +79,7 @@ class EnrollmentHttpsTest {
     @Test fun redirectServerFailureAndLostResponseAreUnknownWithoutRetry() {
         for (response in listOf("HTTP/1.1 302 Found\r\nLocation: https://localhost:1/1.0/sign\r\nContent-Length: 0\r\n\r\n",
             "HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r\n",
+            "HTTP/1.1 503 Unavailable\r\nRetry-After: 0\r\nContent-Length: 0\r\n\r\n",
             "HTTP/1.1 201 Created\r\nContent-Length: 20\r\n\r\n{")) {
             EnrollmentHttpsServer(fixture) { response }.use { server ->
                 assertEquals(IssuanceFailure.UNKNOWN, request(server).failure)
