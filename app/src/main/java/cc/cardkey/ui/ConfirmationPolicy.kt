@@ -18,6 +18,7 @@ object ConfirmationPolicy {
             ManagerOperation.FIDO_ENTERPRISE -> R.string.confirm_enterprise
             ManagerOperation.PIV_GENERATE -> R.string.confirm_keyGenerate
             ManagerOperation.PIV_IMPORT -> R.string.confirm_certificateImport
+            ManagerOperation.PIV_ENROLL_IMPORT -> R.string.enrollment_confirmImport
             ManagerOperation.FIDO_REGISTER, ManagerOperation.U2F_REGISTER -> R.string.confirm_registration
             ManagerOperation.FIDO_RESET -> R.string.confirm_fidoReset
             ManagerOperation.PIV_RESET -> R.string.confirm_pivReset
@@ -35,7 +36,7 @@ object ConfirmationPolicy {
 
     fun pivVerificationReference(operation: ManagerOperation): String? = when (operation) {
         ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK -> "PUK"
-        ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CSR, ManagerOperation.PIV_SIGN,
+        ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CSR, ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_SIGN,
         ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT -> "PIN"
         else -> null
     }

@@ -154,14 +154,17 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         } finally { managementKey.fill(0) }
     }
 
-    fun createCsr(slot: Int, pin: CharArray, subject: String): ByteArray {
+    fun createCsr(slot: Int, pin: CharArray, subject: String): ByteArray =
+        try { createCsr(slot, pin, X500Name(subject)) } finally { pin.fill('\u0000') }
+
+    fun createCsr(slot: Int, pin: CharArray, name: X500Name, requiredAlgorithm: KeyAlgorithm? = null): ByteArray {
         return withPin(pin) { encodedPin ->
             requireSlot(slot)
-            val name = X500Name(subject)
             require(name.rdNs.isNotEmpty())
             select()
             val info = slotMetadata(slot)
             val verifiedKey = info.publicKey ?: throw CardFailure(FailureCode.UNSUPPORTED)
+            if (requiredAlgorithm != null && info.algorithm != requiredAlgorithm) throw CardFailure(FailureCode.UNSUPPORTED)
             verifyEncoded(encodedPin)
             val buffer = ByteArrayOutputStream()
             val signer = object : ContentSigner {
