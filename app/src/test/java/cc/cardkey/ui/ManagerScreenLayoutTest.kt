@@ -23,6 +23,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import cc.cardkey.R
+import cc.cardkey.enrollment.EnrollmentState
 import cc.cardkey.protocol.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -56,7 +57,8 @@ class ManagerScreenLayoutTest {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
                     Box(Modifier.requiredSize(width.dp, height.dp).testTag("manager-scene")) {
-                        ManagerScreen(state.value, 0, {}, {}, {}, {}, {}, null, {}, {}, {}, {})
+                        ManagerScreen(state.value, 0, {}, {}, {}, {}, {}, null, {}, {}, {}, {},
+                            EnrollmentState(), { _, _ -> }, {}, { it.close() }, { it.fill('\u0000') }, {})
                     }
                 }
             }

@@ -54,12 +54,12 @@ fun ManagerScreen(
     onLastRetry: (Boolean) -> Unit,
     onSecureChange: (Boolean) -> Unit,
     onProviderSettings: () -> Unit,
-    enrollment: EnrollmentState = EnrollmentState(),
-    onEnrollmentSettings: (String, String) -> Unit = { _, _ -> },
-    onEnrollmentRoot: () -> Unit = {},
-    onEnrollmentSubmit: (OperationInput) -> Unit = { it.close() },
-    onEnrollmentIssue: (CharArray) -> Unit = { it.fill('\u0000') },
-    onEnrollmentAbandon: () -> Unit = {},
+    enrollment: EnrollmentState,
+    onEnrollmentSettings: (String, String) -> Unit,
+    onEnrollmentRoot: () -> Unit,
+    onEnrollmentSubmit: (OperationInput) -> Unit,
+    onEnrollmentIssue: (CharArray) -> Unit,
+    onEnrollmentAbandon: () -> Unit,
 ) {
     val displayName = stringResource(R.string.app_name)
     val feedbackRequester = remember { BringIntoViewRequester() }
