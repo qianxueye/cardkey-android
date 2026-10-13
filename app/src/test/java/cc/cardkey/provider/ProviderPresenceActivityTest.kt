@@ -21,7 +21,7 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], manifest = Config.NONE)
+@Config(sdk = [34], manifest = Config.NONE)
 @LooperMode(LooperMode.Mode.PAUSED)
 class ProviderPresenceActivityTest {
     private fun activity(): ProviderActivity = Robolectric.buildActivity(ProviderActivity::class.java).get().also {

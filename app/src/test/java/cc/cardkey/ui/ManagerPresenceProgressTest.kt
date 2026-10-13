@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], manifest = Config.NONE)
+@Config(sdk = [34], manifest = Config.NONE)
 class ManagerPresenceProgressTest {
     private val app get() = RuntimeEnvironment.getApplication()
     @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }

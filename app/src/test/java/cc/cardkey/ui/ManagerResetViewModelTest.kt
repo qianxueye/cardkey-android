@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], manifest = Config.NONE)
+@Config(sdk = [34], manifest = Config.NONE)
 class ManagerResetViewModelTest {
     private val app get() = RuntimeEnvironment.getApplication()
     @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
