@@ -1,6 +1,13 @@
 package cc.cardkey.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -55,6 +62,7 @@ fun ManagerScreen(
     var text by remember { mutableStateOf("") }
     var secondary by remember { mutableStateOf("") }
     var enabled by remember { mutableStateOf(false) }
+    var extensionsExpanded by remember(operation) { mutableStateOf(false) }
     var extensionNames by remember { mutableStateOf(setOf<String>()) }
     var extensionValue by remember { mutableStateOf("") }
     var disclosureRps by remember { mutableStateOf("") }
@@ -125,123 +133,10 @@ fun ManagerScreen(
             TextButton(onClick = onProviderSettings, enabled = !state.busy) { Text("凭据提供者") }
         }) },
         bottomBar = {
-            NavigationBar {
-                listOf("FIDO2", "PIV", "读卡器").forEachIndexed { index, title ->
-                    NavigationBarItem(selected = tab == index, enabled = index != 1 || state.supportsPiv, onClick = {
-                        tab = index
-                        if (index < 2) operation = if (index == 0) ManagerOperation.FIDO_INFO else ManagerOperation.PIV_INFO
-                    }, icon = { Text(if (index == 0) "F" else if (index == 1) "P" else "↔") }, label = { Text(title) })
-                }
-            }
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Column(Modifier.widthIn(max = 840.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                if (tab == 2) {
-                    Text("读卡器", style = MaterialTheme.typography.headlineSmall)
-                    if (state.readers.isEmpty()) Text(stringResource(R.string.reader_empty))
-                    if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission, stringResource(R.string.app_name)))
-                    OutlinedCard(onClick = { if (!state.busy) onReader(null) }, Modifier.fillMaxWidth()) {
-                        ListItem(headlineContent = { Text("NFC") }, trailingContent = { RadioButton(state.nfc, onClick = null) })
-                    }
-                    state.readers.forEach { reader ->
-                        OutlinedCard(onClick = { if (!state.busy) onReader(reader) }, Modifier.fillMaxWidth()) {
-                            ListItem(headlineContent = { Text(reader.device.productName ?: "USB") },
-                                supportingContent = { Text("USB · %04x:%04x".format(reader.device.vendorId, reader.device.productId)) },
-                                trailingContent = { RadioButton(!state.nfc && state.selectedReader?.routeKey == reader.routeKey, onClick = null) })
-                        }
-                    }
-                    OutlinedButton(onClick = onRefresh, enabled = !state.busy) { Text("读取") }
-                } else {
-                    Text(if (tab == 0) "FIDO2" else "PIV", style = MaterialTheme.typography.headlineSmall)
-                    AssistChip(onClick = { tab = 2 }, label = { Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器") })
-                    if (state.nfc) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodyMedium)
-                    Choice("操作", operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, { it.title }, !state.busy) { operation = it }
+            Column(Modifier.imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (tab != 2) {
                     val op = operation
-                    if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
-                            ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
-                        Choice("槽位", slot, PivClient.slots, { "%02X".format(it) }, !state.busy) { slot = it }
-                    }
-                    if (needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy) { pin = it }
-                    if (op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
-                    if (op in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
-                            ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK)) {
-                        SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK) "新 PUK" else "新 PIN", newPin, !state.busy) { newPin = it }
-                    }
-                    if (op in setOf(ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT)) {
-                        Choice("管理密钥 · 算法", adminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { adminAlgorithm = it }
-                        SecretField("管理密钥 · HEX", adminKey, !state.busy) { adminKey = it }
-                    }
-                    if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
-                        Text(stringResource(R.string.blob_help))
-                        if (op == ManagerOperation.FIDO_BLOB_WRITE) {
-                            OutlinedButton(onClick = onImport, enabled = !state.busy) { Text("导入") }
-                            imported?.let { Text("${it.size} bytes", style = MaterialTheme.typography.bodySmall) }
-                        }
-                    }
-                    if (op == ManagerOperation.PIV_ADMIN) {
-                        Choice("新管理密钥 · 算法", newAdminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { newAdminAlgorithm = it }
-                        SecretField("新管理密钥 · HEX", newAdminKey, !state.busy) { newAdminKey = it }
-                    }
-                    if (op == ManagerOperation.PIV_GENERATE) {
-                        Choice("算法", algorithm, KeyAlgorithm.entries, { it.name }, !state.busy) { algorithm = it }
-                        Choice("PIN", pinPolicy, PinPolicy.entries, { it.name }, !state.busy) { pinPolicy = it }
-                    }
-                    if (op in setOf(ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
-                            ManagerOperation.FIDO_MIN_PIN, ManagerOperation.PIV_CSR)) {
-                        val label = when (op) {
-                            ManagerOperation.FIDO_CREDENTIALS -> "RP SHA-256 · HEX"
-                            ManagerOperation.FIDO_MIN_PIN -> "PIN · 最短长度"
-                            ManagerOperation.PIV_CSR -> "Subject · CN=${stringResource(R.string.app_name)}"
-                            else -> "凭据 ID · HEX"
-                        }
-                        OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
-                    }
-                    if (op == ManagerOperation.FIDO_MIN_PIN) {
-                        OutlinedTextField(disclosureRps, { disclosureRps = it }, label = { Text(stringResource(R.string.minPin_rps)) },
-                            enabled = !state.busy, modifier = Modifier.fillMaxWidth())
-                        Text(stringResource(R.string.minPin_rpsHelp))
-                    }
-                    if (op == ManagerOperation.FIDO_UPDATE) {
-                        Text(stringResource(R.string.user_updateHelp))
-                        OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
-                    }
-                    if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(when (op) { ManagerOperation.FIDO_ALWAYS_UV -> "始终验证用户"; ManagerOperation.FIDO_MIN_PIN -> "修改 PIN"; else -> "驻留凭据" }, Modifier.weight(1f))
-                            Switch(enabled, {
-                                enabled = it
-                                if (op == ManagerOperation.FIDO_REGISTER && !it) extensionNames = extensionNames - "largeBlobKey"
-                            }, enabled = !state.busy)
-                        }
-                    }
-                    if (op == ManagerOperation.FIDO_REGISTER || op == ManagerOperation.FIDO_ASSERT) {
-                        if (op == ManagerOperation.FIDO_REGISTER) Choice(stringResource(R.string.enterprise_mode), enterpriseMode,
-                            listOf(0, 1, 2), { when (it) { 1 -> "厂商预设（1）"; 2 -> "平台管理（2）"; else -> "不请求" } }, !state.busy) { enterpriseMode = it }
-                        Text("扩展", style = MaterialTheme.typography.labelLarge)
-                        val names = if (op == ManagerOperation.FIDO_REGISTER)
-                            listOf("hmac-secret", "largeBlobKey", "minPinLength", "credBlob", "credProtect", "uvm")
-                        else listOf("hmac-secret", "largeBlobKey", "credBlob", "uvm")
-                        names.forEach { name ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val available = name != "largeBlobKey" || op != ManagerOperation.FIDO_REGISTER || enabled
-                                Checkbox(available && name in extensionNames, { checked -> extensionNames = if (checked) extensionNames + name else extensionNames - name }, enabled = !state.busy && available)
-                                Text(if (name == "uvm") "用户验证方法" else name)
-                            }
-                        }
-                        if ("credProtect" in extensionNames && op == ManagerOperation.FIDO_REGISTER)
-                            Choice("credProtect", protection, listOf(1, 2, 3), { it.toString() }, !state.busy) { protection = it }
-                        if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER || "hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) {
-                            SecretField(if (op == ManagerOperation.FIDO_REGISTER) "credBlob · HEX" else "hmac-secret · salt · HEX", extensionValue, !state.busy) { extensionValue = it }
-                        }
-                    }
-                    if (op == ManagerOperation.PIV_IMPORT) {
-                        OutlinedButton(onClick = onImport, enabled = !state.busy) { Text("导入证书") }
-                        imported?.let { Text("${it.size} bytes", style = MaterialTheme.typography.bodySmall) }
-                    }
-                    if (invalid) Text(stringResource(R.string.error_invalidInput), color = MaterialTheme.colorScheme.error)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = {
                             try {
                                 require(op != ManagerOperation.FIDO_BLOB_WRITE || imported != null)
@@ -260,52 +155,212 @@ fun ManagerScreen(
                                 if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                 else confirmation = PendingOperation(input)
                             } catch (_: IllegalArgumentException) { invalid = true }
-                        }, enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
+                        }, modifier = Modifier.weight(1f), enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
                         if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
                     }
                 }
-                if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                state.presenceMessage?.let { Text(stringResource(it)) }
-                when (val result = state.result) {
-                    is OperationResult.Completed -> {
-                        ConfirmationPolicy.resultMessages(result, state.resultWire, state.operation).forEach {
-                            Text(stringResource(it), style = MaterialTheme.typography.titleMedium)
-                        }
-                        result.value.messages.forEach { Text(stringResource(it)) }
-                        if (state.operation in setOf(ManagerOperation.FIDO_REGISTER, ManagerOperation.FIDO_ASSERT,
-                                ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT, ManagerOperation.PIV_CSR,
-                                ManagerOperation.PIV_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
-                            Text(stringResource(R.string.status_verification), style = MaterialTheme.typography.bodySmall)
-                        }
-                        result.value.rows.forEach { row -> OutlinedCard(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(row.label, style = MaterialTheme.typography.labelLarge)
-                                SelectionContainer { Text(row.value, style = MaterialTheme.typography.bodyMedium) }
+                NavigationBar {
+                    listOf("FIDO2", "PIV", "读卡器").forEachIndexed { index, title ->
+                        NavigationBarItem(selected = tab == index, enabled = !state.busy && (index != 1 || state.supportsPiv), onClick = {
+                            if (!state.busy && (index != 1 || state.supportsPiv)) {
+                                confirmation?.close(); confirmation = null
+                                tab = index
+                                if (index < 2) operation = if (index == 0) ManagerOperation.FIDO_INFO else ManagerOperation.PIV_INFO
                             }
-                        } }
-                        result.value.secrets?.let { outputs ->
-                            OutlinedButton(onClick = { showSecretConfirmation = true }) { Text(stringResource(R.string.secret_view)) }
-                            if (showSecrets) {
-                                outputs.hmac?.let { Text("hmac-secret: " + it.hex()) }
-                                outputs.blobKey?.let { Text("largeBlobKey: " + it.hex()) }
-                                outputs.credBlob?.let { Text("credBlob: " + it.hex()) }
-                            }
-                        }
-                        if (result.value.export != null) OutlinedButton(onClick = {
-                            if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
-                        }) { Text("导出") }
+                        }, icon = { Icon(managerDestinationIcons[index], contentDescription = null) }, label = { Text(title) })
                     }
-                    is OperationResult.Failed -> {
-                        OutlinedCard(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp)) {
-                                ConfirmationPolicy.resultMessages(result, state.resultWire, state.operation, state.requiresInspection).forEach {
-                                    Text(stringResource(it), color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(Modifier.widthIn(max = 840.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(managerDestinationIcons[2], contentDescription = null)
+                        Column(Modifier.weight(1f)) {
+                            Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器",
+                                style = MaterialTheme.typography.titleMedium)
+                            if (state.nfc) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (tab != 2) TextButton(onClick = {
+                            if (!state.busy) {
+                                confirmation?.close(); confirmation = null; tab = 2
+                            }
+                        }, enabled = !state.busy) { Text("读卡器") }
+                    }
+                    if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission, displayName),
+                        modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Column(Modifier.weight(1f).widthIn(max = 840.dp).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (tab == 2) {
+                    Text("读卡器", style = MaterialTheme.typography.headlineSmall)
+                    if (state.readers.isEmpty()) Text(stringResource(R.string.reader_empty))
+                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ReaderOption("NFC", null, state.nfc, !state.busy && !state.permissionPending) { onReader(null) }
+                        state.readers.forEach { reader ->
+                            ReaderOption(reader.device.productName ?: "USB",
+                                "USB · %04x:%04x".format(reader.device.vendorId, reader.device.productId),
+                                !state.nfc && state.selectedReader?.routeKey == reader.routeKey,
+                                !state.busy && !state.permissionPending) { onReader(reader) }
+                        }
+                    }
+                    OutlinedButton(onClick = onRefresh, enabled = !state.busy) { Text("读取") }
+                } else {
+                    Text(if (tab == 0) "FIDO2" else "PIV", style = MaterialTheme.typography.headlineSmall)
+                    OutlinedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Choice("操作", operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, { it.title }, !state.busy) { operation = it }
+                            val op = operation
+                            Text(op.title, style = MaterialTheme.typography.titleLarge)
+                            if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
+                                    ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
+                                Choice("槽位", slot, PivClient.slots, { "%02X".format(it) }, !state.busy) { slot = it }
+                            }
+                            if (needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy) { pin = it }
+                            if (op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
+                            if (op in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
+                                    ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK)) {
+                                SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK) "新 PUK" else "新 PIN", newPin, !state.busy) { newPin = it }
+                            }
+                            if (op in setOf(ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT)) {
+                                Choice("管理密钥 · 算法", adminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { adminAlgorithm = it }
+                                SecretField("管理密钥 · HEX", adminKey, !state.busy) { adminKey = it }
+                            }
+                            if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
+                                Text(stringResource(R.string.blob_help))
+                                if (op == ManagerOperation.FIDO_BLOB_WRITE) {
+                                    OutlinedButton(onClick = onImport, enabled = !state.busy) { Text("导入") }
+                                    imported?.let { Text("${it.size} bytes", style = MaterialTheme.typography.bodySmall) }
                                 }
-                                result.status?.let { Text("0x%04X".format(it)) }
+                            }
+                            if (op == ManagerOperation.PIV_ADMIN) {
+                                Choice("新管理密钥 · 算法", newAdminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { newAdminAlgorithm = it }
+                                SecretField("新管理密钥 · HEX", newAdminKey, !state.busy) { newAdminKey = it }
+                            }
+                            if (op == ManagerOperation.PIV_GENERATE) {
+                                Choice("算法", algorithm, KeyAlgorithm.entries, { it.name }, !state.busy) { algorithm = it }
+                                Choice("PIN", pinPolicy, PinPolicy.entries, { it.name }, !state.busy) { pinPolicy = it }
+                            }
+                            if (op in setOf(ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
+                                    ManagerOperation.FIDO_MIN_PIN, ManagerOperation.PIV_CSR)) {
+                                val label = when (op) {
+                                    ManagerOperation.FIDO_CREDENTIALS -> "RP SHA-256 · HEX"
+                                    ManagerOperation.FIDO_MIN_PIN -> "PIN · 最短长度"
+                                    ManagerOperation.PIV_CSR -> "Subject · CN=${stringResource(R.string.app_name)}"
+                                    else -> "凭据 ID · HEX"
+                                }
+                                OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+                            }
+                            if (op == ManagerOperation.FIDO_MIN_PIN) {
+                                OutlinedTextField(disclosureRps, { disclosureRps = it }, label = { Text(stringResource(R.string.minPin_rps)) },
+                                    enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+                                Text(stringResource(R.string.minPin_rpsHelp))
+                            }
+                            if (op == ManagerOperation.FIDO_UPDATE) {
+                                Text(stringResource(R.string.user_updateHelp))
+                                OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+                            }
+                            if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(when (op) { ManagerOperation.FIDO_ALWAYS_UV -> "始终验证用户"; ManagerOperation.FIDO_MIN_PIN -> "修改 PIN"; else -> "驻留凭据" }, Modifier.weight(1f))
+                                    Switch(enabled, {
+                                        enabled = it
+                                        if (op == ManagerOperation.FIDO_REGISTER && !it) extensionNames = extensionNames - "largeBlobKey"
+                                    }, enabled = !state.busy)
+                                }
+                            }
+                            if (op == ManagerOperation.FIDO_REGISTER || op == ManagerOperation.FIDO_ASSERT) {
+                                if (op == ManagerOperation.FIDO_REGISTER) Choice(stringResource(R.string.enterprise_mode), enterpriseMode,
+                                    listOf(0, 1, 2), { when (it) { 1 -> "厂商预设（1）"; 2 -> "平台管理（2）"; else -> "不请求" } }, !state.busy) { enterpriseMode = it }
+                                HorizontalDivider()
+                                TextButton(onClick = { extensionsExpanded = !extensionsExpanded }, modifier = Modifier.fillMaxWidth()) {
+                                    Text("扩展", Modifier.weight(1f))
+                                    Icon(if (extensionsExpanded) expandLessIcon else expandMoreIcon, contentDescription = null)
+                                }
+                                if (extensionsExpanded) {
+                                    val names = if (op == ManagerOperation.FIDO_REGISTER)
+                                        listOf("hmac-secret", "largeBlobKey", "minPinLength", "credBlob", "credProtect", "uvm")
+                                    else listOf("hmac-secret", "largeBlobKey", "credBlob", "uvm")
+                                    names.forEach { name ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            val available = name != "largeBlobKey" || op != ManagerOperation.FIDO_REGISTER || enabled
+                                            Checkbox(available && name in extensionNames, { checked -> extensionNames = if (checked) extensionNames + name else extensionNames - name }, enabled = !state.busy && available)
+                                            Text(if (name == "uvm") "用户验证方法" else name)
+                                        }
+                                    }
+                                    if ("credProtect" in extensionNames && op == ManagerOperation.FIDO_REGISTER)
+                                        Choice("credProtect", protection, listOf(1, 2, 3), { it.toString() }, !state.busy) { protection = it }
+                                    if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER || "hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) {
+                                        SecretField(if (op == ManagerOperation.FIDO_REGISTER) "credBlob · HEX" else "hmac-secret · salt · HEX", extensionValue, !state.busy) { extensionValue = it }
+                                    }
+                                }
+                            }
+                            if (op == ManagerOperation.PIV_IMPORT) {
+                                OutlinedButton(onClick = onImport, enabled = !state.busy) { Text("导入证书") }
+                                imported?.let { Text("${it.size} bytes", style = MaterialTheme.typography.bodySmall) }
+                            }
+                            if (invalid) Text(stringResource(R.string.error_invalidInput), color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+                if (state.busy || state.result != null || state.presenceMessage != null) {
+                    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainer) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            state.operation?.let { Text(it.title, style = MaterialTheme.typography.titleMedium) }
+                            if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                            state.presenceMessage?.let { Text(stringResource(it)) }
+                            when (val result = state.result) {
+                                is OperationResult.Completed -> {
+                                    ConfirmationPolicy.resultMessages(result, state.resultWire, state.operation).forEach {
+                                        Text(stringResource(it), style = MaterialTheme.typography.titleMedium)
+                                    }
+                                    result.value.messages.forEach { Text(stringResource(it)) }
+                                    if (state.operation in setOf(ManagerOperation.FIDO_REGISTER, ManagerOperation.FIDO_ASSERT,
+                                            ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT, ManagerOperation.PIV_CSR,
+                                            ManagerOperation.PIV_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
+                                        Text(stringResource(R.string.status_verification), style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    result.value.rows.forEach { row ->
+                                        HorizontalDivider()
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                            Text(row.label, modifier = Modifier.weight(0.35f), style = MaterialTheme.typography.labelLarge)
+                                            SelectionContainer(Modifier.weight(0.65f)) {
+                                                Text(row.value, style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                    }
+                                    result.value.secrets?.let { outputs ->
+                                        OutlinedButton(onClick = { showSecretConfirmation = true }) { Text(stringResource(R.string.secret_view)) }
+                                        if (showSecrets) {
+                                            outputs.hmac?.let { Text("hmac-secret: " + it.hex()) }
+                                            outputs.blobKey?.let { Text("largeBlobKey: " + it.hex()) }
+                                            outputs.credBlob?.let { Text("credBlob: " + it.hex()) }
+                                        }
+                                    }
+                                    if (result.value.export != null) OutlinedButton(onClick = {
+                                        if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
+                                    }) { Text("导出") }
+                                }
+                                is OperationResult.Failed -> {
+                                    OutlinedCard(Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            ConfirmationPolicy.resultMessages(result, state.resultWire, state.operation, state.requiresInspection).forEach {
+                                                Text(stringResource(it), color = MaterialTheme.colorScheme.error)
+                                            }
+                                            result.status?.let { Text("0x%04X".format(it)) }
+                                        }
+                                    }
+                                }
+                                null -> Unit
                             }
                         }
                     }
-                    null -> Unit
                 }
                 if (tab == 0 && state.supportsPiv) Text(stringResource(R.string.restriction_fidoReset), style = MaterialTheme.typography.bodySmall)
             }
@@ -319,17 +374,80 @@ private fun SecretField(label: String, value: String, enabled: Boolean, onChange
         visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun <T> Choice(label: String, value: T, values: List<T>, title: (T) -> String, enabled: Boolean, onChange: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Column {
-        Text(label, style = MaterialTheme.typography.labelMedium)
-        OutlinedButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text(title(value)) }
-        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+    ExposedDropdownMenuBox(expanded && enabled, onExpandedChange = { if (enabled) expanded = it }) {
+        OutlinedTextField(title(value), {}, readOnly = true, label = { Text(label) }, enabled = enabled,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded && enabled) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled))
+        ExposedDropdownMenu(expanded && enabled, onDismissRequest = { expanded = false }) {
             values.forEach { option -> DropdownMenuItem(text = { Text(title(option)) }, onClick = { expanded = false; onChange(option) }) }
         }
     }
 }
+
+@Composable
+private fun ReaderOption(title: String, detail: String?, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Surface(Modifier.fillMaxWidth().selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = if (!enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            else if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Icon(managerDestinationIcons[2], contentDescription = null)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            }
+            RadioButton(selected, onClick = null, enabled = enabled)
+        }
+    }
+}
+
+private val managerDestinationIcons = listOf(
+    ImageVector.Builder("Key", 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(7f, 14f); arcTo(3f, 3f, 0f, true, true, 7f, 8f); arcTo(3f, 3f, 0f, false, true, 7f, 14f); close()
+            moveTo(7f, 6f); arcTo(5f, 5f, 0f, true, false, 11.58f, 13f)
+            lineTo(15f, 13f); lineTo(15f, 16f); lineTo(18f, 16f); lineTo(18f, 13f); lineTo(21f, 13f)
+            lineTo(21f, 9f); lineTo(11.58f, 9f); arcTo(5f, 5f, 0f, false, false, 7f, 6f); close()
+        }
+    }.build(),
+    ImageVector.Builder("IdentityCard", 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(3f, 4f); lineTo(21f, 4f); lineTo(21f, 20f); lineTo(3f, 20f); close()
+            moveTo(5f, 6f); lineTo(5f, 18f); lineTo(19f, 18f); lineTo(19f, 6f); close()
+            moveTo(8f, 12f); arcTo(2f, 2f, 0f, true, true, 8f, 8f); arcTo(2f, 2f, 0f, false, true, 8f, 12f); close()
+            moveTo(5.5f, 16f); lineTo(10.5f, 16f); lineTo(10.5f, 14f); lineTo(5.5f, 14f); close()
+            moveTo(13f, 8f); lineTo(17f, 8f); lineTo(17f, 10f); lineTo(13f, 10f); close()
+            moveTo(13f, 13f); lineTo(17f, 13f); lineTo(17f, 15f); lineTo(13f, 15f); close()
+        }
+    }.build(),
+    ImageVector.Builder("Reader", 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(4f, 3f); lineTo(20f, 3f); lineTo(20f, 21f); lineTo(4f, 21f); close()
+            moveTo(6f, 5f); lineTo(6f, 19f); lineTo(18f, 19f); lineTo(18f, 5f); close()
+            moveTo(8f, 7f); lineTo(16f, 7f); lineTo(16f, 9f); lineTo(8f, 9f); close()
+            moveTo(8f, 12f); lineTo(12f, 12f); lineTo(12f, 16f); lineTo(8f, 16f); close()
+        }
+    }.build(),
+)
+
+private val expandMoreIcon = ImageVector.Builder("ExpandMore", 24.dp, 24.dp, 24f, 24f).apply {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(7f, 9f); lineTo(12f, 14f); lineTo(17f, 9f); lineTo(18.4f, 10.4f)
+        lineTo(12f, 16.8f); lineTo(5.6f, 10.4f); close()
+    }
+}.build()
+
+private val expandLessIcon = ImageVector.Builder("ExpandLess", 24.dp, 24.dp, 24f, 24f).apply {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(7f, 15f); lineTo(12f, 10f); lineTo(17f, 15f); lineTo(18.4f, 13.6f)
+        lineTo(12f, 7.2f); lineTo(5.6f, 13.6f); close()
+    }
+}.build()
 
 private fun needsPin(op: ManagerOperation): Boolean = op !in setOf(
     ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_RESET,
