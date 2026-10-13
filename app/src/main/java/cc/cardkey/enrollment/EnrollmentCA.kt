@@ -1,14 +1,14 @@
 package cc.cardkey.enrollment
 
 import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import com.google.gson.GsonBuilder
+import com.google.gson.Strictness
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URI
 import java.security.KeyStore
-import java.security.MessageDigest
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
@@ -32,10 +32,10 @@ class EnrollmentCA(address: String, root: ByteArray) {
         require(token.length in 1..16384)
         val pieces = token.split('.')
         require(pieces.size == 3 && pieces.all { it.isNotEmpty() && it.all { c -> c.isLetterOrDigit() && c.code < 128 || c == '-' || c == '_' } })
-        val claims = JsonParser.parseString(Base64.getUrlDecoder().decode(pieces[1]).toString(Charsets.UTF_8)).asJsonObject
+        val claims = GsonBuilder().setStrictness(Strictness.STRICT).create()
+            .fromJson(Base64.getUrlDecoder().decode(pieces[1]).toString(Charsets.UTF_8), JsonObject::class.java)
         require(claims["sub"].asString == csr.cn)
-        val binding = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(csr.der))
-        require(claims["cnf"].asJsonObject["x5rt#S256"].asString == binding)
+        require(claims["cnf"].asJsonObject["x5rt#S256"].asString == csr.binding)
         fun seconds(key: String): Long {
             val value = claims[key]
             require(value.isJsonPrimitive && value.asJsonPrimitive.isNumber)
@@ -86,7 +86,8 @@ class EnrollmentCA(address: String, root: ByteArray) {
                     val source = body.source()
                     require(!source.request(EnrollmentProfile.MAX_BUNDLE.toLong() + 1))
                     val bytes = source.readByteArray()
-                    val objectValue = JsonParser.parseString(bytes.toString(Charsets.UTF_8)).asJsonObject
+                    val objectValue = GsonBuilder().setStrictness(Strictness.STRICT).create()
+                        .fromJson(bytes.toString(Charsets.UTF_8), JsonObject::class.java)
                     val entries = objectValue["certChain"].asJsonArray
                     require(entries.size() in 1..5)
                     val chain = entries.flatMap { EnrollmentProfile.certificates(it.asString) }

@@ -102,7 +102,13 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                 EnrollmentStage.EMPTY -> null
             }
             message?.let { Text(stringResource(R.string.enrollment_status), style = MaterialTheme.typography.titleMedium); Text(stringResource(it)) }
-            if (state.stage == EnrollmentStage.EMPTY && state.receipt?.stage == EnrollmentStage.UNKNOWN) Text(stringResource(R.string.enrollment_unknown))
+            state.receipt?.takeIf { it.stage == EnrollmentStage.UNKNOWN && state.stage in setOf(EnrollmentStage.EMPTY, EnrollmentStage.CSR) }?.let { receipt ->
+                Text(stringResource(R.string.enrollment_unknown))
+                Text(stringResource(R.string.enrollment_cn), style = MaterialTheme.typography.labelMedium)
+                Text(receipt.csr.cn)
+                Text(stringResource(R.string.enrollment_address), style = MaterialTheme.typography.labelMedium)
+                Text(receipt.endpoint)
+            }
             if (invalid) Text(stringResource(R.string.error_invalidInput), color = MaterialTheme.colorScheme.error)
             if (busy) OutlinedButton(onClick = onCancel) { Text("取消") }
             else if (state.csr != null) OutlinedButton(onClick = { pin = ""; admin = ""; token = ""; pending?.close(); pending = null; onAbandon() }) { Text("取消") }

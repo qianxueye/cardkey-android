@@ -32,13 +32,15 @@ import org.robolectric.util.ReflectionHelpers
 class EnrollmentPanelTest {
     @get:Rule val compose = createEmptyComposeRule()
     private val fixture = EnrollmentFixtures()
-    private fun render(width: Int, height: Int, check: (() -> Unit) -> Unit) {
+    private fun render(width: Int, height: Int,
+                       initial: EnrollmentState = EnrollmentState(address = "https://localhost", cn = fixture.csr.cn, hasRoot = true, csr = fixture.csr, stage = EnrollmentStage.CSR),
+                       check: (() -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", "enrollment-ui-reader")
         val reader = UsbReaderDescriptor(device, 1, CardWire.APDU)
         val clear = mutableIntStateOf(0)
-        val state = mutableStateOf(EnrollmentState(address = "https://localhost", cn = fixture.csr.cn, hasRoot = true, csr = fixture.csr, stage = EnrollmentStage.CSR))
+        val state = mutableStateOf(initial)
         controller.get().setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
@@ -67,6 +69,25 @@ class EnrollmentPanelTest {
             compose.onNodeWithText("导出 CSR").performScrollTo().assertIsEnabled()
         }
     }
+    @Test fun unknownReceiptShowsOriginalCnAndCaAfterChangingTheForm() {
+        val flow = EnrollmentWorkflow()
+        flow.settings("https://localhost", fixture.csr.cn)
+        flow.acceptRoot(flow.rootRequest(), fixture.root)
+        flow.settleCsr(flow.startCsr(), fixture.csr)
+        flow.startIssuance(fixture.token())
+        flow.pause()
+        flow.settings("https://new-ca.invalid", "New identity")
+        assertNull(flow.state.value.csr)
+        render(360, 640, flow.state.value) {
+            compose.onNodeWithText("New identity").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("https://new-ca.invalid").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(fixture.csr.cn).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("https://localhost/1.0/sign").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("未确认签发结果。请先向 CA 管理员核实，勿重复提交。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("导出 CSR").assertDoesNotExist()
+        }
+    }
+
     @Test fun compactEnrollmentKeepsTokenAndIssuanceReachable() {
         render(800, 240) { pause ->
             compose.onNodeWithText("一次性授权令牌").performScrollTo().assertIsDisplayed().performTextInput("synthetic-token")

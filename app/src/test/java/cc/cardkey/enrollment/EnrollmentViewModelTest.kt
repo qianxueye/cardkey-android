@@ -5,6 +5,9 @@ import android.hardware.usb.UsbManager
 import cc.cardkey.protocol.*
 import cc.cardkey.transport.*
 import cc.cardkey.ui.*
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -154,6 +157,29 @@ class EnrollmentViewModelTest {
             assertTrue(input.adminKey.all { it == 0.toByte() })
             CardOperationGate.tryAcquire()!!.close()
         }
+    }
+
+    @Test fun queuedCancellationCannotTouchAnAlreadyRetiredChannel() {
+        val model = ManagerViewModel(app)
+        var touches = 0
+        val delegate = object : CardChannel by EnrollmentCard() {
+            override fun setUserPresenceListener(listener: ((Boolean) -> Unit)?) { touches++ }
+            override fun cancel() { touches++ }
+        }
+        val channel = CancellableCardChannel(delegate) { false }
+        val current = ReflectionHelpers.getField<java.util.concurrent.atomic.AtomicReference<CancellableCardChannel?>>(model, "currentChannel")
+        val lock = ReflectionHelpers.getField<Any>(model, "presenceLock")
+        val jobs: List<Job>
+        synchronized(lock) {
+            current.set(channel)
+            model.cancel()
+            jobs = model.viewModelScope.coroutineContext[Job]!!.children.toList()
+            assertTrue(jobs.isNotEmpty())
+            current.set(null)
+        }
+        runBlocking { jobs.forEach { it.join() } }
+        assertEquals(0, touches)
+        CardOperationGate.tryAcquire()!!.close()
     }
 
     @Test fun lastPinAttemptUsesExistingWarningAndRejectsBeforeVerification() {

@@ -24,6 +24,7 @@ class EnrollmentCsr(der: ByteArray, val cn: String) {
     private val publicKey: ByteArray
     val der get() = encoded.copyOf()
     val spki get() = publicKey.copyOf()
+    val binding: String = Base64.getUrlEncoder().withoutPadding().encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(encoded))
     init {
         require(encoded.size in 1..16384)
         EnrollmentProfile.name(cn)

@@ -88,6 +88,10 @@ class EnrollmentProfileTest {
         variants.forEach { change -> denied { ca.checkToken(fixture.token(change = change), fixture.csr, fixture.now) } }
         denied { ca.checkToken(fixture.token(), fixture.csr("Synthetic", EnrollmentFixtures.key()), fixture.now) }
         denied { ca.checkToken("a".repeat(16385), fixture.csr, fixture.now) }
+        val parts = fixture.token().split('.')
+        val lenientPayload = String(java.util.Base64.getUrlDecoder().decode(parts[1])).replace("\"sub\":", "sub:")
+        val malformedToken = parts[0] + "." + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(lenientPayload.toByteArray()) + "." + parts[2]
+        denied { ca.checkToken(malformedToken, fixture.csr, fixture.now) }
         val client = ca.client()
         assertFalse(client.followRedirects); assertFalse(client.followSslRedirects); assertFalse(client.retryOnConnectionFailure)
         assertNull(client.cache); assertSame(okhttp3.CookieJar.NO_COOKIES, client.cookieJar)

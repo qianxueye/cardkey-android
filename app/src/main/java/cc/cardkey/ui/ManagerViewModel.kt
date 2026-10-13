@@ -391,8 +391,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         pending?.close()
         pending = null
         currentChannel.get()?.let { channel -> viewModelScope.launch(Dispatchers.IO) {
-            channel.setUserPresenceListener(null)
-            channel.cancel()
+            synchronized(presenceLock) {
+                if (currentChannel.get() === channel) {
+                    channel.setUserPresenceListener(null)
+                    channel.cancel()
+                }
+            }
         } }
         if (!inProgress && mutable.value.busy) finish(OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE))
     }

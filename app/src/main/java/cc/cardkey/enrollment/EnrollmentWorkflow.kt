@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class EnrollmentStage { EMPTY, CSR, ISSUING, VERIFIED, UNKNOWN, REJECTED, INVALID, IMPORTED }
-data class IssuanceReceipt(val cn: String, val endpoint: String, val stage: EnrollmentStage)
+data class IssuanceReceipt(val csr: EnrollmentCsr, val endpoint: String, val stage: EnrollmentStage)
 data class EnrollmentState(
     val address: String = "", val cn: String = "", val hasRoot: Boolean = false,
     val csr: EnrollmentCsr? = null, val bundle: EnrollmentBundle? = null,
@@ -19,6 +19,7 @@ class EnrollmentWorkflow {
     private val mutable = MutableStateFlow(EnrollmentState())
     val state = mutable.asStateFlow()
     private var root: ByteArray? = null
+    private val attemptedBindings = mutableSetOf<String>()
     var generation = 0L
         private set
     private var settingsGeneration = 0L
@@ -47,16 +48,18 @@ class EnrollmentWorkflow {
     fun settleCsr(owner: Long, csr: EnrollmentCsr) {
         if (owner != generation) return
         require(csr.cn == mutable.value.cn)
-        mutable.value = mutable.value.copy(csr = csr, stage = EnrollmentStage.CSR)
+        mutable.value = mutable.value.copy(csr = csr, stage = EnrollmentStage.CSR, attempted = csr.binding in attemptedBindings)
     }
     fun startIssuance(token: String): Pair<Long, EnrollmentCsr> {
         val state = mutable.value
         require(!state.attempted)
         val csr = requireNotNull(state.csr)
+        require(csr.binding !in attemptedBindings)
         ca().checkToken(token, csr)
         val owner = ++generation
+        attemptedBindings += csr.binding
         mutable.value = state.copy(attempted = true, stage = EnrollmentStage.ISSUING,
-            receipt = IssuanceReceipt(csr.cn, ca().endpoint.toString(), EnrollmentStage.UNKNOWN))
+            receipt = IssuanceReceipt(csr, ca().endpoint.toString(), EnrollmentStage.UNKNOWN))
         return owner to csr
     }
     fun settleIssuance(owner: Long, bundle: EnrollmentBundle?, stage: EnrollmentStage) {

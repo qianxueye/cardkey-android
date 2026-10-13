@@ -25,7 +25,7 @@ The reader route identifies an attachment, not a physical card. The public-key c
 
 ## Lifecycle and secrets
 
-The card session and operation gate close before HTTP starts. PIN and management-key buffers are cleared, and secret form fields are cleared before submission. Ordinary document-picker pauses preserve settled public CSR and certificate artifacts in the ViewModel. Pauses cancel active work, clear pending confirmations and invalidate callback ownership. A cancelled issuance retains an unknown receipt.
+The card session and operation gate close before HTTP starts. PIN and management-key buffers are cleared, and secret form fields are cleared before submission. Ordinary document-picker pauses preserve settled public CSR and certificate artifacts in the ViewModel. Pauses cancel active work, clear pending confirmations and invalidate callback ownership. A cancelled issuance retains an unknown receipt and its immutable public CSR. Attempted CSR bindings remain blocked for the process lifetime, including when a card regenerates identical CSR bytes after a selection change.
 
 Changing the CN, CA, root or reader, observed detach, and explicit abandonment retire import and issuance eligibility. Returning to an earlier selection does not restore it. Root-picker results also belong to their captured request and settings generation. Public artifacts are not persisted across process death.
 

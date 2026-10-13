@@ -60,6 +60,18 @@ class EnrollmentWorkflowTest {
         assertFalse(flow.acceptRoot(first, fixture.root))
         assertTrue(flow.acceptRoot(second, fixture.root))
     }
+    @Test fun regeneratedIdenticalCsrCannotReopenIssuanceAfterRetireOrSelectionAba() {
+        val flow = ready()
+        flow.startIssuance(fixture.token())
+        flow.pause()
+        flow.settings("https://other", "other")
+        flow.settings("https://localhost", fixture.csr.cn)
+        flow.settleCsr(flow.startCsr(), fixture.csr)
+        assertTrue(flow.state.value.attempted)
+        assertSame(fixture.csr, flow.state.value.receipt!!.csr)
+        assertTrue(runCatching { flow.startIssuance(fixture.token()) }.isFailure)
+    }
+
     @Test fun invalidLocalTokenDoesNotSpendAttemptAndReceiptIsSeparateFromNewForm() {
         val flow = ready()
         assertTrue(runCatching { flow.startIssuance("invalid") }.isFailure)
