@@ -187,6 +187,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                         enabled = !busy, visualTransformation = PasswordVisualTransformation())
                     if (pin.isNotEmpty()) Text(stringResource(R.string.confirm_authenticate))
                     if (busy) CircularProgressIndicator()
+                    presenceMessage?.let { Text(stringResource(it)) }
                     Button(onClick = ::confirm, enabled = !busy && !permissionPending) { Text("确认") }
                 }
                 OutlinedButton(onClick = ::cancelRequest) { Text("取消") }
@@ -307,6 +308,9 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             }
         }
     }
+
+    private val presenceMessage get() = ConfirmationPolicy.presenceMessage(
+        userPresenceRequired, busy, selected?.wire ?: CardWire.APDU)
 
     private fun updateUserPresence(generation: Long, reader: UsbReaderDescriptor?, required: Boolean) {
         if (generation != presenceGeneration) return

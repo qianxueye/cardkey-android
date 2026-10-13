@@ -19,11 +19,12 @@ object ConfirmationPolicy {
             ManagerOperation.PIV_GENERATE -> R.string.confirm_keyGenerate
             ManagerOperation.PIV_IMPORT -> R.string.confirm_certificateImport
             ManagerOperation.FIDO_REGISTER, ManagerOperation.U2F_REGISTER -> R.string.confirm_registration
+            ManagerOperation.FIDO_RESET -> R.string.confirm_fidoReset
             ManagerOperation.PIV_RESET -> R.string.confirm_pivReset
             else -> null
         }
         val pinWarning = input.pin.isNotEmpty() && primary != R.string.confirm_pinChange &&
-            input.operation !in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN,
+            input.operation !in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_RESET, ManagerOperation.PIV_ADMIN,
                 ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET)
         val secretWarning = input.operation == ManagerOperation.FIDO_ASSERT &&
             (input.assertionExtensions.hmacSalts != null || input.assertionExtensions.largeBlobKey || input.assertionExtensions.credentialBlob) ||
@@ -56,8 +57,13 @@ object ConfirmationPolicy {
         ManagerOperation.U2F_INFO, ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT,
     )
 
-    fun resultMessages(result: OperationResult<*>, wire: CardWire = CardWire.APDU): List<Int> = when (result) {
-        is OperationResult.Completed -> listOf(R.string.operation_completed)
+    fun presenceMessage(required: Boolean, busy: Boolean, wire: CardWire): Int? =
+        R.string.status_hidUserPresenceRequired.takeIf { required && busy && wire == CardWire.CTAP }
+
+    fun resultMessages(result: OperationResult<*>, wire: CardWire = CardWire.APDU,
+        operation: ManagerOperation? = null, requiresInspection: Boolean = false): List<Int> = when (result) {
+        is OperationResult.Completed -> listOf(if (operation == ManagerOperation.FIDO_RESET)
+            R.string.operation_fidoResetReadback else R.string.operation_completed)
         is OperationResult.Failed -> {
             val effect = when {
                 result.writeAccepted -> R.string.operation_appliedReadbackFailed
@@ -69,11 +75,12 @@ object ConfirmationPolicy {
             val reason = when (result.code) {
                 FailureCode.CONTACT_REQUIRED -> R.string.error_contactRequired
                 FailureCode.PHYSICAL_ACTION_REQUIRED -> if (wire == CardWire.CTAP) {
-                    if (result.effect == Effect.UNKNOWN || result.writeAccepted) R.string.error_recoveryRequired
-                    else R.string.error_cardRejected
+                    if (result.effect == Effect.UNKNOWN || result.writeAccepted || requiresInspection) R.string.error_recoveryRequired
+                    else R.string.error_hidPhysicalActionRequired
                 } else R.string.error_physicalActionRequired
                 FailureCode.PIN_INVALID -> R.string.error_pinInvalid
-                FailureCode.PIN_BLOCKED -> R.string.error_pinBlocked
+                FailureCode.PIN_BLOCKED -> if (wire == CardWire.CTAP && result.status == 0x34)
+                    R.string.error_hidPowerCycleRequired else R.string.error_pinBlocked
                 FailureCode.AUTHORIZATION_DENIED -> R.string.error_authorization
                 FailureCode.MALFORMED_RESPONSE -> R.string.error_malformed
                 FailureCode.CERTIFICATE_KEY_MISMATCH -> R.string.error_keyMismatch

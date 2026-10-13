@@ -63,7 +63,7 @@ class ManagerPresenceProgressTest {
     }
     private fun start(model: ManagerViewModel, channel: Channel) {
         val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
-        state.value = state.value.copy(busy = true)
+        state.value = state.value.copy(busy = true, resultWire = CardWire.CTAP)
         val run = ManagerViewModel::class.java.getDeclaredMethod("run", OperationInput::class.java, Function0::class.java)
         run.isAccessible = true
         run.invoke(model, OperationInput(ManagerOperation.FIDO_INFO), { channel })
@@ -84,22 +84,28 @@ class ManagerPresenceProgressTest {
         try {
             callback(true)
             assertTrue(model.state.value.userPresenceRequired)
+            assertEquals(cc.cardkey.R.string.status_hidUserPresenceRequired, model.state.value.presenceMessage)
             assertNull(model.state.value.result)
             callback(false)
             assertFalse(model.state.value.userPresenceRequired)
+            assertNull(model.state.value.presenceMessage)
             callback(true)
             model.cancel()
             assertFalse(model.state.value.userPresenceRequired)
+            assertNull(model.state.value.presenceMessage)
             callback(true)
             assertFalse(model.state.value.userPresenceRequired)
+            assertNull(model.state.value.presenceMessage)
             assertNull(CardOperationGate.tryAcquire())
         } finally { channel.release.countDown() }
         await { model.state.value.result != null }
         assertFalse(model.state.value.userPresenceRequired)
+        assertNull(model.state.value.presenceMessage)
         assertEquals(FailureCode.CANCELLED, (model.state.value.result as OperationResult.Failed).code)
         assertNull(channel.listener.get())
         callback(true)
         assertFalse(model.state.value.userPresenceRequired)
+        assertNull(model.state.value.presenceMessage)
     }
 
     @Test fun replacementAtSameUsbPathRejectsOriginalAttachmentProgress() {
@@ -113,13 +119,16 @@ class ManagerPresenceProgressTest {
         try {
             callback(true)
             assertTrue(model.state.value.userPresenceRequired)
+            assertEquals(cc.cardkey.R.string.status_hidUserPresenceRequired, model.state.value.presenceMessage)
             UsbAuthenticatorReader.invalidate(original)
             val replacement = reader()
             assertNotEquals(original.routeKey, replacement.routeKey)
             callback(true)
             assertFalse(model.state.value.userPresenceRequired)
+            assertNull(model.state.value.presenceMessage)
             callback(false)
             assertFalse(model.state.value.userPresenceRequired)
+            assertNull(model.state.value.presenceMessage)
         } finally { channel.release.countDown() }
         await { model.state.value.result != null }
     }
@@ -139,9 +148,11 @@ class ManagerPresenceProgressTest {
         scheduler.runCurrent()
         await { scheduler.runCurrent(); model.state.value.result != null }
         assertFalse(model.state.value.userPresenceRequired)
+        assertNull(model.state.value.presenceMessage)
         callback(true)
         scheduler.runCurrent()
         assertFalse(model.state.value.userPresenceRequired)
+        assertNull(model.state.value.presenceMessage)
         assertTrue(model.state.value.result is OperationResult.Completed)
     }
 }

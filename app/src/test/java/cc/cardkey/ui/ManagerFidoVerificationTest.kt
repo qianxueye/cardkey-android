@@ -446,4 +446,35 @@ class ManagerFidoVerificationTest(private val wire: CardWire) {
         assertTrue(execute(ManagerOperation.FIDO_ASSERT, assertion(true, 1)) is OperationResult.Completed)
     }
 
+    @Test fun acceptedAndUncertainResetRetireDiagnosticProofAndSecretOutputs() {
+        if (wire != CardWire.CTAP) return
+        for (response in listOf("accepted", "lost", "malformed", "readback")) {
+            assertTrue(execute(ManagerOperation.U2F_REGISTER, u2fRegistration()) is OperationResult.Completed)
+            val registered = CardSession(registration(blobKey = ByteArray(32) { 7 })).run {
+                manager.execute(it, OperationInput(ManagerOperation.FIDO_REGISTER, enabled = true,
+                    makeExtensions = MakeExtensions(largeBlobKey = true)))
+            } as OperationResult.Completed
+            val secret = requireNotNull(registered.value.secrets?.blobKey)
+            val reset = ManagerTestChannel(wire) { code, _ -> when (code) {
+                7 -> when (response) {
+                    "lost" -> throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+                    "malformed" -> byteArrayOf()
+                    else -> success()
+                }
+                4 -> if (response == "readback") throw TransportException(Dispatch.RESPONSE_UNAVAILABLE) else success(info())
+                else -> error("Unexpected command")
+            } }
+            execute(ManagerOperation.FIDO_RESET, reset)
+            assertArrayEquals(ByteArray(32), secret)
+            val staleU2f = u2fAssertion(true, 1)
+            assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), execute(ManagerOperation.U2F_ASSERT, staleU2f))
+            assertEquals(0, staleU2f.requests)
+            for (operation in listOf(ManagerOperation.FIDO_ASSERT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
+                val untouched = ManagerTestChannel(wire) { _, _ -> error("Reset restored stale proof") }
+                assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), execute(operation, untouched))
+                assertTrue(untouched.commands.isEmpty())
+            }
+        }
+    }
+
 }

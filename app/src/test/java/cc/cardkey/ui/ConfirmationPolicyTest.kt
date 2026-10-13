@@ -84,7 +84,7 @@ class ConfirmationPolicyTest {
     @Test fun hidPresenceNeverUsesSmartCardRemovalOrSuggestsReplayOfUncertainWrites() {
         val failure = OperationResult.Failed(FailureCode.PHYSICAL_ACTION_REQUIRED, Effect.NONE)
         assertEquals(listOf(R.string.error_physicalActionRequired), ConfirmationPolicy.resultMessages(failure))
-        assertEquals(listOf(R.string.error_cardRejected), ConfirmationPolicy.resultMessages(failure, CardWire.CTAP))
+        assertEquals(listOf(R.string.error_hidPhysicalActionRequired), ConfirmationPolicy.resultMessages(failure, CardWire.CTAP))
         assertEquals(listOf(R.string.error_recoveryRequired),
             ConfirmationPolicy.resultMessages(failure.copy(effect = Effect.UNKNOWN), CardWire.CTAP))
         assertEquals(listOf(R.string.operation_appliedReadbackFailed, R.string.error_recoveryRequired),
@@ -159,4 +159,36 @@ class ConfirmationPolicyTest {
         input.use { assertEquals(listOf(R.string.confirm_registration), ConfirmationPolicy.messages(it)) }
     }
 
+    @Test fun hidKnownPhysicalFailureUsesApprovedActionHint() {
+        val messages = ConfirmationPolicy.resultMessages(
+            OperationResult.Failed(FailureCode.PHYSICAL_ACTION_REQUIRED, Effect.NONE), CardWire.CTAP)
+        assertFalse(messages.contains(R.string.error_cardRejected))
+        assertFalse(messages.contains(R.string.error_physicalActionRequired))
+    }
+    @Test fun temporaryHidPinBlockUsesPowerCycleHintWithoutErasingUncertainEffect() {
+        for (effect in Effect.entries) {
+            val result = OperationResult.Failed(FailureCode.PIN_BLOCKED, effect, 0x34,
+                writeAccepted = effect == Effect.APPLIED)
+            val messages = ConfirmationPolicy.resultMessages(result, CardWire.CTAP)
+            assertTrue(messages.contains(R.string.error_hidPowerCycleRequired))
+            assertFalse(messages.contains(R.string.error_hidPhysicalActionRequired))
+            if (effect == Effect.APPLIED) assertTrue(messages.contains(R.string.operation_appliedReadbackFailed))
+        }
+        assertEquals(listOf(R.string.error_pinBlocked), ConfirmationPolicy.resultMessages(
+            OperationResult.Failed(FailureCode.PIN_BLOCKED, Effect.NONE, 0x32), CardWire.CTAP))
+        assertEquals(listOf(R.string.error_pinBlocked), ConfirmationPolicy.resultMessages(
+            OperationResult.Failed(FailureCode.PIN_BLOCKED, Effect.NONE, 0x34), CardWire.APDU))
+    }
+
+    @Test fun presenceHintRequiresActualBusyHidWaitingState() {
+        for (required in listOf(false, true)) for (busy in listOf(false, true)) for (wire in CardWire.entries)
+            assertEquals(if (required && busy && wire == CardWire.CTAP) R.string.status_hidUserPresenceRequired else null,
+                ConfirmationPolicy.presenceMessage(required, busy, wire))
+    }
+    @Test fun priorUnresolvedWriteNeverProducesRetryHintFromLaterKnownPhysicalFailure() {
+        val messages = ConfirmationPolicy.resultMessages(
+            OperationResult.Failed(FailureCode.PHYSICAL_ACTION_REQUIRED, Effect.NONE), CardWire.CTAP,
+            requiresInspection = true)
+        assertEquals(listOf(R.string.error_recoveryRequired), messages)
+    }
 }

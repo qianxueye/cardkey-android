@@ -85,6 +85,12 @@ fun ManagerScreen(
     LaunchedEffect(state.supportsPiv) {
         if (!state.supportsPiv && tab == 1) { tab = 0; operation = ManagerOperation.FIDO_INFO }
     }
+    LaunchedEffect(state.supportsFidoReset) {
+        if (!state.supportsFidoReset && operation == ManagerOperation.FIDO_RESET) {
+            confirmation?.close(); confirmation = null
+            operation = ManagerOperation.FIDO_INFO
+        }
+    }
     DisposableEffect(Unit) { onDispose { confirmation?.close() } }
     confirmation?.let { input ->
         AlertDialog(onDismissRequest = { input.close(); confirmation = null },
@@ -148,7 +154,7 @@ fun ManagerScreen(
                     Text(if (tab == 0) "FIDO2" else "PIV", style = MaterialTheme.typography.headlineSmall)
                     AssistChip(onClick = { tab = 2 }, label = { Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器") })
                     if (state.nfc) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodyMedium)
-                    Choice("操作", operation, ManagerOperation.entries.filter { it.piv == (tab == 1) }, { it.title }, !state.busy) { operation = it }
+                    Choice("操作", operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, { it.title }, !state.busy) { operation = it }
                     val op = operation
                     if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
                             ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
@@ -247,14 +253,18 @@ fun ManagerScreen(
                                 if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                 else confirmation = PendingOperation(input)
                             } catch (_: IllegalArgumentException) { invalid = true }
-                        }, enabled = !state.busy && (!op.piv || state.supportsPiv) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
+                        }, enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
                         if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
                     }
                 }
                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                state.presenceMessage?.let { Text(stringResource(it)) }
                 when (val result = state.result) {
                     is OperationResult.Completed -> {
-                        Text(stringResource(R.string.operation_completed), style = MaterialTheme.typography.titleMedium)
+                        ConfirmationPolicy.resultMessages(result, state.resultWire, state.operation).forEach {
+                            Text(stringResource(it), style = MaterialTheme.typography.titleMedium)
+                        }
+                        result.value.messages.forEach { Text(stringResource(it)) }
                         if (state.operation in setOf(ManagerOperation.FIDO_REGISTER, ManagerOperation.FIDO_ASSERT,
                                 ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT, ManagerOperation.PIV_CSR,
                                 ManagerOperation.PIV_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
@@ -281,7 +291,7 @@ fun ManagerScreen(
                     is OperationResult.Failed -> {
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
-                                ConfirmationPolicy.resultMessages(result, state.resultWire).forEach {
+                                ConfirmationPolicy.resultMessages(result, state.resultWire, state.operation, state.requiresInspection).forEach {
                                     Text(stringResource(it), color = MaterialTheme.colorScheme.error)
                                 }
                                 result.status?.let { Text("0x%04X".format(it)) }
@@ -290,7 +300,7 @@ fun ManagerScreen(
                     }
                     null -> Unit
                 }
-                if (tab == 0) Text(stringResource(R.string.restriction_fidoReset), style = MaterialTheme.typography.bodySmall)
+                if (tab == 0 && state.supportsPiv) Text(stringResource(R.string.restriction_fidoReset), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -315,7 +325,7 @@ private fun <T> Choice(label: String, value: T, values: List<T>, title: (T) -> S
 }
 
 private fun needsPin(op: ManagerOperation): Boolean = op !in setOf(
-    ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_SET_PIN,
+    ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_RESET,
     ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT,
     ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT, ManagerOperation.PIV_ADMIN,
     ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET,

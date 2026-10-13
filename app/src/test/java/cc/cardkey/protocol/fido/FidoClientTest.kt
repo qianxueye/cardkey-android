@@ -198,11 +198,15 @@ class FidoClientTest {
         assertEquals(OperationResult.Failed(FailureCode.PHYSICAL_ACTION_REQUIRED, Effect.NONE, 0x3b), result)
         assertTrue(channel.closed); assertEquals(1, channel.selectCount); assertEquals(1, channel.commands.size)
     }
-    @Test fun resetIsRejectedBeforeAnyCardCommand() {
-        val channel = FidoChannel { _, _ -> fail("reset was dispatched"); success() }
-        val result = CardSession(channel).run { session -> FidoClient(session).apply { select() }.command(7, effectful = true) }
-        assertEquals(OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE), result)
-        assertTrue(channel.commands.isEmpty())
+    @Test fun resetDenialClosesSessionWithoutStatusReadOrReplay() {
+        val channel = FidoChannel { code, parameters ->
+            assertEquals(7, code); assertNull(parameters); byteArrayOf(0x27)
+        }
+        val result = CardSession(channel).run { session -> FidoClient(session).apply { select() }.reset() }
+        assertEquals(OperationResult.Failed(FailureCode.AUTHORIZATION_DENIED, Effect.NONE, 0x27), result)
+        assertEquals(listOf(7), channel.commands.map { it.first })
+        assertEquals(1, channel.selectCount)
+        assertTrue(channel.closed)
     }
     @Test fun alwaysUvChecksCurrentStateThenTogglesExactlyOnceAndReadsBack() {
         var enabled = false

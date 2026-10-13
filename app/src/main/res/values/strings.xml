@@ -56,4 +56,9 @@
     <string name="error_capacityExceeded" formatted="false">卡片存储空间不足，或已达到此操作的数量或大小限制。</string>
     <string name="error_recoveryRequired" formatted="false">卡片状态与预期不符。请先读取卡片状态，勿重复提交更改。</string>
     <string name="error_cardRejected" formatted="false">卡片拒绝了此操作。请检查卡片状态及操作前提。</string>
+    <string name="status_hidUserPresenceRequired" formatted="false">请触摸安全密钥或按下按键。</string>
+    <string name="error_hidPhysicalActionRequired" formatted="false">请重新发起操作，再触摸安全密钥或按下按键。</string>
+    <string name="error_hidPowerCycleRequired" formatted="false">PIN 验证暂时锁定。请断开安全密钥的所有电源，再重新连接。</string>
+    <string name="confirm_fidoReset" formatted="false">重置会使此设备上的全部 FIDO2／U2F 凭据失效，清除 FIDO PIN、相关数据和设置，无法撤销。之后需重新绑定账户。其他功能和证明配置是否保留，取决于设备。请按设备要求完成物理确认。确认重置？</string>
+    <string name="operation_fidoResetReadback" formatted="false">设备已接受 FIDO 重置，当前状态已读取。</string>
 </resources>
