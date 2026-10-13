@@ -6,7 +6,7 @@ The application targets Android 14 and later. NFC uses Android IsoDep. USB FIDO 
 
 ## Build
 
-Install JDK 17, Android SDK platform 36, and build tools 35.0.0. Set `ANDROID_HOME` to the SDK directory, then run:
+Install JDK 17, Android SDK platform 36, and build tools 35.0.0. Set `ANDROID_HOME` to the SDK directory. The enrollment contract tests also require Smallstep CLI 0.31.0 and step-ca 0.30.2; set `CARDKEY_STEP_CLI` and `CARDKEY_STEP_CA` to their executable paths. [Enrollment and test setup](docs/PIV-ENROLLMENT.md) Then run:
 
 ```sh
 ./gradlew assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest
@@ -19,6 +19,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. CI uses public Ubu
 - FIDO2: authenticator information, retries, credential capacity, PIN set/change, resident RP and credential enumeration, credential deletion/user updates, always-UV, minimum PIN length, and provisioned enterprise-attestation activation.
 - Diagnostics: CTAP registration/assertion and U2F signature verification; `credProtect`, `credBlob`, `hmac-secret`, `minPinLength`, `largeBlobKey`, and bounded encrypted large-blob access.
 - PIV: information, slot metadata, public keys and certificates; PIN/PUK changes and unblock; 3DES/AES management authentication and key changes; RSA-2048/P-256/P-384 generation; verified card-signed CSR export; matching certificate import/readback; signature, ECDH and RSA-decryption checks.
+- PIV／PKI: CN-only P-256 slot 9A client-certificate enrollment with a selected step-ca root, CSR-bound administrator token, PKIX/profile checks and explicit certificate import/readback. [Enrollment scope](docs/PIV-ENROLLMENT.md)
 - PIV reset only when the card already reports both PIN and PUK blocked. The app never consumes retries to reach that state. Blocking both has already erased keys in the supported CardKey profile.
 
 Management actions use the approved Chinese confirmation and result messages. PIN/PUK-sensitive PIV operations read live retry counts before verification; a last attempt that could erase keys requires an additional confirmation and a second check of those facts in the same session. Unknown writes block further mutations. For HID, routine inspection cannot resolve an unknown write because a USB route does not establish card identity. These controls do not replace physical device acceptance. [Copy scope](docs/COPY-PROPOSAL.md)

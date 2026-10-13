@@ -1,6 +1,7 @@
 package cc.cardkey.ui
 
 import cc.cardkey.R
+import cc.cardkey.enrollment.*
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.protocol.piv.*
@@ -23,6 +24,7 @@ enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     PIV_GENERATE("生成密钥", true), PIV_CSR("导出 CSR", true),
     PIV_IMPORT("导入证书", true), PIV_SIGN("验证签名", true),
     PIV_ECDH("ECDH · 验证", true), PIV_DECRYPT("RSA · 验证", true),
+    PIV_ENROLL_CSR("生成 CSR", true), PIV_ENROLL_IMPORT("导入证书", true),
     PIV_RESET("PIV · 重置", true)
 }
 
@@ -40,6 +42,7 @@ class OperationInput(
     val assertionExtensions: AssertionExtensions = AssertionExtensions(),
     val rpIds: List<String> = emptyList(), val enterpriseMode: Int? = null,
     val deleteBlob: Boolean = false, val displayName: String = "diagnostic",
+    val enrollmentImport: EnrollmentImport? = null,
 ) : AutoCloseable {
     val makeExtensions = if (operation == ManagerOperation.FIDO_REGISTER)
         makeExtensions.copy(largeBlobKey = enabled && makeExtensions.largeBlobKey) else makeExtensions
@@ -56,7 +59,7 @@ class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob:
     override fun close() { hmac?.fill(0); blobKey?.fill(0); credBlob?.fill(0) }
 }
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
-    val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList()) {
+    val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
@@ -191,6 +194,16 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             }
             ManagerOperation.PIV_CSR -> piv.createCsr(input.slot, input.pin, input.text).let {
                 ManagerReport(listOf(ResultRow("CSR", input.text)), pem("CERTIFICATE REQUEST", it), "piv-${input.slot.toString(16)}.csr")
+            }
+            ManagerOperation.PIV_ENROLL_CSR -> {
+                val csr = EnrollmentCsr(piv.createCsr(0x9a, input.pin, EnrollmentProfile.name(input.text), KeyAlgorithm.P256), input.text)
+                ManagerReport(emptyList(), enrollmentCsr = csr)
+            }
+            ManagerOperation.PIV_ENROLL_IMPORT -> {
+                val request = requireNotNull(input.enrollmentImport)
+                request.validate()
+                piv.importCertificate(0x9a, request.bundle.leaf, input.managementAlgorithm, input.adminKey)
+                ManagerReport(emptyList(), messages = listOf(R.string.enrollment_imported))
             }
             ManagerOperation.PIV_IMPORT -> piv.importCertificate(input.slot, input.bytes, input.managementAlgorithm, input.adminKey).let {
                 ManagerReport(listOf(ResultRow("证书", it.subjectX500Principal.name)))

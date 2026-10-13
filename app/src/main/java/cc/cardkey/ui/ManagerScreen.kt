@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import cc.cardkey.protocol.*
 import cc.cardkey.R
+import cc.cardkey.enrollment.EnrollmentState
 import cc.cardkey.protocol.piv.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.transport.UsbReaderDescriptor
@@ -53,6 +54,12 @@ fun ManagerScreen(
     onLastRetry: (Boolean) -> Unit,
     onSecureChange: (Boolean) -> Unit,
     onProviderSettings: () -> Unit,
+    enrollment: EnrollmentState = EnrollmentState(),
+    onEnrollmentSettings: (String, String) -> Unit = { _, _ -> },
+    onEnrollmentRoot: () -> Unit = {},
+    onEnrollmentSubmit: (OperationInput) -> Unit = { it.close() },
+    onEnrollmentIssue: (CharArray) -> Unit = { it.fill('\u0000') },
+    onEnrollmentAbandon: () -> Unit = {},
 ) {
     val displayName = stringResource(R.string.app_name)
     val feedbackRequester = remember { BringIntoViewRequester() }
@@ -88,7 +95,7 @@ fun ManagerScreen(
     val secretForm = tab != 2 && (needsPin(operation) || operation in setOf(
         ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE,
         ManagerOperation.PIV_IMPORT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE))
-    SideEffect { onSecureChange(secretForm || secretResult || state.lastRetry != null) }
+    SideEffect { onSecureChange(tab == 1 || secretForm || secretResult || state.lastRetry != null) }
     LaunchedEffect(state.result) { showSecrets = false; showSecretConfirmation = false; exportConfirmation = null }
     LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc) {
         pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""; invalid = false
@@ -245,7 +252,7 @@ fun ManagerScreen(
                         Text(if (tab == 0) "FIDO2" else "PIV", style = MaterialTheme.typography.headlineSmall)
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Choice("操作", operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, { it.title }, !state.busy) { operation = it }
+                                Choice("操作", operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && it !in setOf(ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, { it.title }, !state.busy) { operation = it }
                                 val op = operation
                                 Text(op.title, style = MaterialTheme.typography.titleLarge)
                                 if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
@@ -340,6 +347,15 @@ fun ManagerScreen(
                             }
                         }
                     }
+                    if (tab == 1) key(state.selectedReader?.routeKey) { EnrollmentPanel(enrollment, state.busy,
+                        !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection,
+                        clearInputs, onEnrollmentSettings, onEnrollmentRoot, { input ->
+                            pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+                            onEnrollmentSubmit(input)
+                        }, { token ->
+                            pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+                            onEnrollmentIssue(token)
+                        }, onExport, onCancel, onEnrollmentAbandon) }
                     if (state.busy || state.result != null || state.presenceMessage != null) {
                         Surface(Modifier.fillMaxWidth().bringIntoViewRequester(feedbackRequester), shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceContainer) {

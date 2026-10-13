@@ -7,6 +7,7 @@ import android.nfc.Tag
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cc.cardkey.protocol.*
+import cc.cardkey.enrollment.*
 import cc.cardkey.transport.*
 import cc.cardkey.protocol.piv.PivClient
 import kotlinx.coroutines.CompletableDeferred
@@ -45,6 +46,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val usb = application.getSystemService(UsbManager::class.java)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
+    val enrollment = EnrollmentWorkflow()
+    private val networkCall = AtomicReference<okhttp3.Call?>(null)
     private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
     private var inProgress = false
@@ -65,7 +68,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val selected = mutable.value.selectedReader?.let { prior -> readers.firstOrNull {
             it.routeKey == prior.routeKey
         } }
-        if (mutable.value.selectedReader != null && selected == null) cancel()
+        if (mutable.value.selectedReader != null && selected == null) { cancel(); enrollment.retire() }
         if (presenceBlockedReader != null && readers.none { it.routeKey == presenceBlockedReader }) {
             CardOperationGate.observedRemoval(requireNotNull(presenceBlockedReader))
             presenceBlockedReader = null
@@ -81,9 +84,78 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
         retireResult()
+        enrollment.retire()
         operations.clearSession()
         presenceGeneration++
         mutable.value = mutable.value.copy(userPresenceRequired = false, ctap2Reader = null, selectedReader = reader, nfc = reader == null, result = null)
+    }
+
+    fun enrollmentSettings(address: String, cn: String) {
+        if (!mutable.value.busy) enrollment.settings(address, cn)
+    }
+    fun enrollmentRoot(request: Pair<Long, Long>, bytes: ByteArray) {
+        if (!mutable.value.busy) runCatching { enrollment.acceptRoot(request, bytes) }.onFailure {
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+        }
+    }
+    fun submitEnrollment(input: OperationInput) {
+        if (mutable.value.busy || mutable.value.requiresInspection || mutable.value.nfc ||
+            mutable.value.selectedReader?.wire != CardWire.APDU) { input.close(); return }
+        try {
+            when (input.operation) {
+                ManagerOperation.PIV_ENROLL_CSR -> {
+                    require(input.text == enrollment.state.value.cn)
+                    enrollment.startCsr()
+                }
+                ManagerOperation.PIV_ENROLL_IMPORT -> {
+                    require(input.enrollmentImport === null)
+                    val request = enrollment.importRequest()
+                    submit(OperationInput(input.operation, adminKey = input.adminKey.copyOf(),
+                        managementAlgorithm = input.managementAlgorithm, enrollmentImport = request))
+                    input.close()
+                    return
+                }
+                else -> throw IllegalArgumentException()
+            }
+            submit(input)
+        } catch (_: Exception) {
+            input.close()
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+        }
+    }
+    fun abandonEnrollment() { if (!mutable.value.busy) enrollment.retire() }
+
+    fun issueEnrollment(token: CharArray) {
+        val reader = mutable.value.selectedReader
+        if (mutable.value.busy || mutable.value.requiresInspection || mutable.value.nfc ||
+            reader?.wire != CardWire.APDU || !UsbAuthenticatorReader.isCurrent(usb, reader)) { token.fill('\u0000'); return }
+        try {
+            val ca = enrollment.ca()
+            val (owner, csr) = enrollment.startIssuance(String(token))
+            val call = ca.call(csr, String(token))
+            token.fill('\u0000')
+            operations.clearSession()
+            retireResult()
+            networkCall.set(call)
+            mutable.update { it.copy(busy = true, result = null, operation = null) }
+            viewModelScope.launch {
+                val outcome = withContext(Dispatchers.IO) { runCatching { ca.execute(call, csr) } }
+                if (networkCall.compareAndSet(call, null) && owner == enrollment.generation) {
+                    val stage = outcome.fold({ EnrollmentStage.VERIFIED }, { error ->
+                        when ((error as? EnrollmentException)?.failure) {
+                            IssuanceFailure.REJECTED -> EnrollmentStage.REJECTED
+                            IssuanceFailure.INVALID -> EnrollmentStage.INVALID
+                            else -> EnrollmentStage.UNKNOWN
+                        }
+                    })
+                    enrollment.settleIssuance(owner, outcome.getOrNull(), stage)
+                    mutable.update { it.copy(busy = false) }
+                }
+            }
+        } catch (_: Exception) {
+            if (enrollment.state.value.stage == EnrollmentStage.ISSUING) enrollment.pause()
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+        } finally { token.fill('\u0000') }
     }
 
     fun submit(input: OperationInput) {
@@ -147,6 +219,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private fun run(input: OperationInput, connect: () -> CardChannel) {
         inProgress = true
         val generation = ++presenceGeneration
+        val enrollmentOwner = enrollment.generation
         val reader = mutable.value.selectedReader
         viewModelScope.launch {
             var writeAccepted = false
@@ -245,6 +318,10 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     if (report.protectedExport) report.export?.fill(0)
                 }
             }
+            if (!retired && result is OperationResult.Completed) {
+                result.value.enrollmentCsr?.let { enrollment.settleCsr(enrollmentOwner, it) }
+                if (input.operation == ManagerOperation.PIV_ENROLL_IMPORT) enrollment.imported(enrollmentOwner)
+            }
             finish(if (retired && result is OperationResult.Completed)
                 OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result)
         }
@@ -299,6 +376,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun cancel() {
+        enrollment.pause()
+        networkCall.getAndSet(null)?.let { call ->
+            call.cancel()
+            mutable.update { it.copy(busy = false) }
+        }
         cancelled = true
         presenceGeneration++
         operations.clearSession()
