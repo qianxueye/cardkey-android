@@ -81,6 +81,7 @@ fun ManagerScreen(
     var adminAlgorithm by remember { mutableStateOf(ManagementAlgorithm.TDES) }
     var newAdminAlgorithm by remember { mutableStateOf(ManagementAlgorithm.AES256) }
     var invalid by remember { mutableStateOf(false) }
+    var validationFailures by remember { mutableIntStateOf(0) }
     var confirmation by remember { mutableStateOf<PendingOperation?>(null) }
     val report = (state.result as? OperationResult.Completed)?.value
     val secretResult = report?.secrets != null || report?.protectedExport == true
@@ -181,7 +182,7 @@ fun ManagerScreen(
                 feedbackRequester.bringIntoView()
             }
         }
-        LaunchedEffect(maxHeight, invalid) {
+        LaunchedEffect(validationFailures, invalid) {
             if (invalid) {
                 withFrameNanos { }
                 validationRequester.bringIntoView()
@@ -212,7 +213,7 @@ fun ManagerScreen(
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
                                     if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                     else confirmation = PendingOperation(input)
-                                } catch (_: IllegalArgumentException) { invalid = true }
+                                } catch (_: IllegalArgumentException) { invalid = true; validationFailures++ }
                             }, modifier = Modifier.weight(1f), enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
                             if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
                         }

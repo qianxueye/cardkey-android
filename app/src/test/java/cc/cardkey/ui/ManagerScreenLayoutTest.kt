@@ -143,6 +143,57 @@ class ManagerScreenLayoutTest {
         }
     }
 
+    private fun submitInvalidManagementHex() {
+        compose.onNodeWithText("PIV").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithText(ManagerOperation.PIV_ADMIN.title).performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithText("管理密钥 · HEX").performScrollTo().performTextInput("GG")
+        compose.onNodeWithText("修改").performSemanticsAction(SemanticsActions.OnClick) { it() }
+    }
+
+    private fun focusManagementHexAwayFromError(value: String) {
+        val field = compose.onNodeWithText("管理密钥 · HEX")
+        field.performScrollTo().performTextReplacement(value)
+        val fieldBounds = field.fetchSemanticsNode().boundsInRoot
+        val scroll = compose.onNode(hasScrollAction())
+        val viewport = scroll.fetchSemanticsNode().boundsInRoot
+        scroll.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, fieldBounds.bottom - viewport.bottom) }
+        compose.waitForIdle()
+        field.assertIsFocused().assertIsDisplayed()
+    }
+
+    @Test fun correctingInvalidHexRemainsVisibleWhenImeOpens() {
+        render(360, 480) { activity, _ ->
+            submitInvalidManagementHex()
+            assertFeedbackVisible(activity.getString(R.string.error_invalidInput))
+            focusManagementHexAwayFromError("01")
+            compose.onNodeWithText("管理密钥 · HEX").assertIsFocused().assertIsDisplayed()
+            compose.onNodeWithText(activity.getString(R.string.error_invalidInput)).assertIsNotDisplayed()
+            compose.runOnIdle {
+                requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
+                    .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 240))
+                    .setVisible(WindowInsets.Type.ime(), true).build())
+            }
+            compose.waitForIdle()
+            compose.onNodeWithText("管理密钥 · HEX").assertIsFocused()
+            assertFeedbackVisible("管理密钥 · HEX")
+            compose.onNodeWithText(activity.getString(R.string.error_invalidInput)).assertExists()
+        }
+    }
+
+    @Test fun anotherInvalidSubmitBringsExistingValidationBackIntoView() {
+        render(360, 480) { activity, _ ->
+            submitInvalidManagementHex()
+            val error = activity.getString(R.string.error_invalidInput)
+            assertFeedbackVisible(error)
+            focusManagementHexAwayFromError("GG")
+            compose.onNodeWithText(error).assertIsNotDisplayed()
+            compose.onNodeWithText("修改").performSemanticsAction(SemanticsActions.OnClick) { it() }
+            assertFeedbackVisible(error)
+        }
+    }
+
     @Test fun portraitHasScrollableInputSpace() {
         render(360, 800) { _, _ -> assertInputSpace() }
     }
