@@ -131,4 +131,3 @@ internal class EnrollmentCard(override val medium: Medium = Medium.CONTACT,
             if (it.size > size) it.copyOfRange(it.size - size, it.size) else ByteArray(size - it.size) + it
         }
     }
-
