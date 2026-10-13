@@ -36,11 +36,14 @@ class OperationInput(
     val pinPolicy: PinPolicy = PinPolicy.ONCE,
     val text: String = "", val secondary: String = "", val enabled: Boolean = false,
     val bytes: ByteArray = byteArrayOf(),
-    val makeExtensions: MakeExtensions = MakeExtensions(),
+    makeExtensions: MakeExtensions = MakeExtensions(),
     val assertionExtensions: AssertionExtensions = AssertionExtensions(),
     val rpIds: List<String> = emptyList(), val enterpriseMode: Int? = null,
     val deleteBlob: Boolean = false, val displayName: String = "diagnostic",
 ) : AutoCloseable {
+    val makeExtensions = if (operation == ManagerOperation.FIDO_REGISTER)
+        makeExtensions.copy(largeBlobKey = enabled && makeExtensions.largeBlobKey) else makeExtensions
+
     override fun close() {
         pin.fill('\u0000'); newPin.fill('\u0000'); adminKey.fill(0); newAdminKey.fill(0)
         makeExtensions.credentialBlob?.fill(0); assertionExtensions.hmacSalts?.fill(0)

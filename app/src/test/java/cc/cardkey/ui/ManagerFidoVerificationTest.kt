@@ -265,6 +265,66 @@ class ManagerFidoVerificationTest(private val wire: CardWire) {
         }
     }
 
+    @Test fun registrationLargeBlobKeyRequiresResidentAndPreservesOtherExtensions() {
+        for (resident in listOf(false, true)) for (requested in listOf(false, true)) {
+            val effective = resident && requested
+            val blob = byteArrayOf(9, 8)
+            val input = OperationInput(ManagerOperation.FIDO_REGISTER, enabled = resident,
+                makeExtensions = MakeExtensions(credentialProtection = 2, credentialBlob = blob,
+                    hmacSecret = true, minPinLength = true, largeBlobKey = requested, uvm = true))
+            val channel = ManagerTestChannel(wire) { code, params -> when (code) {
+                4 -> success(info(mapOf("rk" to true),
+                    extensions = listOf("largeBlobKey", "credProtect", "credBlob", "hmac-secret", "minPinLength", "uvm"),
+                    extra = cborMap(15 to 32.cbor())))
+                1 -> {
+                    assertEquals(resident, params!![7].map()["rk"].bool())
+                    val extensions = params[6].map()
+                    assertEquals(effective, extensions["largeBlobKey"]?.bool() ?: false)
+                    if (!effective) assertNull(extensions["largeBlobKey"])
+                    assertEquals(2L, extensions["credProtect"].number())
+                    assertArrayEquals(blob, extensions["credBlob"].bytes())
+                    for (name in listOf("hmac-secret", "minPinLength", "uvm")) assertTrue(extensions[name].bool())
+                    val auth = rpHash + byteArrayOf(0xc1.toByte(), 0, 0, 0, 0) + ByteArray(16) +
+                        byteArrayOf(0, id.size.toByte()) + id + CborCodec.encode(key) +
+                        CborCodec.encode(textMap("credProtect" to 2.cbor()))
+                    success(cborMap(1 to "packed".cbor(), 2 to auth.cbor(),
+                        3 to textMap("alg" to (-7).cbor(), "sig" to sign(auth + params[1].bytes(), true).cbor()),
+                        5 to if (effective) ByteArray(32) { 7 }.cbor() else null))
+                }
+                else -> error("Unexpected command $code")
+            } }
+            input.use {
+                val result = CardSession(channel).run { manager.execute(it, input) }
+                assertTrue("resident=$resident requested=$requested: $result", result is OperationResult.Completed)
+                assertEquals(effective, (result as OperationResult.Completed).value.secrets?.blobKey != null)
+                assertEquals(effective, input.makeExtensions.largeBlobKey)
+                assertEquals(effective, cc.cardkey.R.string.confirm_secretRead in ConfirmationPolicy.messages(input))
+            }
+            assertEquals(listOf(4, 1), channel.commands.map { it.first })
+        }
+    }
+
+    @Test fun assertionLargeBlobKeyRemainsAvailableAfterNonresidentRegistration() {
+        assertTrue(execute(ManagerOperation.FIDO_REGISTER, registration()) is OperationResult.Completed)
+        val input = OperationInput(ManagerOperation.FIDO_ASSERT, enabled = false,
+            assertionExtensions = AssertionExtensions(largeBlobKey = true))
+        assertTrue(input.assertionExtensions.largeBlobKey)
+        assertTrue(cc.cardkey.R.string.confirm_secretRead in ConfirmationPolicy.messages(input))
+        val channel = ManagerTestChannel(wire) { code, params -> when (code) {
+            4 -> success(info(extensions = listOf("largeBlobKey")))
+            2 -> {
+                assertTrue(params!![4].map()["largeBlobKey"].bool())
+                val auth = rpHash + byteArrayOf(1, 0, 0, 0, 1)
+                success(cborMap(1 to descriptor(id), 2 to auth.cbor(),
+                    3 to sign(auth + params[2].bytes(), true).cbor(), 7 to ByteArray(32) { 7 }.cbor()))
+            }
+            else -> error("Unexpected command $code")
+        } }
+        val result = CardSession(channel).run { manager.execute(it, input) }
+        assertTrue(result is OperationResult.Completed)
+        assertArrayEquals(ByteArray(32) { 7 }, (result as OperationResult.Completed).value.secrets?.blobKey)
+    }
+
     @Test fun allCredentialProtectionPoliciesReachRegistration() {
         for (policy in 1..3) {
             assertTrue(CardSession(registration(protection = policy)).run {

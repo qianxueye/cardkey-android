@@ -82,6 +82,9 @@ fun ManagerScreen(
         confirmation?.close(); confirmation = null
         showSecrets = false; showSecretConfirmation = false; exportConfirmation = null
     }
+    LaunchedEffect(operation, enabled) {
+        if (operation == ManagerOperation.FIDO_REGISTER && !enabled) extensionNames = extensionNames - "largeBlobKey"
+    }
     LaunchedEffect(state.supportsPiv) {
         if (!state.supportsPiv && tab == 1) { tab = 0; operation = ManagerOperation.FIDO_INFO }
     }
@@ -207,7 +210,10 @@ fun ManagerScreen(
                     if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(when (op) { ManagerOperation.FIDO_ALWAYS_UV -> "始终验证用户"; ManagerOperation.FIDO_MIN_PIN -> "修改 PIN"; else -> "驻留凭据" }, Modifier.weight(1f))
-                            Switch(enabled, { enabled = it }, enabled = !state.busy)
+                            Switch(enabled, {
+                                enabled = it
+                                if (op == ManagerOperation.FIDO_REGISTER && !it) extensionNames = extensionNames - "largeBlobKey"
+                            }, enabled = !state.busy)
                         }
                     }
                     if (op == ManagerOperation.FIDO_REGISTER || op == ManagerOperation.FIDO_ASSERT) {
@@ -219,7 +225,8 @@ fun ManagerScreen(
                         else listOf("hmac-secret", "largeBlobKey", "credBlob", "uvm")
                         names.forEach { name ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(name in extensionNames, { checked -> extensionNames = if (checked) extensionNames + name else extensionNames - name }, enabled = !state.busy)
+                                val available = name != "largeBlobKey" || op != ManagerOperation.FIDO_REGISTER || enabled
+                                Checkbox(available && name in extensionNames, { checked -> extensionNames = if (checked) extensionNames + name else extensionNames - name }, enabled = !state.busy && available)
                                 Text(if (name == "uvm") "用户验证方法" else name)
                             }
                         }
@@ -243,7 +250,7 @@ fun ManagerScreen(
                                     imported?.copyOf() ?: byteArrayOf(),
                                     makeExtensions = MakeExtensions(if ("credProtect" in extensionNames) protection else null,
                                         if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER) extensionValue.hexBytes() else null,
-                                        "hmac-secret" in extensionNames, "minPinLength" in extensionNames, "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
+                                        "hmac-secret" in extensionNames, "minPinLength" in extensionNames, enabled && "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
                                     assertionExtensions = AssertionExtensions("credBlob" in extensionNames,
                                         if ("hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) extensionValue.hexBytes() else null,
                                         "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
