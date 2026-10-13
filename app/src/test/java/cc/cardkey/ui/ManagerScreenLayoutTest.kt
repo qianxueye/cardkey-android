@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.view.WindowInsets
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
@@ -48,11 +50,12 @@ class ManagerScreenLayoutTest {
     private fun render(width: Int, height: Int, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
+        activity.enableEdgeToEdge()
         val state = mutableStateOf(ManagerState())
         activity.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
-                    Box(Modifier.requiredSize(width.dp, height.dp)) {
+                    Box(Modifier.requiredSize(width.dp, height.dp).testTag("manager-scene")) {
                         ManagerScreen(state.value, 0, {}, {}, {}, {}, {}, null, {}, {}, {}, {})
                     }
                 }
@@ -81,6 +84,63 @@ class ManagerScreenLayoutTest {
         compose.onNodeWithText(ManagerOperation.FIDO_REGISTER.title).performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.waitForIdle()
         compose.onNodeWithText("扩展").performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
+    }
+
+    private fun assertCompactDockInsets(navigationBottom: Int, imeBottom: Int = 0) {
+        render(800, if (imeBottom == 0) 240 else 480) { activity, update ->
+            compose.runOnIdle {
+                requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
+                    .setInsets(WindowInsets.Type.navigationBars(), Insets.of(0, 0, 0, navigationBottom))
+                    .setVisible(WindowInsets.Type.navigationBars(), true)
+                    .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, imeBottom))
+                    .setVisible(WindowInsets.Type.ime(), imeBottom > 0).build())
+            }
+            update(ManagerState(busy = true, operation = ManagerOperation.FIDO_INFO))
+            val scene = compose.onNodeWithTag("manager-scene").fetchSemanticsNode().boundsInRoot
+            val safeBottom = scene.bottom - maxOf(navigationBottom, imeBottom)
+            for (label in listOf("读取", "取消")) {
+                val action = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+                assertTrue("$label overlaps system area: $action, safe bottom $safeBottom", action.bottom <= safeBottom)
+                assertTrue("$label reserves duplicate IME/navigation space: $action, safe bottom $safeBottom",
+                    safeBottom - action.bottom <= 16f)
+            }
+            assertInputSpace()
+        }
+    }
+
+    @Test fun compactDockRespectsGestureNavigationWhenImeClosed() {
+        assertCompactDockInsets(navigationBottom = 24)
+    }
+
+    @Test fun compactDockRespectsThreeButtonNavigationWhenImeClosed() {
+        assertCompactDockInsets(navigationBottom = 48)
+    }
+
+    @Test fun compactDockDoesNotAddNavigationInsetToAlreadyConsumedIme() {
+        assertCompactDockInsets(navigationBottom = 48, imeBottom = 240)
+    }
+
+    @Test fun imeOpeningDoesNotScrollRetainedResultOverNewPinInput() {
+        render(360, 640) { activity, update ->
+            update(ManagerState(operation = ManagerOperation.FIDO_INFO,
+                result = OperationResult.Completed(ManagerReport((1..20).map {
+                    ResultRow("field $it", "completed value")
+                }), Effect.NONE)))
+            compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
+                .performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText(ManagerOperation.FIDO_CHANGE_PIN.title)
+                .performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText("新 PIN").performScrollTo().performTextInput("123456")
+            compose.onNodeWithText("新 PIN").assertIsFocused().assertIsDisplayed()
+            compose.runOnIdle {
+                requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
+                    .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 240))
+                    .setVisible(WindowInsets.Type.ime(), true).build())
+            }
+            compose.waitForIdle()
+            compose.onNodeWithText("新 PIN").assertIsFocused()
+            assertFeedbackVisible("新 PIN")
+        }
     }
 
     @Test fun portraitHasScrollableInputSpace() {

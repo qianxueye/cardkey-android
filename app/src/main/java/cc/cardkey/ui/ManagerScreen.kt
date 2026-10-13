@@ -175,7 +175,7 @@ fun ManagerScreen(
     }
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val compact = maxHeight < 480.dp
-        LaunchedEffect(maxHeight, state.busy, state.presenceMessage, state.result, state.awaitingNfc) {
+        LaunchedEffect(state.busy, state.presenceMessage, state.result, state.awaitingNfc, maxHeight.takeIf { state.busy }) {
             if (state.busy || state.result != null) {
                 withFrameNanos { }
                 feedbackRequester.bringIntoView()
@@ -190,7 +190,8 @@ fun ManagerScreen(
         Scaffold(
             topBar = { if (!compact) topBar() },
             bottomBar = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(modifier = if (compact) Modifier.navigationBarsPadding() else Modifier,
+                    horizontalAlignment = Alignment.CenterHorizontally) {
                     if (tab != 2) {
                         val op = operation
                         Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
