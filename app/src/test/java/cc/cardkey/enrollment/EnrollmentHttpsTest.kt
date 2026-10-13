@@ -34,6 +34,8 @@ internal class EnrollmentHttpsServer(private val fixture: EnrollmentFixtures, pr
     private val socket = context.serverSocketFactory.createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket
     val address = "https://localhost:${socket.localPort}"
     val requests = AtomicInteger()
+    @Volatile var lastFailure: Throwable? = null
+        private set
     private val worker = Thread {
         while (!socket.isClosed) {
             runCatching {
@@ -57,7 +59,7 @@ internal class EnrollmentHttpsServer(private val fixture: EnrollmentFixtures, pr
                     client.getOutputStream().write(response().toByteArray())
                     client.getOutputStream().flush()
                 }
-            }
+            }.onFailure { lastFailure = it }
         }
     }.apply { isDaemon = true; start() }
     override fun close() { socket.close(); worker.join(6000); check(!worker.isAlive) }

@@ -76,7 +76,8 @@ class EnrollmentViewModelTest {
             assertSame(csr, model.enrollment.state.value.csr)
             secret = fixture.token(csr, server.address).toCharArray()
             model.issueEnrollment(secret); await(model)
-            assertEquals(EnrollmentStage.REJECTED, model.enrollment.state.value.stage)
+            assertEquals("result=${model.state.value.result}; requests=${server.requests.get()}; server=${server.lastFailure}",
+                EnrollmentStage.REJECTED, model.enrollment.state.value.stage)
             assertFalse(model.state.value.requiresInspection)
             assertEquals(1, server.requests.get())
         }
@@ -92,7 +93,8 @@ class EnrollmentViewModelTest {
             model.enrollment.settleCsr(model.enrollment.startCsr(), fixture.csr)
             model.issueEnrollment(fixture.token(address = server.address).toCharArray())
             try {
-                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                val arrived = entered.await(5, TimeUnit.SECONDS)
+                assertTrue("stage=${model.enrollment.state.value.stage}; result=${model.state.value.result}; requests=${server.requests.get()}; server=${server.lastFailure}", arrived)
                 model.cancel()
                 assertEquals(EnrollmentStage.UNKNOWN, model.enrollment.state.value.stage)
                 assertFalse(model.state.value.requiresInspection)

@@ -24,6 +24,12 @@ android {
     packaging { resources.excludes += setOf("META-INF/versions/9/OSGI-INF/MANIFEST.MF") }
 }
 
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    // Conscrypt's desktop TLS socket reads InetAddress internals on JDK 17.
+    jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED")
+    testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+}
+
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
