@@ -1,5 +1,6 @@
 package cc.cardkey.ui
 
+import cc.cardkey.R
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.protocol.piv.*
@@ -7,7 +8,7 @@ import java.security.SecureRandom
 import java.util.Base64
 
 enum class ManagerOperation(val title: String, val piv: Boolean = false) {
-    FIDO_INFO("FIDO2 · 读取"), FIDO_RETRIES("PIN · 重试次数"),
+    FIDO_INFO("FIDO2 · 读取"), FIDO_RESET("FIDO2 · 重置"), FIDO_RETRIES("PIN · 重试次数"),
     FIDO_SET_PIN("PIN · 设置"), FIDO_CHANGE_PIN("PIN · 修改"),
     FIDO_CAPACITY("凭据 · 容量"), FIDO_RPS("RP · 读取"),
     FIDO_CREDENTIALS("凭据 · 读取"), FIDO_DELETE("凭据 · 删除"),
@@ -52,7 +53,7 @@ class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob:
     override fun close() { hmac?.fill(0); blobKey?.fill(0); credBlob?.fill(0) }
 }
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
-    val secrets: SecretOutputs? = null, val protectedExport: Boolean = false) {
+    val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList()) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
@@ -102,6 +103,8 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
     }
 
     fun execute(session: CardSession, input: OperationInput): ManagerReport {
+        if (input.operation == ManagerOperation.FIDO_RESET && (session.wire != CardWire.CTAP || !session.supportsCtap2))
+            throw CardFailure(FailureCode.UNSUPPORTED)
         if (input.operation !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) clearSecrets()
         if (input.operation.piv && session.wire == CardWire.CTAP) throw CardFailure(FailureCode.UNSUPPORTED)
         val fido = FidoClient(session)
@@ -110,12 +113,17 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
         fun empty() = ManagerReport(emptyList())
         return when (input.operation) {
             ManagerOperation.FIDO_INFO -> info(fido.getInfo())
+            ManagerOperation.FIDO_RESET -> {
+                clearSession()
+                info(fido.reset())
+            }
             ManagerOperation.FIDO_RETRIES -> fido.retries().let {
                 ManagerReport(listOf(ResultRow("PIN 剩余重试次数", "${it.pin} 次")) +
                     listOfNotNull(it.uv?.let { count -> ResultRow("UV 剩余重试次数", "$count 次") },
                         it.powerCycleState?.takeIf { required -> required && session.wire == CardWire.APDU }?.let {
                             ResultRow("", "请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。")
-                        }))
+                        }), messages = if (it.powerCycleState == true && session.wire == CardWire.CTAP)
+                    listOf(R.string.error_hidPowerCycleRequired) else emptyList())
             }
             ManagerOperation.FIDO_SET_PIN -> { fido.setPin(input.newPin); empty() }
             ManagerOperation.FIDO_CHANGE_PIN -> { fido.changePin(input.pin, input.newPin); empty() }

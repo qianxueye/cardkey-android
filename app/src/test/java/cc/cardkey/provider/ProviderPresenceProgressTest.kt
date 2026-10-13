@@ -102,4 +102,21 @@ class ProviderPresenceProgressTest {
         assertEquals(FailureCode.CANCELLED, (result as OperationResult.Failed).code)
         assertTrue(updates.isEmpty())
     }
+    @Test fun providerTerminalFailuresUseApprovedHidHintsWithoutRetrying() {
+        for ((status, expected) in listOf(0x3b to cc.cardkey.R.string.error_hidPhysicalActionRequired,
+                0x34 to cc.cardkey.R.string.error_hidPowerCycleRequired)) {
+            var exchanges = 0
+            val channel = object : Channel() {
+                override fun exchangeCtap2(command: ByteArray): ByteArray {
+                    exchanges++
+                    return byteArrayOf(status.toByte())
+                }
+            }
+            val result = ProviderOperationRunner().execute(null, request(), data, null) { channel }
+            assertTrue(result is OperationResult.Failed)
+            assertEquals(listOf(expected), cc.cardkey.ui.ConfirmationPolicy.resultMessages(result, channel.wire))
+            assertEquals(1, exchanges)
+            assertNull(channel.listener)
+        }
+    }
 }

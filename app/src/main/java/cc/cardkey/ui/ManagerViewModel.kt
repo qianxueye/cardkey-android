@@ -34,8 +34,11 @@ data class ManagerState(
     val permissionPending: Boolean = false,
     val resultWire: CardWire = CardWire.APDU,
     val userPresenceRequired: Boolean = false,
+    val ctap2Reader: String? = null,
 ) {
     val supportsPiv get() = nfc || selectedReader?.wire != CardWire.CTAP
+    val supportsFidoReset get() = !nfc && selectedReader?.wire == CardWire.CTAP && ctap2Reader == selectedReader.routeKey
+    val presenceMessage get() = ConfirmationPolicy.presenceMessage(userPresenceRequired, busy, resultWire)
 }
 
 class ManagerViewModel(application: Application) : AndroidViewModel(application) {
@@ -80,7 +83,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         retireResult()
         operations.clearSession()
         presenceGeneration++
-        mutable.value = mutable.value.copy(userPresenceRequired = false, selectedReader = reader, nfc = reader == null, result = null)
+        mutable.value = mutable.value.copy(userPresenceRequired = false, ctap2Reader = null, selectedReader = reader, nfc = reader == null, result = null)
     }
 
     fun submit(input: OperationInput) {
@@ -93,7 +96,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         operationWire = mutable.value.selectedReader?.wire ?: CardWire.APDU
         retireResult()
         mutable.value = mutable.value.copy(busy = true, result = null, operation = input.operation, resultWire = operationWire)
-        if (input.operation.piv && !mutable.value.supportsPiv) {
+        if ((input.operation.piv && !mutable.value.supportsPiv) ||
+            (input.operation == ManagerOperation.FIDO_RESET && !mutable.value.supportsFidoReset)) {
             input.close()
             finish(OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED))
             return
@@ -146,6 +150,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val reader = mutable.value.selectedReader
         viewModelScope.launch {
             var writeAccepted = false
+            var negotiatedCtap2: Boolean? = null
             val result = withContext(Dispatchers.IO) {
                 try {
                     if (cancelled) OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
@@ -156,6 +161,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                             val channel = CancellableCardChannel(connect()) { cancelled }
                             currentChannel.set(channel)
                             try {
+                                negotiatedCtap2 = channel.wire == CardWire.CTAP && channel.supportsCtap2
                                 channel.setUserPresenceListener { required ->
                                     viewModelScope.launch(Dispatchers.Main) {
                                         synchronized(presenceLock) {
@@ -220,19 +226,26 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 } finally { input.close() }
             }
             inProgress = false
+            if (!cancelled && reader != null && mutable.value.selectedReader?.routeKey == reader.routeKey &&
+                UsbAuthenticatorReader.isCurrent(usb, reader) && negotiatedCtap2 != null) {
+                mutable.update { it.copy(ctap2Reader = reader.routeKey.takeIf { negotiatedCtap2 == true }) }
+            }
             if (reader?.wire == CardWire.APDU && result is OperationResult.Failed && result.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
                 presenceBlockedReader = reader.routeKey
                 presenceBlockedReader?.let(CardOperationGate::requireRemoval)
                 observeCardRemoval(reader)
             }
-            if (cancelled) {
+            val retired = cancelled || (reader != null && (mutable.value.selectedReader?.routeKey != reader.routeKey ||
+                !UsbAuthenticatorReader.isCurrent(usb, reader)))
+            if (retired) {
+                mutable.update { it.copy(ctap2Reader = null) }
                 operations.clearSession()
                 (result as? OperationResult.Completed)?.value?.let { report ->
                     report.secrets?.close()
                     if (report.protectedExport) report.export?.fill(0)
                 }
             }
-            finish(if (cancelled && result is OperationResult.Completed)
+            finish(if (retired && result is OperationResult.Completed)
                 OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result)
         }
     }

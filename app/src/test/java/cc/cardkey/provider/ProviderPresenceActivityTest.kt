@@ -47,6 +47,7 @@ class ProviderPresenceActivityTest {
         method.invoke(activity, generation, reader, required)
     }
     private fun required(activity: ProviderActivity): Boolean = ReflectionHelpers.callInstanceMethod(activity, "getUserPresenceRequired")
+    private fun message(activity: ProviderActivity): Int? = ReflectionHelpers.callInstanceMethod(activity, "getPresenceMessage")
     private fun selected(activity: ProviderActivity, reader: UsbReaderDescriptor) {
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "setSelected", ReflectionHelpers.ClassParameter.from(UsbReaderDescriptor::class.java, reader))
     }
@@ -63,19 +64,24 @@ class ProviderPresenceActivityTest {
         assertTrue(required(activity))
         update(activity, 1L, null, false)
         assertFalse(required(activity))
+        assertNull(message(activity))
         Handler(Looper.getMainLooper()).post { update(activity, 1L, null, true) }
         ReflectionHelpers.setField(activity, "presenceGeneration", 2L)
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(required(activity))
+        assertNull(message(activity))
         workerActive(activity, false)
         update(activity, 2L, null, true)
         assertFalse(required(activity))
+        assertNull(message(activity))
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "setBusy", ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType, false))
         update(activity, 2L, null, true)
         assertFalse(required(activity))
+        assertNull(message(activity))
         ReflectionHelpers.setField(activity, "completed", true)
         update(activity, 2L, null, true)
         assertFalse(required(activity))
+        assertNull(message(activity))
     }
 
     @Test fun samePathReplacementAndCancellationRejectCapturedReaderProgress() {
@@ -84,16 +90,20 @@ class ProviderPresenceActivityTest {
         selected(activity, original)
         update(activity, 1L, original, true)
         assertTrue(required(activity))
+        assertEquals(cc.cardkey.R.string.status_hidUserPresenceRequired, message(activity))
         UsbAuthenticatorReader.invalidate(original)
         val replacement = reader()
         selected(activity, replacement)
         update(activity, 1L, original, true)
         assertFalse(required(activity))
+        assertNull(message(activity))
         update(activity, 1L, replacement, true)
         assertTrue(required(activity))
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "cancelRequest")
         assertFalse(required(activity))
+        assertNull(message(activity))
         update(activity, 1L, replacement, true)
         assertFalse(required(activity))
+        assertNull(message(activity))
     }
 }

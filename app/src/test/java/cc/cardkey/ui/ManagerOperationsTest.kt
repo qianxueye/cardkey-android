@@ -162,6 +162,7 @@ class ManagerOperationsTest {
         } }
         val result = CardSession(channel).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.FIDO_RETRIES)) }
         assertEquals(listOf(ResultRow("PIN 剩余重试次数", "5 次")), (result as OperationResult.Completed).value.rows)
+        assertEquals(listOf(cc.cardkey.R.string.error_hidPowerCycleRequired), result.value.messages)
     }
 
     @Test fun uvRetriesUseApprovedUnitsOnlyForReturnedValues() {
