@@ -10,11 +10,17 @@ import java.io.OutputStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+enum class SignatureFormat(val fileName: String, val mimeType: String) {
+    RAW("signature.bin", "application/octet-stream"),
+    CMS("signature.p7s", "application/pkcs7-signature")
+}
+
 data class SigningFileSelection(val name: String, val size: Int, val generation: Long)
 enum class SignatureExportStatus { WRITING, SAVED, CANCELLED, UNKNOWN }
 data class SigningFileState(val selection: SigningFileSelection? = null,
                             val exportStatus: SignatureExportStatus? = null, val exportOwner: ManagerReport? = null,
-                            val active: Boolean = false, val slot: Int = 0x9a, val restoreOperation: ManagerOperation? = null) {
+                            val active: Boolean = false, val slot: Int = 0x9a, val restoreOperation: ManagerOperation? = null,
+                            val operation: ManagerOperation = ManagerOperation.PIV_SIGN) {
     val restoringSave get() = exportOwner != null && (exportStatus == null || exportStatus == SignatureExportStatus.WRITING)
 }
 internal data class SigningFileRequest(val generation: Long, val route: String, val id: String = java.util.UUID.randomUUID().toString())
@@ -44,10 +50,13 @@ class PivSigningFiles {
     internal val hasSaveOwner get() = save != null || writing
     internal val fileRequestId get() = picker?.id
     internal val saveRequestId get() = save?.id
+    internal val saveFormat get() = save?.source?.signatureFormat
     internal fun current(request: SigningFileRequest, currentRoute: String?) =
         request.generation == generation && request.route == route && request.route == currentRoute
 
-    internal fun action(active: Boolean, slot: Int) { mutable.value = mutable.value.copy(active = active, slot = slot) }
+    internal fun action(active: Boolean, slot: Int, operation: ManagerOperation = ManagerOperation.PIV_SIGN) {
+        mutable.value = mutable.value.copy(active = active, slot = slot, operation = operation)
+    }
     internal fun request(route: String): SigningFileRequest {
         retireSelection()
         this.route = route
@@ -84,7 +93,7 @@ class PivSigningFiles {
     internal fun requestSave(report: ManagerReport, operation: ManagerOperation? = null): Boolean {
         if (save != null || writing) return false
         val signature = requireNotNull(report.export)
-        require(report.fileName == "signature.bin" && signature.isNotEmpty())
+        require(report.signatureFormat != null && report.fileName == report.signatureFormat.fileName && signature.isNotEmpty())
         save = SignatureSave(report, signature.copyOf())
         mutable.value = mutable.value.copy(exportOwner = report, exportStatus = null, restoreOperation = operation)
         return true
