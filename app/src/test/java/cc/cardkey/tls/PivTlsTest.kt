@@ -363,6 +363,12 @@ class PivTlsTest {
             credentials.generateRawSignature(ByteArray(32))
             assertThrows(java.io.IOException::class.java) { credentials.generateRawSignature(ByteArray(32)) }
             assertEquals(1, signs)
+            val badDigestAuth = peer().authentication
+            badDigestAuth.notifyServerCertificate(serverCertificate)
+            val badDigest = badDigestAuth.getClientCredentials(request) as org.bouncycastle.tls.TlsCredentialedSigner
+            assertThrows(java.io.IOException::class.java) { badDigest.generateRawSignature(ByteArray(31)) }
+            assertThrows(java.io.IOException::class.java) { badDigest.generateRawSignature(ByteArray(32)) }
+            assertEquals(1, signs)
             assertThrows(java.io.IOException::class.java) { peer.notifySessionToResume(org.bouncycastle.tls.TlsUtils.importSession(byteArrayOf(1), null)) }
             peer.notifyHandshakeBeginning()
             assertThrows(java.io.IOException::class.java) { peer.notifyHandshakeBeginning() }
@@ -376,6 +382,59 @@ class PivTlsTest {
         assertThrows(Exception::class.java) {
             PivTlsIdentity(EnrollmentImport(f.csr, EnrollmentCA("https://localhost", f.issued.root), EnrollmentBundle(f.bundle.chain, f.issued.now + 600000)))
         }
+    }
+
+    @Test fun realHttpFailureRetainsSuccessfulCardEffectWithoutRetry() {
+        for (response in listOf("HTTP/1.1 302 Found\r\nLocation: /again\r\n\r\n",
+            "HTTP/1.1 500 Failed\r\n\r\n", "HTTP/1.1 204 No Content\r\n")) {
+            val f = TlsFixture()
+            TlsServer(f, response = response).use { server ->
+                val attempt = f.attempt(PivTlsEndpoint(server.address, f.issued.root))
+                assertTrue(attempt.preflight() is OperationResult.Completed)
+                val result = attempt.execute(false)
+                assertEquals(PivTlsOutcome.FAILED, result.outcome)
+                assertEquals(Effect.APPLIED, (result.card as OperationResult.Completed).effect)
+                assertEquals(1, server.requests.get())
+                assertEquals(1, server.accepted.get())
+                assertEquals(1, f.card.commands.count { it.ins == 0x87 })
+            }
+        }
+    }
+
+    @Test fun approvedLastRetryIsSingleAndPinFailureOrBadSignatureRetainFacts() {
+        for (mode in listOf("approved", "wrong-pin", "bad-signature")) {
+            val f = TlsFixture()
+            if (mode == "approved") { f.card.pinRemaining = 1; f.card.pukRemaining = 0 }
+            if (mode == "wrong-pin") f.card.pinStatus = 0x63c2
+            if (mode == "bad-signature") f.card.corruptSignature = true
+            TlsServer(f).use { server ->
+                val attempt = f.attempt(PivTlsEndpoint(server.address, f.issued.root))
+                assertTrue(attempt.preflight() is OperationResult.Completed)
+                val result = attempt.execute(true)
+                assertEquals(1, f.card.commands.count { it.ins == 0x20 })
+                if (mode == "approved") assertEquals(PivTlsOutcome.QUALIFIED, result.outcome)
+                else {
+                    assertEquals(PivTlsOutcome.FAILED, result.outcome)
+                    val failure = result.card as OperationResult.Failed
+                    assertEquals(Effect.APPLIED, failure.effect)
+                    assertEquals(if (mode == "wrong-pin") FailureCode.PIN_INVALID else FailureCode.MALFORMED_RESPONSE, failure.code)
+                    assertEquals(if (mode == "wrong-pin") 0 else 1, f.card.commands.count { it.ins == 0x87 })
+                }
+            }
+        }
+    }
+
+    @Test fun endpointAndContactFencesRejectBeforeSensitiveApdu() {
+        val f = TlsFixture()
+        for (address in listOf("http://localhost", "https://127.0.0.1", "https://[::1]", "https://*.example.org",
+            "https://localhost.", "https://a..b", "https://localhost?x=1", "https://localhost/#x", "https://user@localhost",
+            "https://localhost:0", "https://localhost:65536", "https://例子.org")) {
+            assertThrows(IllegalArgumentException::class.java) { PivTlsEndpoint(address, f.issued.root) }
+        }
+        val nfc = object : CardChannel by f.card { override val medium = Medium.NFC }
+        val attempt = f.attempt(PivTlsEndpoint("https://localhost", f.issued.root), connect = { nfc })
+        assertEquals(FailureCode.CONTACT_REQUIRED, (attempt.preflight() as OperationResult.Failed).code)
+        assertTrue(f.card.commands.isEmpty())
     }
 
     @Test fun boundedBodyless204Only() {
