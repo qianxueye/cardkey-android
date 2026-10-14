@@ -110,4 +110,8 @@
     <string name="signing_exported">已导出签名。</string>
     <string name="signing_exportCancelled">已取消导出。</string>
     <string name="signing_exportUnknown">未确认导出结果。请检查所选文件。</string>
+    <string name="signing_cmsRequirements">需要有效的文档签名证书，且证书公钥与所选槽位一致。</string>
+    <string name="signing_cmsVerified">CMS 签名验证：通过</string>
+    <string name="signing_cmsScope">导出 .p7s 独立签名，包含签名证书；验证时还需原文件。原文件保持不变。</string>
+    <string name="signing_cmsTrust">未验证证书信任链、吊销状态或可信时间。</string>
 </resources>

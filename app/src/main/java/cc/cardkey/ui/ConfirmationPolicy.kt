@@ -37,7 +37,7 @@ object ConfirmationPolicy {
 
     fun pivVerificationReference(operation: ManagerOperation): String? = when (operation) {
         ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK -> "PUK"
-        ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CSR, ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_SIGN,
+        ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CSR, ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_SIGN, ManagerOperation.PIV_CMS_SIGN,
         ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT -> "PIN"
         else -> null
     }

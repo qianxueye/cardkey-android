@@ -87,7 +87,7 @@ fun ManagerScreen(
         signingFiles.restoreOperation?.piv == true || signingFiles.active -> 1
         else -> 0
     }) }
-    var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) ManagerOperation.PIV_SIGN else inventory.action ?: ManagerOperation.FIDO_INFO) }
+    var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) signingFiles.operation else inventory.action ?: ManagerOperation.FIDO_INFO) }
     var pin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var adminKey by remember { mutableStateOf("") }
@@ -119,7 +119,7 @@ fun ManagerScreen(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, operation, inventory.credential) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE && (operation == ManagerOperation.PIV_SIGN || inventory.credential != null)) {
+            if (event == Lifecycle.Event.ON_PAUSE && (operation.isFileSigning || inventory.credential != null)) {
                 pin = ""; confirmation?.close(); confirmation = null
             }
         }
@@ -255,10 +255,10 @@ fun ManagerScreen(
                                     require(op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty())
                                     if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) && inventory.credential != null)
                                         require(inventory.blobReady && pin.isNotEmpty())
-                                    require(op != ManagerOperation.PIV_SIGN || signingFiles.selection != null)
+                                    require(!op.isFileSigning || signingFiles.selection != null)
                                     val input = OperationInput(op, pin.toCharArray(), newPin.toCharArray(), adminKey.hexBytes(), newAdminKey.hexBytes(),
                                         adminAlgorithm, newAdminAlgorithm, slot, algorithm, pinPolicy, text, secondary, enabled,
-                                        if (op == ManagerOperation.PIV_SIGN || inventory.credential != null && op == ManagerOperation.FIDO_BLOB_WRITE) byteArrayOf() else imported?.copyOf() ?: byteArrayOf(),
+                                        if (op.isFileSigning || inventory.credential != null && op == ManagerOperation.FIDO_BLOB_WRITE) byteArrayOf() else imported?.copyOf() ?: byteArrayOf(),
                                         makeExtensions = MakeExtensions(if ("credProtect" in extensionNames) protection else null,
                                             if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER) extensionValue.hexBytes() else null,
                                             "hmac-secret" in extensionNames, "minPinLength" in extensionNames, enabled && "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
@@ -267,7 +267,7 @@ fun ManagerScreen(
                                             "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
                                         rpIds = if (op == ManagerOperation.FIDO_MIN_PIN) parseDisclosureRps(disclosureRps) else emptyList(),
                                         enterpriseMode = enterpriseMode.takeIf { it != 0 }, displayName = displayName,
-                                        signingFileGeneration = signingFiles.selection?.generation.takeIf { op == ManagerOperation.PIV_SIGN },
+                                        signingFileGeneration = signingFiles.selection?.generation.takeIf { op.isFileSigning },
                                         inventoryGeneration = inventory.generation, inventorySelection = inventory.credential.takeIf {
                                             op in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) })
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
@@ -278,7 +278,7 @@ fun ManagerScreen(
                                 (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
-                                (op != ManagerOperation.PIV_SIGN || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(op.title.substringAfter("·").trim()) }
+                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(op.title.substringAfter("·").trim()) }
                             if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
                         }
                     }
@@ -322,7 +322,8 @@ fun ManagerScreen(
                                         ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
                                     Choice("槽位", slot, PivClient.slots, { "%02X".format(it) }, !state.busy) { slot = it }
                                 }
-                                if (op == ManagerOperation.PIV_SIGN) {
+                                if (op.isFileSigning) {
+                                    if (op == ManagerOperation.PIV_CMS_SIGN) Text(stringResource(R.string.signing_cmsRequirements), style = MaterialTheme.typography.bodySmall)
                                     OutlinedButton(onClick = {
                                         pin = ""; confirmation?.close(); confirmation = null; onSigningFile()
                                     }, enabled = !state.busy && !state.nfc && state.selectedReader?.wire == CardWire.APDU &&
@@ -462,7 +463,7 @@ fun ManagerScreen(
                                         result.value.messages.forEach { Text(stringResource(it)) }
                                         if (state.operation in setOf(ManagerOperation.FIDO_REGISTER, ManagerOperation.FIDO_ASSERT,
                                                 ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT, ManagerOperation.PIV_CSR,
-                                                ManagerOperation.PIV_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
+                                                ManagerOperation.PIV_SIGN, ManagerOperation.PIV_CMS_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
                                             Text(stringResource(R.string.status_verification), style = MaterialTheme.typography.bodySmall)
                                         }
                                         result.value.rows.forEach { row ->

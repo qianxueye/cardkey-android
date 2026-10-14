@@ -1,6 +1,8 @@
 # Detached CMS document signatures
 
-The management controller supports a typed CMS request through the same bounded selected-file operation as raw signing. The current screen still submits RAW by default; the CMS menu and its five proposed messages await Owner approval in `CMS-COPY-PROPOSAL.zh-CN.md`. This is a partial package, not an activated CMS user flow.
+Refs [#35](https://github.com/qianxueye/cardkey/issues/35).
+
+The PIV operation menu offers CMS file signing through the same bounded selected-file controller as raw signing. The CMS action selects the CMS format, shows its certificate requirements before signing, and reports signature verification, detached-file scope and trust limits after verification. The five approved UI strings are recorded in [the exact copy record](CMS-COPY-PROPOSAL.zh-CN.md). Raw file signing remains a separate action.
 
 A successful CMS request produces one DER-encoded CMS `SignedData` file, `signature.p7s`, for a selected nonempty file of at most 1 MiB. The original content remains external. The container carries exactly one signer and that signer's certificate. It carries no document bytes, certificate chain, revocation evidence or timestamp. The existing raw `signature.bin` operation remains available separately.
 

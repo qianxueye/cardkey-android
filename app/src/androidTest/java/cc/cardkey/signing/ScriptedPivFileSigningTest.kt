@@ -63,10 +63,15 @@ class ScriptedPivFileSigningTest {
                     .build(org.bouncycastle.operator.jcajce.JcaContentSignerBuilder(algorithm.signature).setProvider(provider).build(card.keyPair.private)))
             card.certificate = certificate.encoded
             val bytes = byteArrayOf(0, 1, 2, 13, 10, 127, 0xff.toByte())
-            val pin = "123456".toCharArray()
-            val result = CardSession(card).run { PivClient(it).signCmsFile(0x9c, pin, bytes) }
+            val input = OperationInput(ManagerOperation.PIV_CMS_SIGN, slot = 0x9c, pin = "123456".toCharArray(), bytes = bytes.copyOf())
+            val result = try { CardSession(card).run { ManagerOperations().execute(it, input) } } finally { input.close() }
             assertTrue(result.toString(), result is OperationResult.Completed)
-            val encoded = (result as OperationResult.Completed).value
+            val report = (result as OperationResult.Completed).value
+            assertEquals(SignatureFormat.CMS, report.signatureFormat)
+            assertEquals("signature.p7s", report.fileName)
+            assertEquals(listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope,
+                cc.cardkey.R.string.signing_cmsTrust), report.messages)
+            val encoded = requireNotNull(report.export)
             val cms = org.bouncycastle.cms.CMSSignedData(org.bouncycastle.cms.CMSProcessableByteArray(bytes), encoded)
             assertTrue(org.bouncycastle.cms.CMSSignedData(encoded).isDetachedSignature)
             assertArrayEquals(certificate.encoded, cms.certificates.getMatches(null).single().encoded)
@@ -80,7 +85,8 @@ class ScriptedPivFileSigningTest {
             assertEquals(1, card.verifies)
             assertEquals(1, card.signatures)
             assertTrue(card.closed)
-            assertTrue(pin.all { it == '\u0000' })
+            assertTrue(input.pin.all { it == '\u0000' })
+            assertTrue(input.bytes.all { it == 0.toByte() })
         }
     }
 

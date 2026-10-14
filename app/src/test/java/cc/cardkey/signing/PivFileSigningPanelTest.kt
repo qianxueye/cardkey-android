@@ -73,7 +73,10 @@ class PivFileSigningPanelTest {
         (0 until it.childCount).firstNotNullOfOrNull { index -> composeRoot(it.getChildAt(index)) }
     }
 
-    @Test fun compactFileInputRequiresSelectionAndTransfersOnlyItsGeneration() {
+    @Test fun compactFileInputRequiresSelectionAndTransfersOnlyItsGeneration() = fileInput(SignatureFormat.RAW)
+    @Test fun cmsFileInputRequiresSelectionAndSubmitsCmsFormatWithPinConfirmation() = fileInput(SignatureFormat.CMS)
+    private fun fileInput(format: SignatureFormat) {
+        files.value = files.value.copy(operation = if (format == SignatureFormat.CMS) ManagerOperation.PIV_CMS_SIGN else ManagerOperation.PIV_SIGN)
         render(360, 480) { _, _ ->
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             compose.onNodeWithText("选择非空文件，最大 1 MiB。").performScrollTo().assertIsDisplayed()
@@ -86,6 +89,8 @@ class PivFileSigningPanelTest {
             pin().performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("manager-run").performClick()
             compose.onNodeWithText("确认").performClick()
+            assertEquals(format, submitted!!.signatureFormat)
+            assertEquals(if (format == SignatureFormat.CMS) ManagerOperation.PIV_CMS_SIGN else ManagerOperation.PIV_SIGN, submitted!!.operation)
             assertEquals(42L, submitted!!.signingFileGeneration)
             assertEquals(0x9c, submitted!!.slot)
             assertTrue(submitted!!.bytes.isEmpty())
@@ -93,7 +98,10 @@ class PivFileSigningPanelTest {
         }
     }
 
-    @Test fun landscapeImeKeepsFileAndPinControlsReachableAndPauseClosesConfirmation() {
+    @Test fun landscapeImeKeepsFileAndPinControlsReachableAndPauseClosesConfirmation() = pinPause(SignatureFormat.RAW)
+    @Test fun cmsPauseClearsPinAndConfirmationWithImeVisible() = pinPause(SignatureFormat.CMS)
+    private fun pinPause(format: SignatureFormat) {
+        files.value = files.value.copy(operation = if (format == SignatureFormat.CMS) ManagerOperation.PIV_CMS_SIGN else ManagerOperation.PIV_SIGN)
         files.value = files.value.copy(selection = SigningFileSelection("synthetic.raw", 100, 3))
         render(800, 480) { activity, pause ->
             compose.runOnIdle {
@@ -135,4 +143,22 @@ class PivFileSigningPanelTest {
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
         }
     }
+    @Test fun cmsVerifiedScopeAndTrustRemainVisibleWhenExportIsUnknown() {
+        files.value = files.value.copy(operation = ManagerOperation.PIV_CMS_SIGN)
+        render(360, 480) { _, _ ->
+            compose.onNodeWithText("需要有效的文档签名证书，且证书公钥与所选槽位一致。").performScrollTo().assertIsDisplayed()
+            val report = ManagerReport(emptyList(), byteArrayOf(1), "signature.p7s", signatureFormat = SignatureFormat.CMS,
+                messages = listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope, cc.cardkey.R.string.signing_cmsTrust))
+            compose.runOnIdle {
+                manager.value = manager.value.copy(operation = ManagerOperation.PIV_CMS_SIGN, result = OperationResult.Completed(report, Effect.APPLIED))
+                files.value = files.value.copy(exportOwner = report, exportStatus = SignatureExportStatus.UNKNOWN)
+            }
+            compose.onNodeWithText("CMS 签名验证：通过").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("导出 .p7s 独立签名，包含签名证书；验证时还需原文件。原文件保持不变。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("未验证证书信任链、吊销状态或可信时间。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("未确认导出结果。请检查所选文件。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("已导出签名。").assertDoesNotExist()
+        }
+    }
+
 }

@@ -19,7 +19,8 @@ data class SigningFileSelection(val name: String, val size: Int, val generation:
 enum class SignatureExportStatus { WRITING, SAVED, CANCELLED, UNKNOWN }
 data class SigningFileState(val selection: SigningFileSelection? = null,
                             val exportStatus: SignatureExportStatus? = null, val exportOwner: ManagerReport? = null,
-                            val active: Boolean = false, val slot: Int = 0x9a, val restoreOperation: ManagerOperation? = null) {
+                            val active: Boolean = false, val slot: Int = 0x9a, val restoreOperation: ManagerOperation? = null,
+                            val operation: ManagerOperation = ManagerOperation.PIV_SIGN) {
     val restoringSave get() = exportOwner != null && (exportStatus == null || exportStatus == SignatureExportStatus.WRITING)
 }
 internal data class SigningFileRequest(val generation: Long, val route: String, val id: String = java.util.UUID.randomUUID().toString())
@@ -53,7 +54,9 @@ class PivSigningFiles {
     internal fun current(request: SigningFileRequest, currentRoute: String?) =
         request.generation == generation && request.route == route && request.route == currentRoute
 
-    internal fun action(active: Boolean, slot: Int) { mutable.value = mutable.value.copy(active = active, slot = slot) }
+    internal fun action(active: Boolean, slot: Int, operation: ManagerOperation = ManagerOperation.PIV_SIGN) {
+        mutable.value = mutable.value.copy(active = active, slot = slot, operation = operation)
+    }
     internal fun request(route: String): SigningFileRequest {
         retireSelection()
         this.route = route
