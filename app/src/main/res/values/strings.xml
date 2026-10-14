@@ -110,4 +110,14 @@
     <string name="signing_exported">已导出签名。</string>
     <string name="signing_exportCancelled">已取消导出。</string>
     <string name="signing_exportUnknown">未确认导出结果。请检查所选文件。</string>
+    <string name="workspace_unread">卡片状态尚未读取</string>
+    <string name="workspace_busy">操作执行中</string>
+    <string name="workspace_lastResult">最近操作结果见下方；不代表实时卡片状态</string>
+    <string name="workspace_inspection">结果待核实；请先读取卡片状态</string>
+    <string name="workspace_common">常用任务</string>
+    <string name="workspace_advanced">高级与协议诊断</string>
+    <string name="workspace_details">技术详情</string>
+    <string name="workspace_slotContext">槽位选择用于本次操作；证书状态需单独读取。</string>
+    <string name="workspace_credentialsUnread">凭据列表尚未读取；先读取 RP，再读取凭据。</string>
+    <string name="workspace_enrollmentFlow">生成 CSR → CA 签发 → 验证证书 → 导入并读回</string>
 </resources>

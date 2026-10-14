@@ -59,6 +59,18 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.tls_title), style = MaterialTheme.typography.titleLarge)
             Text(stringResource(R.string.tls_scope))
+            state.result?.let { result ->
+                Text(stringResource(when (result.outcome) {
+                    PivTlsOutcome.QUALIFIED -> R.string.tls_success
+                    PivTlsOutcome.FAILED -> R.string.tls_failed
+                    PivTlsOutcome.CANCELLED -> R.string.tls_cancelled
+                    PivTlsOutcome.TIMED_OUT -> R.string.tls_timeout
+                }))
+                if (result.authenticationMayHaveBeenSubmitted && result.outcome in setOf(PivTlsOutcome.CANCELLED, PivTlsOutcome.TIMED_OUT))
+                    Text(stringResource(R.string.tls_mayHaveSubmitted))
+                else if (result.authenticationMayHaveBeenSubmitted && result.outcome == PivTlsOutcome.FAILED)
+                    Text(stringResource(R.string.tls_unknown))
+            }
             Text(stringResource(R.string.tls_identity), style = MaterialTheme.typography.labelMedium)
             Text(enrollment.cn)
             Text("P-256 · 9A")
@@ -88,18 +100,7 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
                 Text(stringResource(R.string.tls_running))
                 OutlinedButton(modifier = Modifier.testTag("tls-cancel"), onClick = { pin = ""; pending?.close(); pending = null; onCancel() }) { Text("取消") }
             }
-            state.result?.let { result ->
-                Text(stringResource(when (result.outcome) {
-                    PivTlsOutcome.QUALIFIED -> R.string.tls_success
-                    PivTlsOutcome.FAILED -> R.string.tls_failed
-                    PivTlsOutcome.CANCELLED -> R.string.tls_cancelled
-                    PivTlsOutcome.TIMED_OUT -> R.string.tls_timeout
-                }))
-                if (result.authenticationMayHaveBeenSubmitted && result.outcome in setOf(PivTlsOutcome.CANCELLED, PivTlsOutcome.TIMED_OUT))
-                    Text(stringResource(R.string.tls_mayHaveSubmitted))
-                else if (result.authenticationMayHaveBeenSubmitted && result.outcome == PivTlsOutcome.FAILED)
-                    Text(stringResource(R.string.tls_unknown))
-            }
+
         }
     }
 }

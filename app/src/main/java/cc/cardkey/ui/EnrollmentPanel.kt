@@ -43,6 +43,25 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
             Text(stringResource(R.string.enrollment_title), style = MaterialTheme.typography.titleLarge)
             Text(stringResource(R.string.enrollment_purpose))
             Text("P-256 · 9A")
+            Text(stringResource(R.string.workspace_enrollmentFlow), style = MaterialTheme.typography.bodySmall)
+            val message = when (state.stage) {
+                EnrollmentStage.CSR -> R.string.enrollment_csrReady
+                EnrollmentStage.ISSUING -> R.string.enrollment_issuing
+                EnrollmentStage.VERIFIED -> R.string.enrollment_verified
+                EnrollmentStage.UNKNOWN -> R.string.enrollment_unknown
+                EnrollmentStage.REJECTED -> R.string.enrollment_rejected
+                EnrollmentStage.INVALID -> R.string.enrollment_invalid
+                EnrollmentStage.IMPORTED -> R.string.enrollment_imported
+                EnrollmentStage.EMPTY -> null
+            }
+            message?.let { Text(stringResource(R.string.enrollment_status), style = MaterialTheme.typography.titleMedium); Text(stringResource(it)) }
+            state.receipt?.takeIf { it.stage == EnrollmentStage.UNKNOWN && state.stage in setOf(EnrollmentStage.EMPTY, EnrollmentStage.CSR) }?.let { receipt ->
+                Text(stringResource(R.string.enrollment_unknown))
+                Text(stringResource(R.string.enrollment_cn), style = MaterialTheme.typography.labelMedium)
+                Text(receipt.csr.cn)
+                Text(stringResource(R.string.enrollment_address), style = MaterialTheme.typography.labelMedium)
+                Text(receipt.endpoint)
+            }
             OutlinedTextField(state.address, { onSettings(it, state.cn) }, enabled = !busy,
                 label = { Text(stringResource(R.string.enrollment_address)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(state.cn, { onSettings(state.address, it) }, enabled = !busy,
@@ -92,24 +111,6 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                 OutlinedButton(onClick = {
                     onExport(ManagerReport(emptyList(), bundle.pem().toByteArray(), "piv-9a-chain.pem"))
                 }, enabled = !busy) { Text("导出") }
-            }
-            val message = when (state.stage) {
-                EnrollmentStage.CSR -> R.string.enrollment_csrReady
-                EnrollmentStage.ISSUING -> R.string.enrollment_issuing
-                EnrollmentStage.VERIFIED -> R.string.enrollment_verified
-                EnrollmentStage.UNKNOWN -> R.string.enrollment_unknown
-                EnrollmentStage.REJECTED -> R.string.enrollment_rejected
-                EnrollmentStage.INVALID -> R.string.enrollment_invalid
-                EnrollmentStage.IMPORTED -> R.string.enrollment_imported
-                EnrollmentStage.EMPTY -> null
-            }
-            message?.let { Text(stringResource(R.string.enrollment_status), style = MaterialTheme.typography.titleMedium); Text(stringResource(it)) }
-            state.receipt?.takeIf { it.stage == EnrollmentStage.UNKNOWN && state.stage in setOf(EnrollmentStage.EMPTY, EnrollmentStage.CSR) }?.let { receipt ->
-                Text(stringResource(R.string.enrollment_unknown))
-                Text(stringResource(R.string.enrollment_cn), style = MaterialTheme.typography.labelMedium)
-                Text(receipt.csr.cn)
-                Text(stringResource(R.string.enrollment_address), style = MaterialTheme.typography.labelMedium)
-                Text(receipt.endpoint)
             }
             if (invalid) Text(stringResource(R.string.error_invalidInput), color = MaterialTheme.colorScheme.error)
             if (busy) OutlinedButton(onClick = onCancel) { Text("取消") }
