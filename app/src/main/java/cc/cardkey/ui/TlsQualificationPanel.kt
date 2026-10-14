@@ -96,14 +96,16 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
                 PlexoFactRow(stringResource(R.string.tls_serverRoot), it)
             }
             Text(stringResource(R.string.tls_serverRootHelp), style = MaterialTheme.typography.bodyMedium)
-            OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("tls-pin"))
-            Text("6–8 位数字", style = MaterialTheme.typography.bodyMedium)
-            Button(modifier = Modifier.heightIn(min = 48.dp).testTag("tls-start"), onClick = {
-                pending = TlsQualificationInput(state.revision, bundle, state.address, pin.toCharArray())
-                pin = ""
-            }, enabled = !busy && canUseCard && state.serverRootSubject != null && state.address.isNotBlank() &&
-                pin.length in 6..8 && pin.all { it in '0'..'9' }) { Text(stringResource(R.string.tls_start)) }
+            if (canUseCard) {
+                OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("tls-pin"))
+                Text("6–8 位数字", style = MaterialTheme.typography.bodyMedium)
+                Button(modifier = Modifier.heightIn(min = 48.dp).testTag("tls-start"), onClick = {
+                    pending = TlsQualificationInput(state.revision, bundle, state.address, pin.toCharArray())
+                    pin = ""
+                }, enabled = !busy && canUseCard && state.serverRootSubject != null && state.address.isNotBlank() &&
+                    pin.length in 6..8 && pin.all { it in '0'..'9' }) { Text(stringResource(R.string.tls_start)) }
+            }
             if (state.running) {
                 Text(stringResource(R.string.tls_running))
                 LinearProgressIndicator(Modifier.fillMaxWidth())

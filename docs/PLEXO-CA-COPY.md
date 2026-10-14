@@ -27,3 +27,18 @@ New resources are confined to `app/src/main/res/values/plexo_ca.xml`; the shell 
 | TLS / `plexo_tls_service` | Endpoint, server-root picker and PIN inline | 服务与认证 | Group actual service, native root selection and explicit authentication confirmation. |
 
 Retained text includes all existing status/unknown/rejected/invalid/imported messages, purpose choices, document scope and 9A replacement consequences, token-binding scope, PIN limits, management algorithms, TLS limits/root guidance/outcomes, and native confirmation/cancel wording. Material uncertainty remains outside technical disclosure. Busy controls, secret clearing, revision/CSR/bundle ownership and existing cancellation eligibility are unchanged. No sample identity, fixture value, design marker or invented completion percentage enters the application.
+
+## Card recognition prerequisite
+
+The existing `canUseCard` argument now includes the caller's current PIV recognition prerequisite as well as its existing transport and policy checks. The panels do not infer recognition from a reader descriptor, NFC availability or an earlier report. Existing input-clearing effects retire local secrets and pending confirmations when this argument changes; the caller also retires inputs when the recognition identity changes.
+
+No wording changes in this correction. Reviewed activation changes:
+
+| Screen / control | Before | After | Reason and activation |
+| --- | --- | --- | --- |
+| Enrollment / `enrollment-pin`, `enrollment-create-csr` | PIN and CSR action visible before recognition; action disabled by eligibility | Both hidden until `canUseCard` | Request a card secret only after the current PIV prerequisite is satisfied. Existing confirmation and submission guards remain. |
+| Enrollment / `enrollment-admin`, management algorithm, `enrollment-import` | Visible for a verified chain before recognition | Visible only for a verified chain with `canUseCard` | Keep management-key entry with its eligible card action. Verified-chain export remains available independently. |
+| Enrollment / `enrollment-token`, `enrollment-issue` | Visible with a captured CSR; disabled after an attempt | Visible with a captured CSR only before an attempt | CA-token entry follows the current unattempted CSR intent independently of PIN visibility. Existing issuance guards remain unchanged. |
+| TLS / `tls-pin`, `tls-start` | PIN and authentication action visible before recognition; action disabled by eligibility | Both hidden until `canUseCard` | Keep card authentication secrets behind the current PIV prerequisite. Service address, root selection, identity, results and running cancellation remain visible. |
+
+Public enrollment purpose, slot, algorithm, CA address, identity, root selection, captured results, exports and cancellation retain their existing availability. This correction adds no card probe, network call, authorization or automatic operation. It activates with the composed recognition prerequisite change; Issue 35 remains open for integrated and native acceptance.

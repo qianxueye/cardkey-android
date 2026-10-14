@@ -106,19 +106,21 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
             if (state.hasRoot) Text(stringResource(R.string.plexo_ca_rootReady))
             Text(stringResource(R.string.enrollment_steps), style = MaterialTheme.typography.bodyMedium)
         }
-        PlexoSection(stringResource(R.string.plexo_ca_csr), Modifier.testTag("enrollment-csr")) {
-            OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-pin"))
-            Text("6–8 位数字", style = MaterialTheme.typography.bodyMedium)
-            Button(onClick = {
-                val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = pin.toCharArray(), text = state.cn,
-                    enrollmentSelection = state.selection, enrollmentRevision = state.revision)
-                pin = ""; token = ""; admin = ""
-                pending = PendingOperation(input)
-            }, enabled = !busy && canUseCard && state.hasRoot && state.cn.isNotBlank() && state.address.isNotBlank(),
-                modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-create-csr")) {
-                Text(stringResource(R.string.enrollment_createCsr))
+        if (canUseCard) {
+            PlexoSection(stringResource(R.string.plexo_ca_csr), Modifier.testTag("enrollment-csr")) {
+                OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-pin"))
+                Text("6–8 位数字", style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = {
+                    val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = pin.toCharArray(), text = state.cn,
+                        enrollmentSelection = state.selection, enrollmentRevision = state.revision)
+                    pin = ""; token = ""; admin = ""
+                    pending = PendingOperation(input)
+                }, enabled = !busy && canUseCard && state.hasRoot && state.cn.isNotBlank() && state.address.isNotBlank(),
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-create-csr")) {
+                    Text(stringResource(R.string.enrollment_createCsr))
+                }
             }
         }
         state.csr?.let { csr ->
@@ -128,17 +130,19 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                     Text(stringResource(R.string.enrollment_exportCsr))
                 }
                 Text(stringResource(R.string.enrollment_scope), style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(token, { token = it }, enabled = !busy && !state.attempted,
-                    label = { Text(stringResource(R.string.enrollment_token)) }, visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-token"))
-                Button(onClick = { val secret = token.toCharArray(); token = ""; pin = ""; admin = ""; onIssue(secret, state.revision) },
-                    enabled = !busy && canUseCard && !state.attempted && token.isNotBlank(),
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-issue")) { Text(stringResource(R.string.enrollment_issue)) }
+                if (!state.attempted) {
+                    OutlinedTextField(token, { token = it }, enabled = !busy && !state.attempted,
+                        label = { Text(stringResource(R.string.enrollment_token)) }, visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-token"))
+                    Button(onClick = { val secret = token.toCharArray(); token = ""; pin = ""; admin = ""; onIssue(secret, state.revision) },
+                        enabled = !busy && canUseCard && !state.attempted && token.isNotBlank(),
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-issue")) { Text(stringResource(R.string.enrollment_issue)) }
+                }
             }
         }
         if (state.stage == EnrollmentStage.VERIFIED || state.bundle != null) {
             PlexoSection(stringResource(R.string.plexo_ca_importExport), Modifier.testTag("enrollment-import-export")) {
-                if (state.stage == EnrollmentStage.VERIFIED) {
+                if (state.stage == EnrollmentStage.VERIFIED && canUseCard) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         ManagementAlgorithm.entries.forEach { value ->
                             FilterChip(selected = value == algorithm, onClick = { algorithm = value }, enabled = !busy,
