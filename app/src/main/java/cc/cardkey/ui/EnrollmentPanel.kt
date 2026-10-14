@@ -49,7 +49,6 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                 label = { Text(stringResource(R.string.enrollment_cn)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedButton(onClick = onRoot, enabled = !busy) { Text(stringResource(R.string.enrollment_chooseRoot)) }
             if (state.hasRoot) Text(stringResource(R.string.enrollment_root))
-            Text(stringResource(R.string.enrollment_rootHelp), style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.enrollment_steps), style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
                 visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
