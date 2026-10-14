@@ -79,7 +79,7 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
             Text(expiry)
             OutlinedTextField(state.address, onSettings, enabled = !busy,
                 label = { Text(stringResource(R.string.tls_endpoint)) }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)).testTag("tls-endpoint"))
+                modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("tls-endpoint"))
             Text(stringResource(R.string.tls_endpointHelp), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { pin = ""; pending?.close(); pending = null; onRoot() }, enabled = !busy, modifier = Modifier.testTag("tls-root")) {
                 Text(stringResource(R.string.tls_chooseServerRoot))
@@ -90,7 +90,7 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
             }
             Text(stringResource(R.string.tls_serverRootHelp), style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)).testTag("tls-pin"))
+                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("tls-pin"))
             Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
             Button(modifier = Modifier.testTag("tls-start"), onClick = {
                 pending = TlsQualificationInput(state.revision, bundle, state.address, pin.toCharArray())

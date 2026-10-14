@@ -464,16 +464,16 @@ fun ManagerScreen(
                                         ManagerOperation.PIV_CSR -> "Subject · CN=${stringResource(R.string.app_name)}"
                                         else -> "凭据 ID · HEX"
                                     }
-                                    OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
+                                    OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
                                 }
                                 if (op == ManagerOperation.FIDO_MIN_PIN) {
                                     OutlinedTextField(disclosureRps, { disclosureRps = it }, label = { Text(stringResource(R.string.minPin_rps)) },
-                                        enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
+                                        enabled = !state.busy, modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
                                     Text(stringResource(R.string.minPin_rpsHelp))
                                 }
                                 if (op == ManagerOperation.FIDO_UPDATE) {
                                     Text(stringResource(R.string.user_updateHelp))
-                                    OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
+                                    OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
                                 }
                                 if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -555,7 +555,7 @@ fun ManagerScreen(
 @Composable
 private fun SecretField(label: String, value: String, enabled: Boolean, viewportHeight: Dp, onChange: (String) -> Unit) {
     OutlinedTextField(value, onChange, label = { Text(label) }, enabled = enabled, singleLine = true,
-        visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
+        visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -8,7 +8,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.Dp
 
 @Composable
-internal fun workspaceInputModifier(viewportHeight: Dp): Modifier {
+internal fun Modifier.workspaceInput(viewportHeight: Dp): Modifier {
     val requester = remember { BringIntoViewRequester() }
     var focused by remember { mutableStateOf(false) }
     LaunchedEffect(viewportHeight, focused) {
@@ -17,5 +17,5 @@ internal fun workspaceInputModifier(viewportHeight: Dp): Modifier {
             requester.bringIntoView()
         }
     }
-    return Modifier.bringIntoViewRequester(requester).onFocusChanged { focused = it.isFocused }
+    return bringIntoViewRequester(requester).onFocusChanged { focused = it.isFocused }
 }
