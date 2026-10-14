@@ -191,7 +191,7 @@ fun ManagerScreen(
         })
     }
     val navigationBar: @Composable () -> Unit = {
-        NavigationBar {
+        NavigationBar(Modifier.testTag("workspace-navigation")) {
             listOf("FIDO2", "PIV", "读卡器", "证书申请").forEachIndexed { index, title ->
                 NavigationBarItem(selected = tab == index, enabled = !state.busy && (index !in listOf(1, 3) || state.supportsPiv), onClick = {
                     if (!state.busy && (index !in listOf(1, 3) || state.supportsPiv)) {
@@ -283,8 +283,7 @@ fun ManagerScreen(
         Scaffold(
             topBar = { if (!compact) topBar() },
             bottomBar = {
-                Column(modifier = if (compact) Modifier.navigationBarsPadding() else Modifier,
-                    horizontalAlignment = Alignment.CenterHorizontally) {
+                val actionControls: @Composable () -> Unit = {
                     if (tab < 2 && detailVisible) {
                         val op = operation
                         Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -314,7 +313,7 @@ fun ManagerScreen(
                                     if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                     else confirmation = PendingOperation(input)
                                 } catch (_: IllegalArgumentException) { invalid = true; validationFailures++ }
-                            }, modifier = Modifier.weight(1f).testTag("manager-run"), enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
+                            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("manager-run"), enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
                                 (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
@@ -323,7 +322,18 @@ fun ManagerScreen(
                         }
                     }
                     if (tab == 3 && state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
-                    navigationBar()
+                }
+                Column(modifier = if (compact) Modifier.navigationBarsPadding() else Modifier,
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (compact && maxWidth >= 600.dp && tab < 2 && detailVisible) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) { actionControls() }
+                            Box(Modifier.width(360.dp)) { navigationBar() }
+                        }
+                    } else {
+                        actionControls()
+                        navigationBar()
+                    }
                 }
             },
         ) { padding ->

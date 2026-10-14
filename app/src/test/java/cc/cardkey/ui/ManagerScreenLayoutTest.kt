@@ -109,9 +109,11 @@ class ManagerScreenLayoutTest {
             for (label in listOf("读取", "取消")) {
                 val action = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
                 assertTrue("$label overlaps system area: $action, safe bottom $safeBottom", action.bottom <= safeBottom)
-                assertTrue("$label reserves duplicate IME/navigation space: $action, safe bottom $safeBottom",
-                    safeBottom - action.bottom <= 16f)
             }
+            val destination = compose.onNode(hasText("FIDO2") and hasClickAction()).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("Destination overlaps system area: $destination, safe bottom $safeBottom", destination.bottom <= safeBottom)
+            assertTrue("Dock reserves duplicate IME/navigation space: $destination, safe bottom $safeBottom",
+                safeBottom - destination.bottom <= 16f)
             assertInputSpace()
         }
     }
