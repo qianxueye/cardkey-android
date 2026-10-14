@@ -567,7 +567,15 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
         retireInventoryExport()
         if (input.operation == ManagerOperation.PIV_SSH_EXPORT || mutable.value.operation == ManagerOperation.PIV_SSH_EXPORT) signingFiles.retire()
-        signingFiles.retireSelection()
+        val signingState = signingFiles.state.value
+        val preserveSigningFile = input.operation == ManagerOperation.PIV_INFO && signingAction?.isFileSigning == true &&
+            input.pin.isEmpty() && input.newPin.isEmpty() && input.adminKey.isEmpty() && input.newAdminKey.isEmpty() &&
+            signingState.active && signingState.operation == signingAction && input.slot == signingState.slot &&
+            signingState.selection != null && !signingFiles.hasSaveOwner && !mutable.value.requiresInspection &&
+            !mutable.value.nfc && mutable.value.selectedReader?.let {
+                it.wire == CardWire.APDU && UsbAuthenticatorReader.isCurrent(usb, it) && usb.hasPermission(it.device)
+            } == true
+        if (!preserveSigningFile) signingFiles.retireSelection()
         cancelled = false
         operationRoute = mutable.value.selectedReader?.routeKey ?: "nfc"
         operationWire = mutable.value.selectedReader?.wire ?: CardWire.APDU

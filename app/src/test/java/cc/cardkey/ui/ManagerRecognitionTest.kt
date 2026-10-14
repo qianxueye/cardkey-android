@@ -3,16 +3,22 @@ package cc.cardkey.ui
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.nfc.NfcAdapter
+import android.net.Uri
+import androidx.lifecycle.viewModelScope
 import android.nfc.Tag
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.protocol.piv.PivTlv
+import cc.cardkey.signing.SignatureFormat
 import cc.cardkey.transport.UsbAuthenticatorReader
 import cc.cardkey.transport.UsbReaderDescriptor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -27,7 +33,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowNfcAdapter
 import org.robolectric.util.ReflectionHelpers
+import java.io.ByteArrayInputStream
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -358,6 +366,116 @@ class ManagerRecognitionTest {
         assertEquals(lastRead.route, model.state.value.recognition?.route)
         assertEquals(CardFamily.PIV, model.state.value.recognition?.family)
         assertFalse(model.state.value.canEnterFidoSecrets)
+    }
+
+    private fun preparedSigningFile(model: ManagerViewModel, operation: ManagerOperation, slot: Int): ByteArray {
+        model.fileSigningAction(operation, slot)
+        assertTrue(model.requestSigningFile())
+        val request = requireNotNull(model.signingFileRequestId)
+        model.pauseForActivity(changingConfigurations = false)
+        assertNull(model.state.value.recognition)
+        val bytes = byteArrayOf(1, 3, 5, 7)
+        val uri = Uri.parse("content://recognition/signing-input.raw")
+        shadowOf(app.contentResolver).registerInputStream(uri, ByteArrayInputStream(bytes))
+        model.receiveSigningFile(request, uri)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (model.signingFiles.state.value.selection == null && System.nanoTime() < deadline) Thread.sleep(5)
+        assertNotNull(model.signingFiles.state.value.selection)
+        return bytes
+    }
+
+    @Test fun explicitPivProbePreservesPickerFileForSubsequentRawAndCmsSigning() {
+        for (operation in listOf(ManagerOperation.PIV_SIGN, ManagerOperation.PIV_CMS_SIGN)) {
+            val model = ManagerViewModel(app)
+            model.selectReader(reader(wire = CardWire.APDU))
+            start(model, ManagerOperation.PIV_INFO) { PivInfoChannel() }
+            awaitResult(model)
+            val bytes = preparedSigningFile(model, operation, 0x9c)
+            val selection = requireNotNull(model.signingFiles.state.value.selection)
+            val scheduler = TestCoroutineScheduler()
+            Dispatchers.setMain(StandardTestDispatcher(scheduler))
+            val probe = OperationInput(ManagerOperation.PIV_INFO, slot = 0x9c,
+                inventoryGeneration = model.inventory.state.value.generation)
+            val existingJobs = model.viewModelScope.coroutineContext[Job]!!.children.toSet()
+            model.submit(probe)
+            assertSame(selection, model.signingFiles.state.value.selection)
+            assertEquals(operation, model.signingFiles.state.value.operation)
+            assertEquals(0x9c, model.signingFiles.state.value.slot)
+            assertNull(model.state.value.recognition)
+            assertNull(model.state.value.result)
+
+            // Substitute the transport only after exercising the public submission and its ownership rules.
+            model.viewModelScope.coroutineContext[Job]!!.children.single { it !in existingJobs }.cancel()
+            scheduler.runCurrent()
+            Dispatchers.setMain(UnconfinedTestDispatcher())
+            val publicChannel = PivInfoChannel()
+            val run = ManagerViewModel::class.java.getDeclaredMethod("run", OperationInput::class.java, Function0::class.java)
+            run.isAccessible = true
+            run.invoke(model, probe, { publicChannel })
+            awaitResult(model)
+            assertTrue(model.state.value.canEnterPivSecrets)
+            assertSame(selection, model.signingFiles.state.value.selection)
+            assertEquals(ManagerOperation.PIV_INFO, model.state.value.operation)
+            assertEquals(listOf(0xa4, 0xfd, 0xf8, 0xf7, 0xf7, 0xf7), publicChannel.commands)
+            assertNull((model.state.value.result as OperationResult.Completed).value.signatureFormat)
+
+            Dispatchers.setMain(StandardTestDispatcher(scheduler))
+            val format = if (operation == ManagerOperation.PIV_CMS_SIGN) SignatureFormat.CMS else SignatureFormat.RAW
+            val signing = OperationInput(operation, pin = "123456".toCharArray(), slot = 0x9c,
+                signingFileGeneration = selection.generation, signatureFormat = format)
+            model.submit(signing)
+            val holder = ReflectionHelpers.getField<AtomicReference<OperationInput?>>(model, "signingInput")
+            val owned = requireNotNull(holder.get())
+            assertArrayEquals(bytes, owned.bytes)
+            assertEquals(0x9c, owned.slot)
+            assertEquals(operation, owned.operation)
+            assertEquals(format, owned.signatureFormat)
+            assertArrayEquals(CharArray(6), signing.pin)
+            assertNull(model.signingFiles.state.value.selection)
+            model.cancel()
+            assertArrayEquals(ByteArray(bytes.size), owned.bytes)
+            assertArrayEquals(CharArray(6), owned.pin)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (model.state.value.busy && System.nanoTime() < deadline) {
+                scheduler.runCurrent()
+                Thread.sleep(5)
+            }
+            assertFalse(model.state.value.busy)
+            assertEquals(FailureCode.CANCELLED, (model.state.value.result as OperationResult.Failed).code)
+            Dispatchers.setMain(UnconfinedTestDispatcher())
+        }
+    }
+
+    @Test fun filePreservationDoesNotApplyToOtherCommandsSlotsOrRetiredPermission() {
+        for (case in listOf("command", "slot", "permission", "uncertainty", "save", "secret")) {
+            val model = ManagerViewModel(app)
+            val selected = reader(wire = CardWire.APDU)
+            model.selectReader(selected)
+            preparedSigningFile(model, ManagerOperation.PIV_SIGN, 0x9c)
+            when (case) {
+                "permission" -> shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(selected.device, false)
+                "uncertainty" -> {
+                    val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+                    state.value = state.value.copy(requiresInspection = true)
+                }
+                "save" -> assertTrue(model.signingFiles.requestSave(ManagerReport(emptyList(), export = byteArrayOf(9),
+                    fileName = SignatureFormat.RAW.fileName, signatureFormat = SignatureFormat.RAW), ManagerOperation.PIV_SIGN))
+            }
+            val scheduler = TestCoroutineScheduler()
+            Dispatchers.setMain(StandardTestDispatcher(scheduler))
+            model.submit(OperationInput(if (case == "command") ManagerOperation.FIDO_INFO else ManagerOperation.PIV_INFO,
+                slot = if (case == "slot") 0x9a else 0x9c,
+                pin = if (case == "secret") "123456".toCharArray() else charArrayOf()))
+            assertNull("File survived $case", model.signingFiles.state.value.selection)
+            model.cancel()
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (model.state.value.busy && System.nanoTime() < deadline) {
+                scheduler.runCurrent()
+                Thread.sleep(5)
+            }
+            assertFalse(model.state.value.busy)
+            Dispatchers.setMain(UnconfinedTestDispatcher())
+        }
     }
 
     @Test fun observationForAnotherRouteOrPendingPermissionCannotEnableSecretEntry() {
