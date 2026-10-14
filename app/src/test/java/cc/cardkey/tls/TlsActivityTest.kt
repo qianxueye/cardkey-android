@@ -31,6 +31,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
+@ConscryptMode(ConscryptMode.Mode.OFF)
 @Config(sdk = [34], shadows = [TlsDnsShadow::class], qualifiers = "w400dp-h800dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -79,7 +80,7 @@ class TlsActivityTest {
             val original = controller.get()
             val model = seed(original, f)
             compose.waitForIdle()
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithText("证书申请").performClick()
             compose.onNodeWithTag("tls-pin").performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("tls-root").performScrollTo().performClick()
             val launch = shadowOf(original).nextStartedActivityForResult
@@ -93,7 +94,7 @@ class TlsActivityTest {
             waitFor { model.tls.value.serverRootSubject != null }
             assertEquals(EnrollmentStage.IMPORTED, model.enrollment.state.value.stage)
             assertSame(f.bundle, model.enrollment.state.value.bundle)
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithText("证书申请").performClick()
             compose.onNodeWithTag("tls-pin").performScrollTo().assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.EditableText, androidx.compose.ui.text.AnnotatedString("")))
         } finally { controller.pause().stop().destroy() }
     }
@@ -105,7 +106,7 @@ class TlsActivityTest {
         try {
             val activity = controller.get()
             val model = seed(activity, f)
-            compose.waitForIdle(); compose.onNodeWithText("PIV").performClick()
+            compose.waitForIdle(); compose.onNodeWithText("证书申请").performClick()
             compose.onNodeWithTag("tls-root").performScrollTo().performClick()
             val launch = shadowOf(activity).nextStartedActivityForResult
             val entered = CountDownLatch(1)
@@ -152,7 +153,10 @@ class TlsActivityTest {
                 }
                 val method = ManagerViewModel::class.java.getDeclaredMethod("startTls", CharArray::class.java, Function0::class.java).apply { isAccessible = true }
                 method.invoke(model, "123456".toCharArray(), { channel })
-                waitFor { entered.count == 0L }
+                try { waitFor { entered.count == 0L } }
+                catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
+                    throw AssertionError("TLS before VERIFY: ${model.tls.value.result}; server: ${server.failure?.stackTraceToString()}", error)
+                }
                 controller.pause()
                 assertTrue(model.state.value.busy)
                 assertTrue(cancels > 0)

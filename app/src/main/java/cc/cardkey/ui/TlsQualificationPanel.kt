@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -20,7 +21,7 @@ import java.text.DateFormat
 @Composable
 fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentState, busy: Boolean,
                           canUseCard: Boolean, clearInputs: Int, onSettings: (String) -> Unit,
-                          onRoot: () -> Unit, onSubmit: (TlsQualificationInput) -> Unit, onCancel: () -> Unit) {
+                          onRoot: () -> Unit, onSubmit: (TlsQualificationInput) -> Unit, onCancel: () -> Unit, viewportHeight: Dp) {
     var pin by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<TlsQualificationInput?>(null) }
     val bundle = requireNotNull(enrollment.bundle)
@@ -59,35 +60,6 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.tls_title), style = MaterialTheme.typography.titleLarge)
             Text(stringResource(R.string.tls_scope))
-            Text(stringResource(R.string.tls_identity), style = MaterialTheme.typography.labelMedium)
-            Text(enrollment.cn)
-            Text("P-256 · 9A")
-            Text(stringResource(R.string.tls_validUntil), style = MaterialTheme.typography.labelMedium)
-            Text(expiry)
-            OutlinedTextField(state.address, onSettings, enabled = !busy,
-                label = { Text(stringResource(R.string.tls_endpoint)) }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("tls-endpoint"))
-            Text(stringResource(R.string.tls_endpointHelp), style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = { pin = ""; pending?.close(); pending = null; onRoot() }, enabled = !busy, modifier = Modifier.testTag("tls-root")) {
-                Text(stringResource(R.string.tls_chooseServerRoot))
-            }
-            state.serverRootSubject?.let {
-                Text(stringResource(R.string.tls_serverRootReady))
-                Text(it)
-            }
-            Text(stringResource(R.string.tls_serverRootHelp), style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().testTag("tls-pin"))
-            Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
-            Button(modifier = Modifier.testTag("tls-start"), onClick = {
-                pending = TlsQualificationInput(state.revision, bundle, state.address, pin.toCharArray())
-                pin = ""
-            }, enabled = !busy && canUseCard && state.serverRootSubject != null && state.address.isNotBlank() &&
-                pin.length in 6..8 && pin.all { it in '0'..'9' }) { Text(stringResource(R.string.tls_start)) }
-            if (state.running) {
-                Text(stringResource(R.string.tls_running))
-                OutlinedButton(modifier = Modifier.testTag("tls-cancel"), onClick = { pin = ""; pending?.close(); pending = null; onCancel() }) { Text("取消") }
-            }
             state.result?.let { result ->
                 Text(stringResource(when (result.outcome) {
                     PivTlsOutcome.QUALIFIED -> R.string.tls_success
@@ -100,6 +72,36 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
                 else if (result.authenticationMayHaveBeenSubmitted && result.outcome == PivTlsOutcome.FAILED)
                     Text(stringResource(R.string.tls_unknown))
             }
+            Text(stringResource(R.string.tls_identity), style = MaterialTheme.typography.labelMedium)
+            Text(enrollment.cn)
+            Text("P-256 · 9A")
+            Text(stringResource(R.string.tls_validUntil), style = MaterialTheme.typography.labelMedium)
+            Text(expiry)
+            OutlinedTextField(state.address, onSettings, enabled = !busy,
+                label = { Text(stringResource(R.string.tls_endpoint)) }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("tls-endpoint"))
+            Text(stringResource(R.string.tls_endpointHelp), style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = { pin = ""; pending?.close(); pending = null; onRoot() }, enabled = !busy, modifier = Modifier.testTag("tls-root")) {
+                Text(stringResource(R.string.tls_chooseServerRoot))
+            }
+            state.serverRootSubject?.let {
+                Text(stringResource(R.string.tls_serverRootReady))
+                Text(it)
+            }
+            Text(stringResource(R.string.tls_serverRootHelp), style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("tls-pin"))
+            Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
+            Button(modifier = Modifier.testTag("tls-start"), onClick = {
+                pending = TlsQualificationInput(state.revision, bundle, state.address, pin.toCharArray())
+                pin = ""
+            }, enabled = !busy && canUseCard && state.serverRootSubject != null && state.address.isNotBlank() &&
+                pin.length in 6..8 && pin.all { it in '0'..'9' }) { Text(stringResource(R.string.tls_start)) }
+            if (state.running) {
+                Text(stringResource(R.string.tls_running))
+                OutlinedButton(modifier = Modifier.testTag("tls-cancel"), onClick = { pin = ""; pending?.close(); pending = null; onCancel() }) { Text("取消") }
+            }
+
         }
     }
 }

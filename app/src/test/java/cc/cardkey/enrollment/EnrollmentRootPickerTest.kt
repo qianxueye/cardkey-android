@@ -38,7 +38,7 @@ class EnrollmentRootPickerTest {
             val model = ViewModelProvider(original)[ManagerViewModel::class.java]
             model.enrollmentSettings("https://localhost", fixture.csr.cn)
             compose.waitForIdle()
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithText("证书申请").performClick()
             compose.onNodeWithText("选择 CA 根证书").performScrollTo().performClick()
             val launch = shadowOf(original).nextStartedActivityForResult
             assertEquals(Intent.ACTION_OPEN_DOCUMENT, launch.intent.action)
@@ -65,7 +65,7 @@ class EnrollmentRootPickerTest {
             val model = ViewModelProvider(original)[ManagerViewModel::class.java]
             model.enrollmentSettings("https://localhost", fixture.csr.cn)
             compose.waitForIdle()
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithText("证书申请").performClick()
             compose.onNodeWithText("选择 CA 根证书").performScrollTo().performClick()
             val launch = shadowOf(original).nextStartedActivityForResult
             controller.recreate()
