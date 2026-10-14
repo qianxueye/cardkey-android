@@ -122,8 +122,13 @@ class FidoInventory {
         if (blob && key == null) throw CardFailure(FailureCode.INVALID_INPUT)
         val transferred = if (blob) key.also { key = null } else null
         clearKey()
+        val preserveBlobFile = input.operation == ManagerOperation.FIDO_INFO && before.action == ManagerOperation.FIDO_BLOB_WRITE &&
+            before.credential != null && input.inventorySelection == before.credential &&
+            input.inventoryGeneration == before.generation && file != null && fileRequest == null &&
+            input.pin.isEmpty() && input.newPin.isEmpty() && input.adminKey.isEmpty() && input.newAdminKey.isEmpty() &&
+            input.bytes.isEmpty() && input.makeExtensions.credentialBlob == null && input.assertionExtensions.hmacSalts == null
         fileRequest = null
-        if (input.operation !in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_WRITE)) clearFile()
+        if (!preserveBlobFile && input.operation !in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_WRITE)) clearFile()
         val generation = before.generation + 1
         mutable.value = mutable.value.copy(generation = generation, blobReady = false)
         return InventoryRequest(this, generation, before.rp, before.credential.takeIf { selected },

@@ -554,6 +554,14 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             input.close(); return
         }
         if (input.operation.recognitionFamily != null) retireRecognition()
+        val inventoryState = inventory.state.value
+        if (input.operation == ManagerOperation.FIDO_INFO && inventoryState.fileSize != null &&
+            (input.inventoryGeneration == null || input.inventoryGeneration == inventoryState.generation) &&
+            (mutable.value.requiresInspection || mutable.value.permissionPending || signingFiles.hasSaveOwner ||
+                inventoryExport != null || inventoryExportWrite.get() != null ||
+                !mutable.value.nfc && mutable.value.selectedReader?.let {
+                    UsbAuthenticatorReader.isCurrent(usb, it) && usb.hasPermission(it.device)
+                } != true)) inventory.takeFile().fill(0)
         try {
             input.inventoryRequest = inventory.begin(input)
             if (input.operation == ManagerOperation.FIDO_BLOB_WRITE && input.inventoryRequest?.credential != null && !input.deleteBlob) {
