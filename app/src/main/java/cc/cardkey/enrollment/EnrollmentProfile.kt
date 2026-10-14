@@ -1,5 +1,11 @@
 package cc.cardkey.enrollment
 
+import cc.cardkey.protocol.piv.KeyAlgorithm
+import cc.cardkey.protocol.piv.PivClient
+import org.bouncycastle.asn1.DERNull
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers
+import org.bouncycastle.asn1.pkcs.RSAPublicKey
+import org.bouncycastle.asn1.sec.SECObjectIdentifiers
 import org.bouncycastle.asn1.ASN1Primitive
 import org.bouncycastle.asn1.ASN1String
 import org.bouncycastle.asn1.pkcs.CertificationRequest
@@ -19,7 +25,20 @@ import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 import java.util.Date
 
-class EnrollmentCsr(der: ByteArray, val cn: String) {
+enum class EnrollmentPurpose(val eku: String) {
+    TLS("1.3.6.1.5.5.7.3.2"), DOCUMENT("1.3.6.1.5.5.7.3.36")
+}
+
+data class EnrollmentSelection(val purpose: EnrollmentPurpose = EnrollmentPurpose.TLS,
+                               val slot: Int = if (purpose == EnrollmentPurpose.DOCUMENT) 0x9c else 0x9a,
+                               val algorithm: KeyAlgorithm = KeyAlgorithm.P256) {
+    init {
+        require(slot in PivClient.slots)
+        require(purpose != EnrollmentPurpose.TLS || slot == 0x9a && algorithm == KeyAlgorithm.P256)
+    }
+}
+
+class EnrollmentCsr(der: ByteArray, val cn: String, val selection: EnrollmentSelection = EnrollmentSelection()) {
     private val encoded = der.copyOf()
     private val publicKey: ByteArray
     val der get() = encoded.copyOf()
@@ -34,10 +53,17 @@ class EnrollmentCsr(der: ByteArray, val cn: String) {
         require(request.attributes.isEmpty())
         EnrollmentProfile.subject(request.subject, cn)
         publicKey = request.subjectPublicKeyInfo.encoded
-        EnrollmentProfile.p256(request.subjectPublicKeyInfo)
-        require(request.signatureAlgorithm.algorithm.id == "1.2.840.10045.4.3.2" && request.signatureAlgorithm.parameters == null)
+        EnrollmentProfile.publicKey(request.subjectPublicKeyInfo, selection.algorithm)
+        val signatureOid = when (selection.algorithm) {
+            KeyAlgorithm.P256 -> "1.2.840.10045.4.3.2"
+            KeyAlgorithm.P384 -> "1.2.840.10045.4.3.3"
+            KeyAlgorithm.RSA2048 -> "1.2.840.113549.1.1.11"
+        }
+        require(request.signatureAlgorithm.algorithm.id == signatureOid)
+        require(if (selection.algorithm == KeyAlgorithm.RSA2048) request.signatureAlgorithm.parameters == DERNull.INSTANCE
+                else request.signatureAlgorithm.parameters == null)
         require(request.isSignatureValid(JcaContentVerifierProviderBuilder().build(
-            KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(publicKey)))))
+            KeyFactory.getInstance(if (selection.algorithm == KeyAlgorithm.RSA2048) "RSA" else "EC").generatePublic(X509EncodedKeySpec(publicKey)))))
     }
     fun pem() = EnrollmentProfile.pem(encoded, "CERTIFICATE REQUEST")
 }
@@ -60,10 +86,18 @@ object EnrollmentProfile {
         val attribute = name.rdNs.single().first
         require(attribute.type == BCStyle.CN && (attribute.value as? ASN1String)?.string == cn)
     }
-    fun p256(spki: SubjectPublicKeyInfo) {
-        require(spki.algorithm.algorithm == X9ObjectIdentifiers.id_ecPublicKey &&
-            spki.algorithm.parameters == X9ObjectIdentifiers.prime256v1)
-        require(spki.publicKeyData.padBits == 0 && spki.publicKeyData.bytes.size == 65 && spki.publicKeyData.bytes[0] == 4.toByte())
+    fun publicKey(spki: SubjectPublicKeyInfo, algorithm: KeyAlgorithm) {
+        require(spki.publicKeyData.padBits == 0)
+        if (algorithm == KeyAlgorithm.RSA2048) {
+            require(spki.algorithm.algorithm == PKCSObjectIdentifiers.rsaEncryption && spki.algorithm.parameters == DERNull.INSTANCE)
+            val key = RSAPublicKey.getInstance(spki.parsePublicKey())
+            require(key.modulus.signum() > 0 && key.modulus.bitLength() == 2048 && key.publicExponent == java.math.BigInteger.valueOf(65537))
+        } else {
+            val curve = if (algorithm == KeyAlgorithm.P256) X9ObjectIdentifiers.prime256v1 else SECObjectIdentifiers.secp384r1
+            val size = if (algorithm == KeyAlgorithm.P256) 65 else 97
+            require(spki.algorithm.algorithm == X9ObjectIdentifiers.id_ecPublicKey && spki.algorithm.parameters == curve)
+            require(spki.publicKeyData.bytes.size == size && spki.publicKeyData.bytes[0] == 4.toByte())
+        }
     }
     fun pem(der: ByteArray, label: String = "CERTIFICATE") =
         "-----BEGIN $label-----\n" + Base64.getMimeEncoder(64, byteArrayOf(10)).encodeToString(der) + "\n-----END $label-----\n"
@@ -122,12 +156,12 @@ object EnrollmentProfile {
         require(tbs.versionNumber == 3 && tbs.issuerUniqueId == null && tbs.subjectUniqueId == null)
         require(tbs.signature == holder.signatureAlgorithm)
         subject(holder.subject, csr.cn)
-        p256(holder.subjectPublicKeyInfo)
+        publicKey(holder.subjectPublicKeyInfo, csr.selection.algorithm)
         require(leaf.publicKey.encoded.contentEquals(csr.spki))
         require(holder.getExtension(Extension.subjectAlternativeName) == null)
         val extensions = requireNotNull(holder.extensions)
         require(KeyUsage.fromExtensions(extensions).encoded.contentEquals(KeyUsage(KeyUsage.digitalSignature).encoded))
-        require(ExtendedKeyUsage.fromExtensions(extensions).encoded.contentEquals(ExtendedKeyUsage(KeyPurposeId.id_kp_clientAuth).encoded))
+        require(ExtendedKeyUsage.fromExtensions(extensions).encoded.contentEquals(ExtendedKeyUsage(KeyPurposeId.getInstance(org.bouncycastle.asn1.ASN1ObjectIdentifier(csr.selection.purpose.eku))).encoded))
         require(BasicConstraints.fromExtensions(extensions).encoded.contentEquals(BasicConstraints(false).encoded))
         require(leaf.notBefore.time >= issuedAt - 300000 && leaf.notBefore.time <= issuedAt &&
             leaf.notAfter.time <= issuedAt + 86400000 && leaf.notAfter.after(leaf.notBefore))

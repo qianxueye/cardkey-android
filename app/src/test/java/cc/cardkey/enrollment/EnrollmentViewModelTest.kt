@@ -20,6 +20,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.Config
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.util.ReflectionHelpers
@@ -27,6 +28,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
+// The desktop SunJSSE fixture requires the host EC parameter implementation.
+@ConscryptMode(ConscryptMode.Mode.OFF)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
 class EnrollmentViewModelTest {
@@ -55,6 +58,66 @@ class EnrollmentViewModelTest {
         while (model.state.value.busy && System.nanoTime() < deadline) Thread.sleep(5)
         assertFalse(model.state.value.busy)
     }
+    @Test fun documentSelectorAbaRejectsPendingConfirmationAndClearsItsSecrets() {
+        val fixture = EnrollmentFixtures()
+        val model = model(fixture)
+        val selection = EnrollmentSelection(EnrollmentPurpose.DOCUMENT, 0x9c)
+        model.enrollmentSelection(selection)
+        val pending = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "123456".toCharArray(),
+            text = fixture.csr.cn, enrollmentSelection = selection, enrollmentRevision = model.enrollment.state.value.revision)
+        model.enrollmentSelection(selection.copy(slot = 0x9a))
+        model.enrollmentSelection(selection)
+        model.submitEnrollment(pending)
+        assertTrue(pending.pin.all { it == '\u0000' })
+        assertFalse(model.state.value.busy)
+        assertEquals(FailureCode.INVALID_INPUT, (model.state.value.result as OperationResult.Failed).code)
+        assertNull(model.enrollment.state.value.csr)
+    }
+    @Test fun issuanceAndExportCallbacksCannotReturnAfterSelectionAba() {
+        val fixture = EnrollmentFixtures()
+        val model = model(fixture)
+        val selected = EnrollmentSelection(EnrollmentPurpose.DOCUMENT)
+        model.enrollmentSelection(selected)
+        val csr = fixture.csr(selection = selected)
+        model.enrollment.settleCsr(model.enrollment.startCsr(), csr)
+        val revision = model.enrollment.state.value.revision
+        val report = ManagerReport(emptyList(), csr.pem().toByteArray(), "piv-9c.csr", enrollmentCsr = csr)
+        model.cancel()
+        assertTrue(model.currentEnrollmentExport(report))
+        model.enrollmentSelection(EnrollmentSelection())
+        model.enrollmentSelection(selected)
+        val replacement = fixture.csr(selection = selected)
+        model.enrollment.settleCsr(model.enrollment.startCsr(), replacement)
+        assertFalse(model.currentEnrollmentExport(report))
+        val token = fixture.token(replacement).toCharArray()
+        model.issueEnrollment(token, revision)
+        assertTrue(token.all { it == '\u0000' })
+        assertFalse(model.enrollment.state.value.attempted)
+        assertEquals(EnrollmentStage.CSR, model.enrollment.state.value.stage)
+        assertFalse(model.state.value.busy)
+    }
+    @Test fun documentImportCannotOpenTlsRootPickerOrActualTlsConnection() {
+        val fixture = EnrollmentFixtures()
+        val model = model(fixture)
+        val selection = EnrollmentSelection(EnrollmentPurpose.DOCUMENT, 0x9a)
+        model.enrollmentSelection(selection)
+        val csr = fixture.csr(selection = selection)
+        model.enrollment.settleCsr(model.enrollment.startCsr(), csr)
+        val (owner, _) = model.enrollment.startIssuance(fixture.token(csr))
+        val eku = org.bouncycastle.asn1.x509.KeyPurposeId.getInstance(org.bouncycastle.asn1.ASN1ObjectIdentifier(selection.purpose.eku))
+        val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(purposes = arrayOf(eku)), fixture.intermediate), fixture.root, csr)
+        model.enrollment.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
+        model.enrollment.imported(owner)
+        model.requestTlsRoot()
+        assertNull(ReflectionHelpers.getField<Any?>(model, "pendingTlsRoot"))
+        var connected = false
+        val pin = "123456".toCharArray()
+        val method = ManagerViewModel::class.java.getDeclaredMethod("startTls", CharArray::class.java, Function0::class.java).apply { isAccessible = true }
+        method.invoke(model, pin, { connected = true; EnrollmentCard() })
+        assertFalse(connected)
+        assertTrue(pin.all { it == '\u0000' })
+        assertFalse(model.state.value.busy)
+    }
     @Test fun actualCardRunClosesGateAndSecretsBeforeHttpAndPauseKeepsCsr() {
         val fixture = EnrollmentFixtures()
         val card = EnrollmentCard()
@@ -80,6 +143,29 @@ class EnrollmentViewModelTest {
                 EnrollmentStage.REJECTED, model.enrollment.state.value.stage)
             assertFalse(model.state.value.requiresInspection)
             assertEquals(1, server.requests.get())
+        }
+    }
+    @Test fun queuedCancellationDoesNotDispatchOrSpendTheCsrAttempt() {
+        val scheduler = TestCoroutineScheduler()
+        Dispatchers.setMain(StandardTestDispatcher(scheduler))
+        val fixture = EnrollmentFixtures()
+        EnrollmentHttpsServer(fixture) { error("Queued cancellation must not reach HTTP") }.use { server ->
+            val model = model(fixture, server.address)
+            model.enrollment.settleCsr(model.enrollment.startCsr(), fixture.csr)
+            repeat(2) {
+                val secret = fixture.token(address = server.address).toCharArray()
+                model.issueEnrollment(secret)
+                assertEquals(EnrollmentStage.ISSUING, model.enrollment.state.value.stage)
+                model.cancel()
+                scheduler.runCurrent()
+                assertTrue(secret.all { it == '\u0000' })
+                assertEquals(EnrollmentStage.CSR, model.enrollment.state.value.stage)
+                assertFalse(model.enrollment.state.value.attempted)
+                assertNull(model.enrollment.state.value.receipt)
+                assertTrue(model.enrollment.state.value.unknownReceipts.isEmpty())
+                assertFalse(model.state.value.busy)
+            }
+            assertEquals(0, server.requests.get())
         }
     }
     @Test fun cancelledNetworkCannotReplaceNewFormAndNeverCreatesCardFence() {

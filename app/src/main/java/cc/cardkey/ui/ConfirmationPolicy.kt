@@ -32,7 +32,9 @@ object ConfirmationPolicy {
             input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL && input.assertionExtensions.largeBlobKey ||
             input.operation == ManagerOperation.FIDO_REGISTER && input.makeExtensions.largeBlobKey ||
             input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)
-        return listOfNotNull(primary) + (if (secretWarning) listOf(R.string.confirm_secretRead) else emptyList()) + if (pinWarning) listOf(R.string.confirm_authenticate) else emptyList()
+        val documentReplacement = input.operation == ManagerOperation.PIV_ENROLL_IMPORT &&
+            input.enrollmentSelection.purpose == cc.cardkey.enrollment.EnrollmentPurpose.DOCUMENT && input.enrollmentSelection.slot == 0x9a
+        return listOfNotNull(primary) + (if (documentReplacement) listOf(R.string.enrollment_document9a) else emptyList()) + (if (secretWarning) listOf(R.string.confirm_secretRead) else emptyList()) + if (pinWarning) listOf(R.string.confirm_authenticate) else emptyList()
     }
 
     fun pivVerificationReference(operation: ManagerOperation): String? = when (operation) {

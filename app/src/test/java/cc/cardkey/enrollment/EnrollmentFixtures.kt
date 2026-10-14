@@ -25,8 +25,8 @@ internal class EnrollmentFixtures {
     val root = cert(rootName, rootName, rootKey, rootKey, true)
     val intermediate = cert(issuerName, rootName, intermediateKey, rootKey, true)
     val csr = csr()
-    fun csr(cn: String = "Synthetic", key: KeyPair = clientKey) = EnrollmentCsr(
-        JcaPKCS10CertificationRequestBuilder(EnrollmentProfile.name(cn), key.public).build(JcaContentSignerBuilder("SHA256withECDSA").build(key.private)).encoded, cn)
+    fun csr(cn: String = "Synthetic", key: KeyPair = clientKey, selection: EnrollmentSelection = EnrollmentSelection()) = EnrollmentCsr(
+        JcaPKCS10CertificationRequestBuilder(EnrollmentProfile.name(cn), key.public).build(JcaContentSignerBuilder(selection.algorithm.signature).build(key.private)).encoded, cn, selection)
     fun cert(subject: X500Name, issuer: X500Name, subjectKey: KeyPair, signingKey: KeyPair, ca: Boolean,
              from: Long = now - 60000, to: Long = now + 3600000): ByteArray {
         val builder = JcaX509v3CertificateBuilder(issuer, BigInteger.valueOf(System.nanoTime()), Date(from), Date(to), subject, subjectKey.public)

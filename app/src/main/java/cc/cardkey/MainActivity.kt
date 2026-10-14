@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         val report = export
         export = null
         if (uri == null && report?.protectedExport == true) report.export?.fill(0)
-        if (uri != null && report?.export != null) lifecycleScope.launch(Dispatchers.IO) {
+        if (uri != null && report?.export != null && model.currentEnrollmentExport(report)) lifecycleScope.launch(Dispatchers.IO) {
             try { runCatching { contentResolver.openOutputStream(uri)?.use { it.write(report.export) } } }
             finally { if (report.protectedExport) report.export.fill(0) }
         }
@@ -202,7 +202,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                             if (model.requestSignatureSave(report)) signatureExporter(requireNotNull(model.signatureSaveRequestId)).launch(report.signatureFormat.fileName)
                         } else if (report.inventoryGeneration != null) {
                             model.requestInventoryExport(report)?.let { inventoryExporter(it).launch("credential-blob.bin") }
-                        } else {
+                        } else if (model.currentEnrollmentExport(report)) {
                             export = if (report.protectedExport) report.copy(export = report.export?.copyOf()) else report
                             exporter.launch(report.fileName ?: "cardkey.der")
                         }
@@ -214,7 +214,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     model::submitEnrollment, model::issueEnrollment, model::abandonEnrollment,
                     tls, model::tlsSettings, ::chooseTlsRoot, model::submitTls,
                     signingFiles, model::fileSigningAction, ::chooseSigningFile,
-                    inventory, model::selectInventoryRp, model::selectInventoryCredential, ::chooseInventoryFile, model::inventoryAction)
+                    inventory, model::selectInventoryRp, model::selectInventoryCredential, ::chooseInventoryFile, model::inventoryAction, model::enrollmentSelection)
                 if (showProviderSettings) AlertDialog(
                     onDismissRequest = { showProviderSettings = false },
                     title = { Text("凭据提供者") },

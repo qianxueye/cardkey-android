@@ -265,3 +265,18 @@ The full `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --o
 Both APKs built. Lint reported zero errors and the same ten warning locations: one `GetInstance` and nine `TrustAllX509TrustManager`. No baseline, suppression, dependency change or test-floor reduction was added. The CMS protocol code is unchanged, so the three-algorithm independent OpenSSL evidence from the controller checkpoint remains applicable.
 
 No device installation or launch occurred in this package. Instrumentation execution and physical-card, reader, identity and deployment acceptance remain separate root-owned steps.
+
+
+## Document certificate enrollment (2026-10-14)
+
+Source candidate `0ac9ae9` includes delivered CMS default `ec340c5`. The package adds 10 unit tests above the 768-test parent floor. The first enrollment/TLS gate passed 82 tests in 4m 42s (283s wall). After the queued-cancellation correction, the final targeted gate passed 83 tests with no failures, errors or skips in 3m 23s (204s wall; 81.974s summed test execution).
+
+The final `testDebugUnitTest assembleDebug lintDebug assembleDebugAndroidTest` gate passed in 4m 37s (278s wall). All 778 unit tests passed with zero failures, errors or skips and 87.254s summed execution. Both APKs built. Lint reported zero errors and 10 warnings; no suppression or baseline was added. The tests used JDK 17, Gradle 8.13, the pinned Android SDK and dependencies, Smallstep CLI 0.31.0 and step-ca 0.30.2, offline with one owned build and at most two Gradle workers.
+
+The real loopback CA gate uses distinct provisioners and fixed templates. It exercises the actual existing-key CSR, token, HTTPS, exact document profile, selected-slot import/readback and explicit CMS signing paths for P-256, P-384 and RSA-2048. It rejects wrong-role responses/tokens. Synthetic negatives cover signatures and algorithm OIDs, SPKI, CN, KU/EKU, SAN, CA constraints, validity and trust, selector/confirmation/issuance/export ABA, document-to-TLS entry, randomized-CSR bypass after an unknown outcome, and queued versus begun cancellation. Existing one-POST/no-retry and uncertain write/readback tests remain passing.
+
+`EnrollmentViewModelTest` and `TlsViewModelTest` disable Robolectric Conscrypt only for their desktop SunJSSE-hosted fixtures, following the existing scoped `PivTlsDnsTest` setting. This preserves host EC parameters during named-group initialization. [Robolectric ConscryptMode documentation](https://robolectric.org/configuring/#conscryptmode) explains that OFF retains BouncyCastle. Application providers, production TLS behavior, assertions and timeouts are unchanged.
+
+Local full logs are `/private/tmp/cardkey-android-document-targeted-1.log`, `/private/tmp/cardkey-android-document-targeted-2.log` and `/private/tmp/cardkey-android-document-full-1.log`. The final unit XML and lint XML are in the worktree's `app/build/test-results/testDebugUnitTest` and `app/build/reports/lint-results-debug.xml`. APKs are `app/build/outputs/apk/debug/app-debug.apk` and `app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`.
+
+This is application and synthetic protocol evidence. No device tests, installation, app launch, physical card mutation, deployment or external-system acceptance occurred. The separate UI workspace candidate was not included in this gate. Copy and activation scope are recorded in [the Chinese copy record](DOCUMENT-ENROLLMENT-COPY.zh-CN.md); [CardKey issue 35](https://github.com/qianxueye/cardkey/issues/35) remains open.
