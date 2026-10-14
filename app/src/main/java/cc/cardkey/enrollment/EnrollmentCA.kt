@@ -82,10 +82,12 @@ class EnrollmentCA(address: String, root: ByteArray) {
                 if (response.code != 201) throw EnrollmentException(IssuanceFailure.UNKNOWN)
                 try {
                     val body = requireNotNull(response.body)
-                    require(body.contentLength() <= EnrollmentProfile.MAX_BUNDLE)
+                    val length = body.contentLength()
+                    require(length <= EnrollmentProfile.MAX_BUNDLE)
                     val source = body.source()
                     require(!source.request(EnrollmentProfile.MAX_BUNDLE.toLong() + 1))
                     val bytes = source.readByteArray()
+                    if (length >= 0 && bytes.size.toLong() != length) throw java.io.IOException()
                     val objectValue = GsonBuilder().setStrictness(Strictness.STRICT).create()
                         .fromJson(bytes.toString(Charsets.UTF_8), JsonObject::class.java)
                     val entries = objectValue["certChain"].asJsonArray
