@@ -139,8 +139,10 @@ class TlsPanelTest {
             compose.waitForIdle()
             compose.onNodeWithText("已取消连接验证。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("认证可能已提交，请核对服务器记录。").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithTag("tls-start").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithTag("tls-start").assertDoesNotExist()
+            compose.onNodeWithTag("tls-pin").assertDoesNotExist()
             compose.onNodeWithTag("tls-root").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("tls-endpoint").performScrollTo().assertIsEnabled()
         }
     }
 }
