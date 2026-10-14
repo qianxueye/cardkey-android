@@ -128,8 +128,8 @@ fun ManagerScreen(
         ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE,
         ManagerOperation.PIV_IMPORT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE))
     SideEffect { onSecureChange(tab == 1 || tab == 3 || secretForm || secretResult || state.lastRetry != null) }
-    LaunchedEffect(state.busy, state.result) {
-        if (state.busy || state.result != null) objectDetail = true
+    LaunchedEffect(state.busy, state.result, state.requiresInspection) {
+        if (state.busy || state.result != null || state.requiresInspection) objectDetail = true
     }
     LaunchedEffect(state.result) { showSecrets = false; showSecretConfirmation = false; exportConfirmation = null }
     LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc, inventory.generation) {
@@ -237,7 +237,7 @@ fun ManagerScreen(
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val viewportHeight = maxHeight
         val twoPanes = workspaceUsesTwoPanes(maxWidth, LocalDensity.current.fontScale, viewportHeight)
-        val detailVisible = tab >= 2 || twoPanes || objectDetail || state.busy || state.requiresInspection
+        val detailVisible = tab >= 2 || twoPanes || objectDetail || state.busy
         BackHandler(tab < 2 && objectDetail && !twoPanes && !state.busy) {
             confirmation?.close(); confirmation = null
             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
