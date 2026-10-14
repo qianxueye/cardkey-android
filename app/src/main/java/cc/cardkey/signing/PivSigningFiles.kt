@@ -2,6 +2,7 @@ package cc.cardkey.signing
 
 import cc.cardkey.protocol.piv.PivClient
 import cc.cardkey.ui.ManagerReport
+import cc.cardkey.ui.ManagerOperation
 import java.io.Closeable
 import java.io.IOException
 import java.io.InputStream
@@ -12,9 +13,13 @@ import kotlinx.coroutines.flow.asStateFlow
 data class SigningFileSelection(val name: String, val size: Int, val generation: Long)
 enum class SignatureExportStatus { WRITING, SAVED, CANCELLED, UNKNOWN }
 data class SigningFileState(val selection: SigningFileSelection? = null,
-                            val exportStatus: SignatureExportStatus? = null, val exportOwner: ManagerReport? = null)
-internal data class SigningFileRequest(val generation: Long, val route: String)
+                            val exportStatus: SignatureExportStatus? = null, val exportOwner: ManagerReport? = null,
+                            val active: Boolean = false, val slot: Int = 0x9a, val restoreOperation: ManagerOperation? = null) {
+    val restoringSave get() = exportOwner != null && (exportStatus == null || exportStatus == SignatureExportStatus.WRITING)
+}
+internal data class SigningFileRequest(val generation: Long, val route: String, val id: String = java.util.UUID.randomUUID().toString())
 internal class SignatureSave(val source: ManagerReport, val bytes: ByteArray) : Closeable {
+    val id: String = java.util.UUID.randomUUID().toString()
     private var taken = false
     private var closed = false
     @Synchronized fun takeBytes(): ByteArray? {
@@ -37,15 +42,22 @@ class PivSigningFiles {
     private var activeSave: SignatureSave? = null
     internal val hasDocumentRequest get() = picker != null || save != null || writing
     internal val hasSaveOwner get() = save != null || writing
+    internal val fileRequestId get() = picker?.id
+    internal val saveRequestId get() = save?.id
     internal fun current(request: SigningFileRequest, currentRoute: String?) =
         request.generation == generation && request.route == route && request.route == currentRoute
 
+    internal fun action(active: Boolean, slot: Int) { mutable.value = mutable.value.copy(active = active, slot = slot) }
     internal fun request(route: String): SigningFileRequest {
         retireSelection()
         this.route = route
         return SigningFileRequest(generation, route).also { picker = it }
     }
-    internal fun takeRequest(): SigningFileRequest? = picker.also { picker = null }
+    internal fun takeRequest(id: String): SigningFileRequest? {
+        val request = picker?.takeIf { it.id == id } ?: return null
+        picker = null
+        return request
+    }
     internal fun accept(request: SigningFileRequest, currentRoute: String?, name: String, bytes: ByteArray): Boolean {
         try {
             if (!current(request, currentRoute)) return false
@@ -69,24 +81,27 @@ class PivSigningFiles {
         route = null
         mutable.value = mutable.value.copy(selection = null)
     }
-    internal fun requestSave(report: ManagerReport): Boolean {
+    internal fun requestSave(report: ManagerReport, operation: ManagerOperation? = null): Boolean {
         if (save != null || writing) return false
         val signature = requireNotNull(report.export)
         require(report.fileName == "signature.bin" && signature.isNotEmpty())
         save = SignatureSave(report, signature.copyOf())
-        mutable.value = mutable.value.copy(exportOwner = report, exportStatus = null)
+        mutable.value = mutable.value.copy(exportOwner = report, exportStatus = null, restoreOperation = operation)
         return true
     }
-    internal fun takeSave(): SignatureSave? = save.also {
+    internal fun takeSave(id: String): SignatureSave? {
+        val snapshot = save?.takeIf { it.id == id } ?: return null
         save = null
-        if (it != null) { writing = true; activeSave = it }
+        writing = true
+        activeSave = snapshot
+        return snapshot
     }
     internal fun finishSave(snapshot: SignatureSave, status: SignatureExportStatus) {
         snapshot.close()
         if (activeSave !== snapshot) return
         activeSave = null
         writing = false
-        if (mutable.value.exportOwner === snapshot.source) mutable.value = mutable.value.copy(exportStatus = status)
+        if (mutable.value.exportOwner === snapshot.source) mutable.value = mutable.value.copy(exportStatus = status, restoreOperation = null)
     }
     internal fun writing(snapshot: SignatureSave) {
         if (mutable.value.exportOwner === snapshot.source) mutable.value = mutable.value.copy(exportStatus = SignatureExportStatus.WRITING)
@@ -95,7 +110,7 @@ class PivSigningFiles {
         retireSelection()
         save?.close(); save = null
         activeSave?.close()
-        mutable.value = mutable.value.copy(exportOwner = null, exportStatus = null)
+        mutable.value = mutable.value.copy(exportOwner = null, exportStatus = null, restoreOperation = null)
     }
     companion object {
         internal fun readRaw(input: InputStream): ByteArray {

@@ -22,7 +22,7 @@ enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     PIV_CHANGE_PIN("PIN · 修改", true), PIV_CHANGE_PUK("PUK · 修改", true),
     PIV_UNBLOCK("PIN · 解锁", true), PIV_ADMIN("管理密钥 · 修改", true),
     PIV_GENERATE("生成密钥", true), PIV_CSR("导出 CSR", true),
-    PIV_IMPORT("导入证书", true), PIV_SIGN("验证签名", true),
+    PIV_IMPORT("导入证书", true), PIV_SIGN("文件签名", true),
     PIV_ECDH("ECDH · 验证", true), PIV_DECRYPT("RSA · 验证", true),
     PIV_ENROLL_CSR("生成 CSR", true), PIV_ENROLL_IMPORT("导入证书", true),
     PIV_RESET("PIV · 重置", true)
@@ -212,7 +212,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.PIV_SIGN -> {
                 val signature = piv.signFile(input.slot, input.pin, input.bytes)
                 if (cancelled()) { signature.fill(0); throw CardFailure(FailureCode.CANCELLED) }
-                ManagerReport(emptyList(), signature, "signature.bin")
+                ManagerReport(emptyList(), signature, "signature.bin", messages = listOf(R.string.signing_verified, R.string.signing_exportScope))
             }
             ManagerOperation.PIV_ECDH -> { piv.verifyKeyAgreement(input.slot, input.pin); empty() }
             ManagerOperation.PIV_DECRYPT -> { piv.verifyRsaDecryption(input.slot, input.pin); empty() }

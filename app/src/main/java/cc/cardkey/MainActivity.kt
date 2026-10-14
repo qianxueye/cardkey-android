@@ -16,6 +16,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.ActivityResultLauncher
 import androidx.credentials.CredentialManager
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -48,6 +49,31 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var lastNfcTag: android.nfc.Tag? = null
     private val permissionAction get() = "$packageName.USB_PERMISSION"
 
+    private val signingFilePickers = mutableMapOf<String, ActivityResultLauncher<Array<String>>>()
+    private val signatureExporters = mutableMapOf<String, ActivityResultLauncher<String>>()
+    private fun signingFilePicker(id: String): ActivityResultLauncher<Array<String>> {
+        signingFilePickers[id]?.let { return it }
+        val launcher = activityResultRegistry.register("piv-signing-file:$id", ActivityResultContracts.OpenDocument()) { uri ->
+            model.receiveSigningFile(id, uri)
+            signingFilePickers.remove(id)?.unregister()
+        }
+        signingFilePickers[id] = launcher
+        if (model.signingFileRequestId != id) { signingFilePickers.remove(id); launcher.unregister() }
+        return launcher
+    }
+    private fun signatureExporter(id: String): ActivityResultLauncher<String> {
+        signatureExporters[id]?.let { return it }
+        val launcher = activityResultRegistry.register("piv-signature-save:$id", ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+            model.receiveSignatureSave(id, uri)
+            signatureExporters.remove(id)?.unregister()
+        }
+        signatureExporters[id] = launcher
+        if (model.signatureSaveRequestId != id) { signatureExporters.remove(id); launcher.unregister() }
+        return launcher
+    }
+    private fun chooseSigningFile() {
+        if (model.requestSigningFile()) signingFilePicker(requireNotNull(model.signingFileRequestId)).launch(arrayOf("*/*"))
+    }
     private val tlsRootImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> model.receiveTlsRoot(uri) }
     private fun chooseTlsRoot() { model.requestTlsRoot(); tlsRootImporter.launch(arrayOf("*/*")) }
     private val rootImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> model.receiveEnrollmentRoot(uri) }
@@ -125,10 +151,13 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         }
         registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
         model.refreshReaders()
+        model.signingFileRequestId?.let(::signingFilePicker)
+        model.signatureSaveRequestId?.let(::signatureExporter)
         setContent {
             val state by model.state.collectAsState()
             val enrollment by model.enrollment.state.collectAsState()
             val tls by model.tls.collectAsState()
+            val signingFiles by model.signingFiles.state.collectAsState()
             LaunchedEffect(state.result) {
                 val failure = state.result as? OperationResult.Failed
                 if (state.nfc && failure?.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
@@ -139,13 +168,21 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             CardKeyTheme {
                 ManagerScreen(state, clearInputs, ::selectReader, model::refreshReaders, model::submit, model::cancel,
                     { importer.launch(arrayOf("*/*")) }, imported,
-                    { report -> export = if (report.protectedExport) report.copy(export = report.export?.copyOf()) else report; exporter.launch(report.fileName ?: "cardkey.der") }, model::approveLastRetry,
+                    { report ->
+                        if (report.fileName == "signature.bin") {
+                            if (model.requestSignatureSave(report)) signatureExporter(requireNotNull(model.signatureSaveRequestId)).launch("signature.bin")
+                        } else {
+                            export = if (report.protectedExport) report.copy(export = report.export?.copyOf()) else report
+                            exporter.launch(report.fileName ?: "cardkey.der")
+                        }
+                    }, model::approveLastRetry,
                     { secure -> if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
                         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) },
                     { showProviderSettings = true }, enrollment, model::enrollmentSettings,
                     { model.requestEnrollmentRoot(); rootImporter.launch(arrayOf("*/*")) },
                     model::submitEnrollment, model::issueEnrollment, model::abandonEnrollment,
-                    tls, model::tlsSettings, ::chooseTlsRoot, model::submitTls)
+                    tls, model::tlsSettings, ::chooseTlsRoot, model::submitTls,
+                    signingFiles, model::fileSigningAction, ::chooseSigningFile)
                 if (showProviderSettings) AlertDialog(
                     onDismissRequest = { showProviderSettings = false },
                     title = { Text("凭据提供者") },
@@ -187,7 +224,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onPause() {
         nfc?.disableReaderMode(this)
-        model.cancel()
+        model.pauseForActivity(isChangingConfigurations)
         clearInputs++
         super.onPause()
     }
@@ -196,6 +233,10 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         runOnUiThread { lastNfcTag = tag; model.onTag(tag) }
     }
     override fun onDestroy() {
+        signingFilePickers.values.toList().forEach { it.unregister() }
+        signingFilePickers.clear()
+        signatureExporters.values.toList().forEach { it.unregister() }
+        signatureExporters.clear()
         if (export?.protectedExport == true) export?.export?.fill(0)
         export = null
         unregisterReceiver(receiver); super.onDestroy()

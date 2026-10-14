@@ -14,7 +14,7 @@ class PivSigningFilesTest {
         assertArrayEquals(original, read)
         val files = PivSigningFiles()
         val request = files.request("reader-a")
-        assertSame(request, files.takeRequest())
+        assertSame(request, files.takeRequest(files.fileRequestId ?: "retired"))
         assertTrue(files.accept(request, "reader-a", "raw.pem", read))
         assertTrue(read.all { it == 0.toByte() })
         val selected = files.state.value.selection!!
@@ -51,7 +51,7 @@ class PivSigningFilesTest {
     @Test fun readerAndActionAbaCannotReviveLateSelectionAndDuplicateCallbackIsEmpty() {
         val files = PivSigningFiles()
         val old = files.request("reader-a")
-        files.takeRequest()
+        files.takeRequest(files.fileRequestId ?: "retired")
         files.retireSelection()
         files.request("reader-b")
         files.request("reader-a")
@@ -59,9 +59,9 @@ class PivSigningFilesTest {
         assertFalse(files.accept(old, "reader-a", "late", bytes))
         assertTrue(bytes.all { it == 0.toByte() })
         assertNull(files.state.value.selection)
-        assertNotNull(files.takeRequest())
-        assertNull(files.takeRequest())
-        assertNull(PivSigningFiles().takeRequest())
+        assertNotNull(files.takeRequest(files.fileRequestId ?: "retired"))
+        assertNull(files.takeRequest(files.fileRequestId ?: "retired"))
+        assertNull(PivSigningFiles().takeRequest("orphan"))
     }
 
     @Test fun saveCapturesOneVerifiedOutputAndWritesOnceWithCloseAcknowledgement() {
@@ -70,8 +70,8 @@ class PivSigningFilesTest {
         val newer = ManagerReport(emptyList(), byteArrayOf(7, 8, 9), "signature.bin")
         assertTrue(files.requestSave(source))
         assertFalse(files.requestSave(newer))
-        val captured = files.takeSave()!!
-        assertNull(files.takeSave())
+        val captured = files.takeSave(files.saveRequestId ?: "retired")!!
+        assertNull(files.takeSave(files.saveRequestId ?: "retired"))
         source.export!!.fill(4)
         var closed = false
         val output = object : ByteArrayOutputStream() { override fun close() { closed = true; super.close() } }
@@ -89,7 +89,7 @@ class PivSigningFilesTest {
             val files = PivSigningFiles()
             val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin")
             files.requestSave(source)
-            val snapshot = files.takeSave()!!
+            val snapshot = files.takeSave(files.saveRequestId ?: "retired")!!
             var opens = 0; var writes = 0
             val status = if (mode == "cancel") SignatureExportStatus.CANCELLED
             else PivSigningFiles.writeSignature(snapshot) {
@@ -109,7 +109,48 @@ class PivSigningFilesTest {
             assertEquals(if (mode in listOf("cancel", "null")) 0 else 1, writes)
             assertArrayEquals(byteArrayOf(1, 2, 3), source.export)
             assertTrue(snapshot.bytes.all { it == 0.toByte() })
-            assertNull(files.takeSave())
+            assertNull(files.takeSave(files.saveRequestId ?: "retired"))
         }
     }
+    @Test fun retiringAnActiveWriteDoesNotWipeItsBytesUntilTheStreamCloses() {
+        val files = PivSigningFiles()
+        val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin")
+        files.requestSave(source)
+        val snapshot = files.takeSave(files.saveRequestId ?: "retired")!!
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val status = java.util.concurrent.atomic.AtomicReference<SignatureExportStatus>()
+        var closed = false
+        var opens = 0
+        val output = object : ByteArrayOutputStream() {
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                entered.countDown(); check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                assertArrayEquals(byteArrayOf(1, 2, 3), bytes)
+                super.write(bytes, offset, length)
+            }
+            override fun close() { closed = true; super.close() }
+        }
+        val worker = Thread { status.set(PivSigningFiles.writeSignature(snapshot) { opens++; output }) }.apply { start() }
+        try {
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            files.retire()
+            assertArrayEquals(byteArrayOf(1, 2, 3), snapshot.bytes)
+        } finally { release.countDown(); worker.join(6000) }
+        assertFalse(worker.isAlive)
+        assertTrue(closed)
+        assertEquals(SignatureExportStatus.SAVED, status.get())
+        assertTrue(snapshot.bytes.all { it == 0.toByte() })
+        assertEquals(SignatureExportStatus.UNKNOWN, PivSigningFiles.writeSignature(snapshot) { opens++; output })
+        assertEquals(1, opens)
+    }
+
+    @Test fun retiringAQueuedSaveWipesItBeforeAnyStreamCanOpen() {
+        val files = PivSigningFiles()
+        files.requestSave(ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin"))
+        val snapshot = files.takeSave(files.saveRequestId ?: "retired")!!
+        files.retire()
+        assertTrue(snapshot.bytes.all { it == 0.toByte() })
+        assertEquals(SignatureExportStatus.UNKNOWN, PivSigningFiles.writeSignature(snapshot) { error("retired save must not open") })
+    }
+
 }

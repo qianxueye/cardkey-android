@@ -109,7 +109,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
         retireResult()
-        signingFiles.retireSelection()
+        signingFiles.retire()
         retireTls()
         enrollment.retire()
         operations.clearSession()
@@ -333,10 +333,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         } finally { token.fill('\u0000') }
     }
 
-    fun fileSigningAction(operation: ManagerOperation?) {
-        if (operation == signingAction) return
-        signingAction = operation
-        signingFiles.retireSelection()
+    fun fileSigningAction(operation: ManagerOperation?, slot: Int = 0x9a) {
+        if (operation != signingAction) {
+            signingAction = operation
+            signingFiles.retire()
+        }
+        signingFiles.action(operation == ManagerOperation.PIV_SIGN, slot)
     }
 
     fun requestSigningFile(): Boolean {
@@ -347,8 +349,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         return true
     }
 
-    fun receiveSigningFile(uri: Uri?) {
-        val request = signingFiles.takeRequest() ?: return
+    internal val signingFileRequestId get() = signingFiles.fileRequestId
+    internal val signatureSaveRequestId get() = signingFiles.saveRequestId
+
+    fun receiveSigningFile(requestId: String, uri: Uri?) {
+        val request = signingFiles.takeRequest(requestId) ?: return
         if (uri == null) { signingFiles.retireSelection(); return }
         viewModelScope.launch {
             var bytes: ByteArray? = null
@@ -374,11 +379,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun requestSignatureSave(report: ManagerReport): Boolean {
         val result = mutable.value.result as? OperationResult.Completed ?: return false
         if (mutable.value.busy || mutable.value.operation != ManagerOperation.PIV_SIGN || result.value !== report) return false
-        return signingFiles.requestSave(report)
+        return signingFiles.requestSave(report, signingAction)
     }
 
-    fun receiveSignatureSave(uri: Uri?) {
-        val snapshot = signingFiles.takeSave() ?: return
+    fun receiveSignatureSave(requestId: String, uri: Uri?) {
+        val snapshot = signingFiles.takeSave(requestId) ?: return
         if (uri == null) { signingFiles.finishSave(snapshot, SignatureExportStatus.CANCELLED); return }
         signingFiles.writing(snapshot)
         viewModelScope.launch {
@@ -392,6 +397,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun submit(input: OperationInput) {
         if (input.operation != ManagerOperation.PIV_SIGN) { submitOwned(input); return }
         if (mutable.value.busy || mutable.value.requiresInspection) { input.close(); return }
+        if (!mutable.value.supportsPiv) { submitOwned(input); return }
+        if (mutable.value.nfc) {
+            input.close()
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.CONTACT_REQUIRED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)) }
+            return
+        }
         val owned = try {
             val reader = requireNotNull(mutable.value.selectedReader)
             require(signingAction == ManagerOperation.PIV_SIGN && !mutable.value.nfc && reader.wire == CardWire.APDU &&

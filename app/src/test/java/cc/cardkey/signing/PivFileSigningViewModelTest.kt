@@ -7,6 +7,8 @@ import cc.cardkey.enrollment.EnrollmentCard
 import cc.cardkey.protocol.*
 import cc.cardkey.transport.UsbReaderDescriptor
 import cc.cardkey.ui.*
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,7 +53,7 @@ class PivFileSigningViewModelTest {
         assertTrue(model.requestSigningFile())
         val uri = Uri.parse("content://file-signing/selected.raw")
         shadowOf(app.contentResolver).registerInputStream(uri, ByteArrayInputStream(bytes))
-        model.receiveSigningFile(uri)
+        model.receiveSigningFile(model.signingFileRequestId ?: "retired", uri)
         await { model.signingFiles.state.value.selection != null }
     }
     private fun state(model: ManagerViewModel) = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
@@ -67,14 +69,14 @@ class PivFileSigningViewModelTest {
         model.pauseForActivity(false)
         val uri = Uri.parse("content://file-signing/pause.raw")
         shadowOf(app.contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf(1, 2, 3)))
-        model.receiveSigningFile(uri)
+        model.receiveSigningFile(model.signingFileRequestId ?: "retired", uri)
         await { model.signingFiles.state.value.selection != null }
         model.pauseForActivity(false)
         assertNull(model.signingFiles.state.value.selection)
         assertTrue(model.requestSigningFile())
         model.fileSigningAction(ManagerOperation.PIV_INFO)
         model.fileSigningAction(ManagerOperation.PIV_SIGN)
-        model.receiveSigningFile(uri)
+        model.receiveSigningFile(model.signingFileRequestId ?: "retired", uri)
         assertNull(model.signingFiles.state.value.selection)
         model.cancel()
     }
@@ -165,15 +167,74 @@ class PivFileSigningViewModelTest {
         val uri = Uri.parse("content://file-signing/signature.bin")
         val output = ByteArrayOutputStream()
         shadowOf(app.contentResolver).registerOutputStream(uri, output)
-        model.receiveSignatureSave(uri)
+        model.receiveSignatureSave(model.signatureSaveRequestId ?: "retired", uri)
         await { model.signingFiles.state.value.exportStatus == SignatureExportStatus.SAVED }
-        model.receiveSignatureSave(uri)
+        model.receiveSignatureSave(model.signatureSaveRequestId ?: "retired", uri)
         assertArrayEquals(byteArrayOf(1, 2, 3), output.toByteArray())
         assertSame(replacement, (model.state.value.result as OperationResult.Completed).value)
         assertSame(original, model.signingFiles.state.value.exportOwner)
         assertTrue(model.requestSignatureSave(replacement))
-        model.receiveSignatureSave(null)
+        model.receiveSignatureSave(requireNotNull(model.signatureSaveRequestId), null)
         assertEquals(SignatureExportStatus.CANCELLED, model.signingFiles.state.value.exportStatus)
         assertSame(replacement, (model.state.value.result as OperationResult.Completed).value)
     }
+    @Test fun delayedReadFailureAfterActionAbaCannotReplaceNewerState() {
+        val model = model()
+        val marker = ManagerReport(emptyList())
+        state(model).value = model.state.value.copy(result = OperationResult.Completed(marker, Effect.NONE))
+        assertTrue(model.requestSigningFile())
+        val uri = Uri.parse("content://file-signing/delayed.raw")
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        var buffer: ByteArray? = null
+        val finished = CountDownLatch(1)
+        shadowOf(app.contentResolver).registerInputStream(uri, object : ByteArrayInputStream(byteArrayOf(1, 2, 3)) {
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                buffer = bytes
+                super.read(bytes, offset, length)
+                entered.countDown(); check(release.await(5, TimeUnit.SECONDS))
+                throw java.io.IOException()
+            }
+            override fun close() { super.close(); finished.countDown() }
+        })
+        model.receiveSigningFile(model.signingFileRequestId ?: "retired", uri)
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            model.fileSigningAction(ManagerOperation.PIV_INFO)
+            model.fileSigningAction(ManagerOperation.PIV_SIGN)
+        } finally { release.countDown() }
+        await { finished.count == 0L && buffer!!.all { it == 0.toByte() } &&
+            model.viewModelScope.coroutineContext[Job]!!.children.none { it.isActive } }
+        assertNull(model.signingFiles.state.value.selection)
+        assertSame(marker, (model.state.value.result as OperationResult.Completed).value)
+    }
+
+    @Test fun missingSelectionCannotReachCardAndSaveWriteOrCloseFailureStaysUnknown() {
+        val model = model()
+        val input = OperationInput(ManagerOperation.PIV_SIGN, pin = "123456".toCharArray())
+        model.submit(input)
+        assertEquals(FailureCode.INVALID_INPUT, (model.state.value.result as OperationResult.Failed).code)
+        assertTrue(input.pin.all { it == '\u0000' })
+        assertFalse(model.state.value.busy)
+        for (closeFailure in listOf(false, true)) {
+            val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin")
+            state(model).value = model.state.value.copy(operation = ManagerOperation.PIV_SIGN, result = OperationResult.Completed(source, Effect.APPLIED))
+            assertTrue(model.requestSignatureSave(source))
+            val uri = Uri.parse("content://file-signing/failure-$closeFailure.bin")
+            var writes = 0
+            shadowOf(app.contentResolver).registerOutputStream(uri, object : ByteArrayOutputStream() {
+                override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                    writes++
+                    super.write(bytes, offset, if (closeFailure) length else 1)
+                    if (!closeFailure) throw java.io.IOException()
+                }
+                override fun close() { if (closeFailure) throw java.io.IOException() }
+            })
+            model.receiveSignatureSave(model.signatureSaveRequestId ?: "retired", uri)
+            await { model.signingFiles.state.value.exportStatus == SignatureExportStatus.UNKNOWN }
+            assertEquals(1, writes)
+            assertSame(source, (model.state.value.result as OperationResult.Completed).value)
+            assertArrayEquals(byteArrayOf(1, 2, 3), source.export)
+        }
+    }
+
 }
