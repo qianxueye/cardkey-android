@@ -40,7 +40,13 @@ data class ManagerState(
     val resultWire: CardWire = CardWire.APDU,
     val userPresenceRequired: Boolean = false,
     val ctap2Reader: String? = null,
+    val recognition: CardRecognition? = null,
 ) {
+    private val recognizedFamily get() = recognition?.takeIf {
+        !permissionPending && it.route == (if (nfc) "nfc" else selectedReader?.routeKey)
+    }?.family
+    val canEnterFidoSecrets get() = recognizedFamily == CardFamily.FIDO2
+    val canEnterPivSecrets get() = recognizedFamily == CardFamily.PIV
     val supportsPiv get() = nfc || selectedReader?.wire != CardWire.CTAP
     val supportsFidoReset get() = !nfc && selectedReader?.wire == CardWire.CTAP && ctap2Reader == selectedReader.routeKey
     val presenceMessage get() = ConfirmationPolicy.presenceMessage(userPresenceRequired, busy, resultWire)
@@ -103,6 +109,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val networkCall = AtomicReference<EnrollmentCall?>(null)
     private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
+    private var pendingRecognitionLifecycle = 0L
     @Volatile var pendingNfcOwner: Long? = null
         private set
     private var inProgress = false
@@ -116,6 +123,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private var recoveryRoute: String? = null
     private var recoveryWire: CardWire? = null
     private var presenceGeneration = 0L
+    private var recognitionLifecycle = 0L
     private val presenceLock = Any()
 
     fun refreshReaders() {
@@ -131,6 +139,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (presenceBlockedReader == null) presenceBlockedReader = readers.firstOrNull {
             it.wire == CardWire.APDU && CardOperationGate.isRemovalRequired(it.routeKey)
         }?.routeKey
+        if (selected != null && !usb.hasPermission(selected.device)) retireRecognition()
         mutable.value = mutable.value.copy(readers = readers, selectedReader = selected)
         if (presenceBlockedReader != null && presenceWatch?.isActive != true)
             readers.firstOrNull { it.wire == CardWire.APDU && it.routeKey == presenceBlockedReader }?.let(::observeCardRemoval)
@@ -138,6 +147,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
+        retireRecognition()
         retireResult()
         retireInventoryExport()
         signingFiles.retire()
@@ -543,6 +553,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (mutable.value.requiresInspection && !ConfirmationPolicy.canInspect(input.operation)) {
             input.close(); return
         }
+        if (input.operation.recognitionFamily != null) retireRecognition()
         try {
             input.inventoryRequest = inventory.begin(input)
             if (input.operation == ManagerOperation.FIDO_BLOB_WRITE && input.inventoryRequest?.credential != null && !input.deleteBlob) {
@@ -570,6 +581,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
         if (mutable.value.nfc) {
             pending = input
+            pendingRecognitionLifecycle = recognitionLifecycle
             pendingNfcOwner = requireNotNull(input.inventoryRequest).generation
             mutable.value = mutable.value.copy(awaitingNfc = true)
             refreshNfc()
@@ -611,6 +623,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             pendingNfcOwner = null
             pending = null
             mutable.value = mutable.value.copy(awaitingNfc = false)
+            if (pendingRecognitionLifecycle != recognitionLifecycle) {
+                input.close()
+                finish(OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED))
+                return@launch
+            }
             run(input) { NfcCardChannel.connect(tag) }
         }
         return true
@@ -621,6 +638,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (input.inventoryRequest?.credential != null) inventoryInput.set(input)
         inProgress = true
         val generation = ++presenceGeneration
+        val observationLifecycle = recognitionLifecycle
+        val observationRoute = if (mutable.value.nfc) "nfc" else mutable.value.selectedReader?.routeKey
         val enrollmentOwner = enrollment.generation
         val reader = mutable.value.selectedReader
         viewModelScope.launch {
@@ -717,6 +736,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             val retired = cancelled || input.inventoryRequest?.let { !inventory.current(it) } == true || (reader != null && (mutable.value.selectedReader?.routeKey != reader.routeKey ||
                 !UsbAuthenticatorReader.isCurrent(usb, reader)))
             if (retired) {
+                retireRecognition()
                 mutable.update { it.copy(ctap2Reader = null) }
                 operations.clearSession()
                 inventory.retire()
@@ -725,7 +745,15 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     if (report.protectedExport) report.export?.fill(0)
                 }
             }
+            if (reader != null && !usb.hasPermission(reader.device)) retireRecognition()
             if (!retired && result is OperationResult.Completed) {
+                if (observationLifecycle == recognitionLifecycle && !mutable.value.permissionPending &&
+                    observationRoute != null && observationRoute == (if (mutable.value.nfc) "nfc" else mutable.value.selectedReader?.routeKey) &&
+                    (reader == null || usb.hasPermission(reader.device))) {
+                    input.operation.recognitionFamily?.let { family ->
+                        mutable.update { it.copy(recognition = CardRecognition(observationRoute, observationLifecycle, family)) }
+                    }
+                }
                 input.inventoryRequest?.let { inventory.settle(it, result.value) }
                 result.value.enrollmentCsr?.let { enrollment.settleCsr(enrollmentOwner, it) }
                 if (input.operation == ManagerOperation.PIV_ENROLL_IMPORT) enrollment.imported(enrollmentOwner)
@@ -742,8 +770,17 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (previous.protectedExport && previous.export !== incoming?.export) previous.export?.fill(0)
     }
 
+    private fun retireRecognition() {
+        recognitionLifecycle++
+        mutable.update { it.copy(recognition = null) }
+    }
+
     private fun finish(result: OperationResult<ManagerReport>) {
         presenceGeneration++
+        if (result is OperationResult.Failed && (mutable.value.operation?.recognitionFamily != null ||
+            result.code in setOf(FailureCode.TRANSPORT_FAILURE, FailureCode.MALFORMED_RESPONSE,
+                FailureCode.CANCELLED, FailureCode.AUTHORIZATION_DENIED, FailureCode.PHYSICAL_ACTION_REQUIRED,
+                FailureCode.RECOVERY_REQUIRED, FailureCode.NFC_UNAVAILABLE, FailureCode.NFC_DISABLED))) retireRecognition()
         val previous = mutable.value
         if (result is OperationResult.Failed && (result.effect == Effect.UNKNOWN || result.writeAccepted)) {
             if (!previous.requiresInspection) {
@@ -767,7 +804,10 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun approveLastRetry(approved: Boolean) { retryApproval?.complete(approved) }
-    fun permissionPending(pending: Boolean) { mutable.value = mutable.value.copy(permissionPending = pending) }
+    fun permissionPending(pending: Boolean) {
+        if (pending != mutable.value.permissionPending) retireRecognition()
+        mutable.value = mutable.value.copy(permissionPending = pending)
+    }
 
     private fun observeCardRemoval(reader: UsbReaderDescriptor) {
         if (reader.wire != CardWire.APDU) return
@@ -777,7 +817,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 val absent = withContext(Dispatchers.IO) {
                     CardOperationGate.tryAcquire()?.use { UsbCcidReader.isCardAbsent(usb, reader) } == true
                 }
-                if (absent) { CardOperationGate.observedRemoval(reader.routeKey); presenceBlockedReader = null; break }
+                if (absent) {
+                    if (!mutable.value.nfc && mutable.value.selectedReader?.routeKey == reader.routeKey) retireRecognition()
+                    CardOperationGate.observedRemoval(reader.routeKey)
+                    presenceBlockedReader = null
+                    break
+                }
                 delay(750)
             }
         }
@@ -791,6 +836,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun cancel() { cancel(false) }
 
     private fun cancel(preserveSigningDocuments: Boolean, preserveInventoryDocument: Boolean = false, preserveInventoryExport: Boolean = false) {
+        retireRecognition()
         if (!preserveInventoryExport) retireInventoryExport()
         signingInput.getAndSet(null)?.close()
         inventoryInput.getAndSet(null)?.close()
