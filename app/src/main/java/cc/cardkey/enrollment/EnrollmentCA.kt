@@ -73,19 +73,24 @@ class EnrollmentCA(address: String, root: ByteArray) {
             if (!dispatched.compareAndSet(false, true)) throw java.io.IOException()
             chain.proceed(chain.request())
         }.build()
-        return singleAttempt.newCall(Request.Builder().url(endpoint).post(body.toRequestBody("application/json".toMediaType())).build())
+        return singleAttempt.newCall(Request.Builder().url(endpoint).header("Accept-Encoding", "identity").post(body.toRequestBody("application/json".toMediaType())).build())
     }
     fun execute(call: Call, csr: EnrollmentCsr): EnrollmentBundle {
         try {
             call.execute().use { response ->
                 if (response.code in setOf(400, 401, 403, 404, 405, 422)) throw EnrollmentException(IssuanceFailure.REJECTED)
                 if (response.code != 201) throw EnrollmentException(IssuanceFailure.UNKNOWN)
+                val codings = response.headers.values("Content-Encoding")
+                if (codings.isNotEmpty() && (codings.size != 1 || !codings.single().trim().equals("identity", true)))
+                    throw EnrollmentException(IssuanceFailure.UNKNOWN)
                 try {
                     val body = requireNotNull(response.body)
-                    require(body.contentLength() <= EnrollmentProfile.MAX_BUNDLE)
+                    val length = body.contentLength()
+                    require(length <= EnrollmentProfile.MAX_BUNDLE)
                     val source = body.source()
                     require(!source.request(EnrollmentProfile.MAX_BUNDLE.toLong() + 1))
                     val bytes = source.readByteArray()
+                    if (length >= 0 && bytes.size.toLong() != length) throw java.io.IOException()
                     val objectValue = GsonBuilder().setStrictness(Strictness.STRICT).create()
                         .fromJson(bytes.toString(Charsets.UTF_8), JsonObject::class.java)
                     val entries = objectValue["certChain"].asJsonArray
