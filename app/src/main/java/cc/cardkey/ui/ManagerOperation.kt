@@ -178,6 +178,10 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             }
             ManagerOperation.PIV_SLOT -> piv.readSlot(input.slot).let {
                 ManagerReport(listOfNotNull(it.metadata?.algorithm?.let { algorithm -> ResultRow("算法", algorithm.name) },
+                    it.metadata?.let { metadata -> ResultRow("PIN 验证策略",
+                        listOf("无需 PIN", "会话内验证一次", "每次操作验证")[metadata.pinPolicy - 1]) },
+                    it.metadata?.let { metadata -> ResultRow("触摸确认策略",
+                        listOf("无需触摸", "每次操作触摸", "允许缓存触摸确认")[metadata.touchPolicy - 1]) },
                     it.certificate?.let { cert -> ResultRow("证书", cert.subjectX500Principal.name) },
                     it.metadata?.publicKey?.let { key -> ResultRow("公钥", Base64.getEncoder().encodeToString(key.encoded)) }),
                     it.certificate?.encoded, "piv-${input.slot.toString(16)}.cer")
@@ -190,7 +194,10 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             }
             ManagerOperation.PIV_GENERATE -> piv.generateKey(input.slot, input.algorithm, input.pinPolicy,
                 input.managementAlgorithm, input.adminKey).let {
-                ManagerReport(listOfNotNull(it.algorithm?.let { algorithm -> ResultRow("算法", algorithm.name) }, it.publicKey?.let { key -> ResultRow("公钥", Base64.getEncoder().encodeToString(key.encoded)) }))
+                ManagerReport(listOfNotNull(it.algorithm?.let { algorithm -> ResultRow("算法", algorithm.name) },
+                    ResultRow("PIN 验证策略", listOf("无需 PIN", "会话内验证一次", "每次操作验证")[it.pinPolicy - 1]),
+                    ResultRow("触摸确认策略", listOf("无需触摸", "每次操作触摸", "允许缓存触摸确认")[it.touchPolicy - 1]),
+                    it.publicKey?.let { key -> ResultRow("公钥", Base64.getEncoder().encodeToString(key.encoded)) }))
             }
             ManagerOperation.PIV_CSR -> piv.createCsr(input.slot, input.pin, input.text).let {
                 ManagerReport(listOf(ResultRow("CSR", input.text)), pem("CERTIFICATE REQUEST", it), "piv-${input.slot.toString(16)}.csr")
