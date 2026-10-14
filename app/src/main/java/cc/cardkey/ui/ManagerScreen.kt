@@ -108,6 +108,9 @@ fun ManagerScreen(
     var invalid by remember { mutableStateOf(false) }
     var validationFailures by remember { mutableIntStateOf(0) }
     var confirmation by remember { mutableStateOf<PendingOperation?>(null) }
+    var confirmationRecognition by remember { mutableStateOf<CardRecognition?>(null) }
+    var recognitionInputRetirements by remember { mutableIntStateOf(0) }
+    LaunchedEffect(state.recognition) { recognitionInputRetirements++ }
     LaunchedEffect(tab, operation, slot) {
         onSigningAction(operation.takeIf { tab < 2 }, slot)
         onInventoryAction(operation.takeIf { tab == 0 })
@@ -124,17 +127,17 @@ fun ManagerScreen(
     }
     val report = (state.result as? OperationResult.Completed)?.value
     val secretResult = report?.secrets != null || report?.protectedExport == true
-    val secretForm = tab < 2 && (needsPin(operation) || operation in setOf(
-        ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE,
-        ManagerOperation.PIV_IMPORT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE))
+    val secretForm = tab < 2 && needsSecretInput(operation)
+    val secretInputReady = if (operation.piv) state.canEnterPivSecrets else state.canEnterFidoSecrets
     SideEffect { onSecureChange(tab == 1 || tab == 3 || secretForm || secretResult || state.lastRetry != null) }
     LaunchedEffect(state.busy, state.result, state.requiresInspection) {
         if (state.busy || state.result != null || state.requiresInspection) objectDetail = true
     }
     LaunchedEffect(state.result) { showSecrets = false; showSecretConfirmation = false; exportConfirmation = null }
-    LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc, inventory.generation) {
+    LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc, inventory.generation, state.recognition, state.permissionPending) {
         pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""; invalid = false
         confirmation?.close(); confirmation = null
+        confirmationRecognition = null
         showSecrets = false; showSecretConfirmation = false; exportConfirmation = null
     }
     LaunchedEffect(operation, enabled) {
@@ -162,7 +165,13 @@ fun ManagerScreen(
                 }
                 input.messages.forEach { Text(stringResource(it)) }
             } },
-            confirmButton = { TextButton(onClick = { confirmation = null; input.dispatch(onSubmit) }) { Text("确认") } },
+            confirmButton = { TextButton(onClick = {
+                val recognitionCurrent = !needsSecretInput(input.operation) ||
+                    confirmationRecognition == state.recognition &&
+                    (if (input.operation.piv) state.canEnterPivSecrets else state.canEnterFidoSecrets)
+                confirmation = null; confirmationRecognition = null
+                if (recognitionCurrent) input.dispatch(onSubmit) else input.close()
+            }) { Text("确认") } },
             dismissButton = { TextButton(onClick = dismiss) { Text("取消") } })
     }
     if (showSecretConfirmation) AlertDialog(onDismissRequest = { showSecretConfirmation = false },
@@ -291,6 +300,7 @@ fun ManagerScreen(
                         val op = operation
                         Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(onClick = {
+                                if (secretForm && !secretInputReady) return@Button
                                 try {
                                     require(op != ManagerOperation.FIDO_BLOB_WRITE || if (inventory.credential != null) inventory.fileSize != null else imported != null)
                                     require(op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null)
@@ -314,9 +324,12 @@ fun ManagerScreen(
                                             op in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) })
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
                                     if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
-                                    else confirmation = PendingOperation(input)
+                                    else {
+                                        confirmationRecognition = state.recognition
+                                        confirmation = PendingOperation(input)
+                                    }
                                 } catch (_: IllegalArgumentException) { invalid = true; validationFailures++ }
-                            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("manager-run"), enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
+                            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("manager-run"), enabled = !state.busy && (!needsSecretInput(op) || secretInputReady) && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
                                 (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
@@ -489,6 +502,20 @@ fun ManagerScreen(
                                 }
                                 OperationChoice(operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && it !in setOf(ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, !state.busy) { operation = it }
                                 Text(op.title, style = MaterialTheme.typography.titleLarge)
+                                if (needsSecretInput(op) && !secretInputReady) {
+                                    Text(stringResource(if (op.piv) R.string.workspace_readPivFirst else R.string.workspace_readFidoFirst))
+                                    OutlinedButton(onClick = {
+                                        confirmation?.close(); confirmation = null
+                                        onSubmit(OperationInput(if (op.piv) ManagerOperation.PIV_INFO else ManagerOperation.FIDO_INFO,
+                                            slot = slot, displayName = displayName, inventoryGeneration = inventory.generation,
+                                            inventorySelection = inventory.credential.takeIf { !op.piv }))
+                                    }, enabled = !state.busy && !state.permissionPending &&
+                                        (state.nfc || state.selectedReader != null) && (!op.piv || state.supportsPiv) &&
+                                        signingFiles.exportStatus != SignatureExportStatus.WRITING,
+                                        modifier = Modifier.testTag("recognition-task")) {
+                                        Text(stringResource(R.string.workspace_readRecognition))
+                                    }
+                                }
                                 if (op in setOf(ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_CAPACITY, ManagerOperation.FIDO_RPS,
                                         ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
                                         ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) && inventory.rps.isEmpty())
@@ -503,15 +530,15 @@ fun ManagerScreen(
                                     Text(stringResource(R.string.signing_limit), style = MaterialTheme.typography.bodySmall)
                                     signingFiles.selection?.let { file -> Text(stringResource(R.string.signing_selectedFile, file.name, file.size)) }
                                 }
-                                if (needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy, viewportHeight) { pin = it }
-                                if (op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
+                                if (secretInputReady && needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy, viewportHeight) { pin = it }
+                                if (secretInputReady && op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
                                 if (op in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
                                         ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK)) {
-                                    SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK) "新 PUK" else "新 PIN", newPin, !state.busy, viewportHeight) { newPin = it }
+                                    if (secretInputReady) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK) "新 PUK" else "新 PIN", newPin, !state.busy, viewportHeight) { newPin = it }
                                 }
                                 if (op in setOf(ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT)) {
                                     Choice("管理密钥 · 算法", adminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { adminAlgorithm = it }
-                                    SecretField("管理密钥 · HEX", adminKey, !state.busy, viewportHeight) { adminKey = it }
+                                    if (secretInputReady) SecretField("管理密钥 · HEX", adminKey, !state.busy, viewportHeight) { adminKey = it }
                                 }
                                 if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
                                     Text(stringResource(R.string.blob_help))
@@ -524,11 +551,11 @@ fun ManagerScreen(
                                 }
                                 if (op == ManagerOperation.PIV_ADMIN) {
                                     Choice("新管理密钥 · 算法", newAdminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { newAdminAlgorithm = it }
-                                    SecretField("新管理密钥 · HEX", newAdminKey, !state.busy, viewportHeight) { newAdminKey = it }
+                                    if (secretInputReady) SecretField("新管理密钥 · HEX", newAdminKey, !state.busy, viewportHeight) { newAdminKey = it }
                                 }
                                 if (op == ManagerOperation.PIV_GENERATE) {
                                     Choice("算法", algorithm, KeyAlgorithm.entries, { it.name }, !state.busy) { algorithm = it }
-                                    Choice("PIN", pinPolicy, PinPolicy.entries, { it.name }, !state.busy) { pinPolicy = it }
+                                    Choice("PIN 验证策略", pinPolicy, PinPolicy.entries, { it.name }, !state.busy) { pinPolicy = it }
                                 }
                                 if (op in setOf(ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
                                         ManagerOperation.FIDO_MIN_PIN, ManagerOperation.PIV_CSR)) {
@@ -586,7 +613,7 @@ fun ManagerScreen(
                                         if ("credProtect" in extensionNames && op == ManagerOperation.FIDO_REGISTER)
                                             Choice("credProtect", protection, listOf(1, 2, 3), { it.toString() }, !state.busy) { protection = it }
                                         if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER || "hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) {
-                                            SecretField(if (op == ManagerOperation.FIDO_REGISTER) "credBlob · HEX" else "hmac-secret · salt · HEX", extensionValue, !state.busy, viewportHeight) { extensionValue = it }
+                                            if (secretInputReady) SecretField(if (op == ManagerOperation.FIDO_REGISTER) "credBlob · HEX" else "hmac-secret · salt · HEX", extensionValue, !state.busy, viewportHeight) { extensionValue = it }
                                         }
                                     }
                                 }
@@ -600,8 +627,8 @@ fun ManagerScreen(
                         }
                     }
                     if (tab == 3) key(state.selectedReader?.routeKey) { EnrollmentPanel(enrollment, state.busy,
-                        !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection,
-                        clearInputs, onEnrollmentSettings, onEnrollmentRoot, { input ->
+                        !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection && state.canEnterPivSecrets,
+                        clearInputs + recognitionInputRetirements, onEnrollmentSettings, onEnrollmentRoot, { input ->
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                             onEnrollmentSubmit(input)
                         }, { token, revision ->
@@ -612,8 +639,8 @@ fun ManagerScreen(
                         enrollment.selection == cc.cardkey.enrollment.EnrollmentSelection()) {
                         key(state.selectedReader?.routeKey, enrollment.bundle) {
                             TlsQualificationPanel(tls, enrollment, state.busy,
-                                !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection,
-                                clearInputs, onTlsSettings, onTlsRoot, { input ->
+                                !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection && state.canEnterPivSecrets,
+                                clearInputs + recognitionInputRetirements, onTlsSettings, onTlsRoot, { input ->
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                                     onTlsSubmit(input)
                                 }, onCancel, viewportHeight)
@@ -746,4 +773,8 @@ private fun needsPin(op: ManagerOperation): Boolean = op !in setOf(
     ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT,
     ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT, ManagerOperation.PIV_SSH_EXPORT, ManagerOperation.PIV_ADMIN,
     ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET,
+)
+
+private fun needsSecretInput(op: ManagerOperation): Boolean = needsPin(op) || op in setOf(
+    ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT,
 )

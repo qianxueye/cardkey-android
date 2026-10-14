@@ -53,7 +53,9 @@ class TlsPanelTest {
         activity.enableEdgeToEdge()
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", "tls-panel-device")
-        manager.value = ManagerState(selectedReader = UsbReaderDescriptor(device, 1, CardWire.APDU), nfc = false)
+        val reader = UsbReaderDescriptor(device, 1, CardWire.APDU)
+        manager.value = ManagerState(selectedReader = reader, nfc = false,
+            recognition = CardRecognition(reader.routeKey, 1, CardFamily.PIV))
         val enrollment = EnrollmentState("https://localhost", f.csr.cn, true, f.csr, f.bundle, EnrollmentStage.IMPORTED)
         activity.setContent {
             MaterialTheme {

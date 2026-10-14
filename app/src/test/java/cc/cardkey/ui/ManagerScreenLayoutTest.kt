@@ -52,11 +52,12 @@ class ManagerScreenLayoutTest {
             (0 until group.childCount).firstNotNullOfOrNull { composeRoot(group.getChildAt(it)) }
         }
 
-    private fun render(width: Int, height: Int, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
+    private fun render(width: Int, height: Int, recognizedFamily: CardFamily? = null, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         activity.enableEdgeToEdge()
-        val state = mutableStateOf(ManagerState())
+        val recognized = recognizedFamily?.let { CardRecognition("nfc", 1, it) }
+        val state = mutableStateOf(ManagerState(recognition = recognized))
         activity.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
@@ -71,7 +72,7 @@ class ManagerScreenLayoutTest {
             compose.waitForIdle()
             compose.onNodeWithTag("object-overview").performClick()
             compose.waitForIdle()
-            check(activity) { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }
+            check(activity) { next -> compose.runOnIdle { state.value = next.copy(recognition = next.recognition ?: recognized) }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
     }
 
@@ -131,7 +132,7 @@ class ManagerScreenLayoutTest {
     }
 
     @Test fun imeOpeningDoesNotScrollRetainedResultOverNewPinInput() {
-        render(360, 640) { activity, update ->
+        render(360, 640, recognizedFamily = CardFamily.FIDO2) { activity, update ->
             update(ManagerState(operation = ManagerOperation.FIDO_INFO,
                 result = OperationResult.Completed(ManagerReport((1..20).map {
                     ResultRow("field $it", "completed value")
@@ -175,7 +176,7 @@ class ManagerScreenLayoutTest {
     }
 
     @Test fun correctingInvalidHexRemainsVisibleWhenImeOpens() {
-        render(360, 480) { activity, _ ->
+        render(360, 480, recognizedFamily = CardFamily.PIV) { activity, _ ->
             submitInvalidManagementHex()
             assertFeedbackVisible(activity.getString(R.string.error_invalidInput))
             focusManagementHexAwayFromError("01")
@@ -194,7 +195,7 @@ class ManagerScreenLayoutTest {
     }
 
     @Test fun anotherInvalidSubmitBringsExistingValidationBackIntoView() {
-        render(360, 480) { activity, _ ->
+        render(360, 480, recognizedFamily = CardFamily.PIV) { activity, _ ->
             submitInvalidManagementHex()
             val error = activity.getString(R.string.error_invalidInput)
             assertFeedbackVisible(error)

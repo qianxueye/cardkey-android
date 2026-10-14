@@ -46,3 +46,22 @@ The integrated lint gate identified five source-unused legacy resources after th
 | Enrollment / enrollment_root | CA 根证书 | Definition removed; actual CA preparation heading remains active. | Proven unused after the same package's CA layout replacement. |
 | Enrollment / enrollment_import | 导入证书 | Definition removed; 检查导入确认 remains active. | Proven unused; explicit confirmation semantics retained. |
 | Enrollment / enrollment_status | 证书申请 | Definition removed; actual task/result headings remain active. | Proven unused after the same package's CA layout replacement. |
+
+## Recognition prerequisite for card-secret entry
+
+Owner corrected the initial task-preview behavior: card PIN, PUK and management-key fields must not render before actual recognition. ManagerScreen now consumes the runtime-owned route/lifecycle/family record and `canEnterFidoSecrets` / `canEnterPivSecrets`. A selected USB descriptor, NFC mode, transport support, inventory or historical result never creates this prerequisite. U2F/PIV recognition cannot unlock FIDO2 secrets, and FIDO2 recognition cannot unlock PIV secrets. These records are last observed on a route; they do not prove ongoing presence or authorize a card operation.
+
+Secret fields and their submit action require the matching record. Public slot/algorithm/file/task inputs and no-secret information reads remain available. The prerequisite control explicitly executes only the existing matching information read through onSubmit, retaining the prospective task/slot/file preparation. It is a separate read action; object/task selection still never dispatches. NFC retains its owned queued-read/tap flow. Local PIN/new PIN/PUK/admin/extension secrets and pending confirmation retire when recognition identity or permission state changes. Confirmation also compares its captured recognition record at dispatch. The same identity retirement advances the existing CA/TLS clear-input parameter without recreating public preparation state; existing canUseCard includes actual PIV recognition and previous transport/uncertainty requirements.
+
+| Screen / key | Before | Applied wording / behavior | Reason / activation |
+| --- | --- | --- | --- |
+| FIDO task / workspace_readFidoFirst | PIN and extension-secret fields rendered in unrecognized task preview | 先执行“FIDO2 · 读取”，识别认证器后再输入 PIN 或扩展数据。读取记录不代表卡片持续在场。 | Explain the actual FIDO2 prerequisite and observation scope; manager card-secret tasks only. |
+| PIV task / workspace_readPivFirst | PIN/PUK/admin fields rendered in unrecognized task preview | 先执行“PIV · 读取”，识别卡片后再输入 PIN、PUK 或管理密钥。读取记录不代表卡片持续在场。 | Explain the actual PIV prerequisite and observation scope; manager card-secret tasks only. |
+| Task prerequisite / workspace_readRecognition | No prerequisite control | 读取卡片信息 | Explicitly dispatches existing matching FIDO_INFO or PIV_INFO without changing the prospective task or slot; preserves the runtime-approved prepared-file owner, never signing authority. |
+| Manager and CA/TLS secret fields | Visible without recognition | Hidden until matching runtime-owned recognition; retired on identity change | Preserve public prep/exports and existing submit/uncertainty/busy guards; recognition is not authorization. |
+
+Existing private-input/IME regression fixtures now supply explicit matching recognized-state snapshots. No-card task navigation keeps the default null recognition and no secret fields. Original inset, input-space, focused-field, retry, confirmation and report/export ownership assertions remain. Runtime producer tests separately exercise actual recognition provenance and retirement; these UI fixtures do not establish device/card acceptance.
+
+| PIV key generation / PIN policy selector | PIN | PIN 验证策略 | Identify the retained public policy choice separately from card-secret PIN entry; preparation remains available before recognition. |
+
+The explicit recognition pulse carries the current slot and inventory generation; FIDO pulses also carry the current selected credential. Runtime preservation is limited to the currently owned matching RAW/CMS prepared file or selected-credential blob-write file. Keys, PINs, stale requests, authorization and prior operation success never transfer through the read. A fresh explicit credential verification still supplies any one-use blob key. Public algorithm/text/file preparation is not recreated merely because recognition changes; existing genuine task/reader retirement remains.

@@ -51,7 +51,8 @@ class EnrollmentPanelTest {
             val enrollment = workflow?.state?.collectAsState()?.value ?: state.value
             MaterialTheme {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
-                    ManagerScreen(ManagerState(selectedReader = reader, nfc = false), clear.intValue,
+                    ManagerScreen(ManagerState(selectedReader = reader, nfc = false,
+                        recognition = cc.cardkey.ui.CardRecognition(reader.routeKey, 1, cc.cardkey.ui.CardFamily.PIV)), clear.intValue,
                         {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, enrollment,
                         { address, cn -> state.value = state.value.copy(address = address, cn = cn) }, {},
                         { error("A cancelled confirmation must not submit") }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, { selection ->

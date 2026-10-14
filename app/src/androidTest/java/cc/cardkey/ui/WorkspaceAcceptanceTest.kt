@@ -106,7 +106,7 @@ class WorkspaceAcceptanceTest {
             val report = ManagerReport(listOf(ResultRow("PIN 剩余重试次数", "3 次"),
                 ResultRow("公钥", "synthetic-public-key")) + (1..20).map { ResultRow("field $it", "synthetic value") },
                 export = byteArrayOf(1, 2, 3), fileName = "synthetic.csr")
-            update(ManagerState(operation = ManagerOperation.PIV_CSR,
+            update(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2), operation = ManagerOperation.PIV_CSR,
                 result = OperationResult.Completed(report, Effect.NONE)))
             compose.onNodeWithText("导出").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("PIN 剩余重试次数").assertExists()
