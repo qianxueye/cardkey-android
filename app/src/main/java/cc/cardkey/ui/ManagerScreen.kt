@@ -1,6 +1,5 @@
 package cc.cardkey.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
@@ -13,18 +12,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.activity.compose.BackHandler
 import cc.cardkey.protocol.*
 import cc.cardkey.R
 import cc.cardkey.enrollment.EnrollmentState
@@ -37,14 +36,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import cc.cardkey.protocol.piv.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.transport.UsbReaderDescriptor
-
-@Composable
-fun CardKeyTheme(content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
-    val colors = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    MaterialTheme(colorScheme = colors, content = content)
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +80,9 @@ fun ManagerScreen(
         signingFiles.restoreOperation?.piv == true || signingFiles.active -> 1
         else -> 0
     }) }
+    var objectDetail by remember { mutableStateOf(true) }
+    val objectListScroll = rememberScrollState()
+    val detailScroll = rememberScrollState()
     var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) signingFiles.operation else inventory.action ?: ManagerOperation.FIDO_INFO) }
     var pin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
@@ -214,11 +208,11 @@ fun ManagerScreen(
                     Icon(managerDestinationIcons[2], contentDescription = null)
                     Column(Modifier.weight(1f)) {
                         Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器",
-                            style = MaterialTheme.typography.titleMedium, maxLines = 2,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(when {
                             state.requiresInspection -> R.string.workspace_inspection
                             state.busy -> R.string.workspace_busy
+                            !state.nfc && state.selectedReader == null -> R.string.workspace_disconnected
                             state.result != null -> R.string.workspace_lastResult
                             else -> R.string.workspace_unread
                         }), style = MaterialTheme.typography.bodySmall,
@@ -238,6 +232,36 @@ fun ManagerScreen(
     }
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val viewportHeight = maxHeight
+        val twoPanes = workspaceUsesTwoPanes(maxWidth, LocalDensity.current.fontScale, viewportHeight)
+        val detailVisible = tab >= 2 || twoPanes || objectDetail || state.busy || state.requiresInspection
+        BackHandler(tab < 2 && objectDetail && !twoPanes && !state.busy) {
+            confirmation?.close(); confirmation = null
+            pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+            objectDetail = false
+        }
+        val objectPane: @Composable () -> Unit = {
+            PlexoObjects(tab, slot, inventory, !state.busy, objectListScroll,
+                onOverview = {
+                    confirmation?.close(); confirmation = null
+                    operation = if (tab == 1) ManagerOperation.PIV_INFO else ManagerOperation.FIDO_INFO
+                    objectDetail = true
+                },
+                onSlot = {
+                    confirmation?.close(); confirmation = null
+                    pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+                    slot = it; operation = ManagerOperation.PIV_SLOT; objectDetail = true
+                },
+                onRp = {
+                    confirmation?.close(); confirmation = null
+                    onInventoryRp(inventory.generation, it)
+                    operation = ManagerOperation.FIDO_CREDENTIALS; objectDetail = true
+                },
+                onCredential = {
+                    confirmation?.close(); confirmation = null
+                    onInventoryCredential(inventory.generation, it)
+                    operation = ManagerOperation.FIDO_VERIFY_CREDENTIAL; objectDetail = true
+                })
+        }
         val compact = viewportHeight < 480.dp
         LaunchedEffect(state.busy, state.presenceMessage, state.result, state.awaitingNfc, viewportHeight.takeIf { state.busy }) {
             if (state.busy || state.result != null) {
@@ -256,7 +280,7 @@ fun ManagerScreen(
             bottomBar = {
                 Column(modifier = if (compact) Modifier.navigationBarsPadding() else Modifier,
                     horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (tab < 2) {
+                    if (tab < 2 && detailVisible) {
                         val op = operation
                         Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(onClick = {
@@ -294,16 +318,49 @@ fun ManagerScreen(
                         }
                     }
                     if (tab == 3 && state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
-                    if (!compact) navigationBar()
+                    navigationBar()
                 }
             },
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (!compact) readerContext()
-                Column(Modifier.weight(1f).widthIn(max = 840.dp).fillMaxWidth()
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+                Row(Modifier.weight(1f).widthIn(max = 1200.dp).fillMaxWidth()) {
+                    if (tab < 2 && (twoPanes || !detailVisible)) {
+                        Box(if (twoPanes) Modifier.width(280.dp).fillMaxHeight() else Modifier.fillMaxSize()) { objectPane() }
+                        if (twoPanes) VerticalDivider()
+                    }
+                    if (detailVisible) Column(Modifier.weight(1f).fillMaxHeight()
+                    .testTag("workspace-detail").verticalScroll(detailScroll).padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (compact) { topBar(); readerContext() }
+                    if (tab < 2) {
+                        if (!twoPanes) TextButton(onClick = {
+                            confirmation?.close(); confirmation = null
+                            pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+                            objectDetail = false
+                        }, enabled = !state.busy, modifier = Modifier.testTag("workspace-object-back")) {
+                            Text(stringResource(R.string.workspace_objects))
+                        }
+                        PlexoSection(stringResource(R.string.workspace_selectedObject)) {
+                            if (tab == 1) {
+                                if (operation in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN,
+                                        ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
+                                    Text(stringResource(R.string.workspace_pivSecurity), style = MaterialTheme.typography.titleMedium)
+                                } else {
+                                    Text(stringResource(R.string.workspace_selectedSlot, "%02X".format(slot)), style = MaterialTheme.typography.titleMedium)
+                                    Text(stringResource(R.string.workspace_slotContext), style = MaterialTheme.typography.bodyMedium)
+                                }
+                            } else {
+                                inventory.credential?.let { credential ->
+                                    PlexoFactRow("RP", credential.rp.id)
+                                    credential.displayName?.let { PlexoFactRow("名称", it) }
+                                    PlexoFactRow("凭据 ID", credential.idHex)
+                                } ?: inventory.rp?.let { PlexoFactRow("RP", it.id) }
+                                    ?: Text(stringResource(R.string.workspace_authenticator))
+                                Text(stringResource(R.string.workspace_selectionOnly), style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
                     if (state.busy || state.result != null || state.presenceMessage != null) {
                         Surface(Modifier.fillMaxWidth().bringIntoViewRequester(feedbackRequester), shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceContainer) {
@@ -314,6 +371,8 @@ fun ManagerScreen(
                                 state.presenceMessage?.let { Text(stringResource(it)) }
                                 when (val result = state.result) {
                                     is OperationResult.Completed -> {
+                                        Text(stringResource(R.string.workspace_receipt), style = MaterialTheme.typography.labelLarge)
+                                        Text(stringResource(R.string.workspace_receiptOwner), style = MaterialTheme.typography.bodyMedium)
                                         ConfirmationPolicy.resultMessages(result, state.resultWire, state.operation).forEach {
                                             Text(stringResource(it), style = MaterialTheme.typography.titleMedium)
                                         }
@@ -346,12 +405,7 @@ fun ManagerScreen(
                                             "credProtect", "credBlob", "用户验证方法")
                                         val technicalRows = result.value.rows.filter { it.label in technicalLabels }
                                         result.value.rows.filterNot { it.label in technicalLabels }.forEach { row ->
-                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                                Text(row.label, modifier = Modifier.weight(0.35f), style = MaterialTheme.typography.labelLarge)
-                                                SelectionContainer(Modifier.weight(0.65f)) {
-                                                    Text(row.value, style = MaterialTheme.typography.bodyMedium)
-                                                }
-                                            }
+                                            PlexoFactRow(row.label, row.value)
                                         }
                                         var detailsExpanded by remember(result.value) { mutableStateOf(false) }
                                         if (technicalRows.isNotEmpty()) {
@@ -362,12 +416,7 @@ fun ManagerScreen(
                                             if (detailsExpanded) {
                                                 technicalRows.forEach { row ->
                                                     HorizontalDivider()
-                                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                                        Text(row.label, modifier = Modifier.weight(0.35f), style = MaterialTheme.typography.labelLarge)
-                                                        SelectionContainer(Modifier.weight(0.65f)) {
-                                                            Text(row.value, style = MaterialTheme.typography.bodyMedium)
-                                                        }
-                                                    }
+                                                    PlexoFactRow(row.label, row.value)
                                                 }
                                             }
                                         }
@@ -547,7 +596,7 @@ fun ManagerScreen(
                         }
                     }
                     if (tab == 0 && state.supportsPiv) Text(stringResource(R.string.restriction_fidoReset), style = MaterialTheme.typography.bodySmall)
-                    if (compact) navigationBar()
+                }
                 }
             }
         }
@@ -578,27 +627,33 @@ internal fun <T> Choice(label: String, value: T, values: List<T>, title: (T) -> 
 @Composable
 private fun OperationChoice(value: ManagerOperation, values: List<ManagerOperation>, enabled: Boolean, onChange: (ManagerOperation) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded && enabled, onExpandedChange = { if (enabled) expanded = it }) {
-        OutlinedTextField(value.title, {}, readOnly = true, label = { Text("操作") }, enabled = enabled,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded && enabled) },
-            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled))
-        ExposedDropdownMenu(expanded && enabled, onDismissRequest = { expanded = false }) {
-            val advancedNames = setOf("FIDO_RESET", "FIDO_ALWAYS_UV", "FIDO_MIN_PIN", "FIDO_ENTERPRISE",
-                "FIDO_REGISTER", "FIDO_ASSERT", "U2F_INFO", "U2F_REGISTER", "U2F_ASSERT",
-                "PIV_ADMIN", "PIV_GENERATE", "PIV_ECDH", "PIV_DECRYPT", "PIV_RESET")
-            listOf(false, true).forEach { advanced ->
-                val actions = values.filter { (it.name in advancedNames) == advanced }
-                if (actions.isNotEmpty()) {
-                    Text(stringResource(if (advanced) R.string.workspace_advanced else R.string.workspace_common),
-                        Modifier.padding(horizontal = 16.dp, vertical = 12.dp), style = MaterialTheme.typography.labelLarge)
-                    actions.forEach { option ->
-                        DropdownMenuItem(text = { Text(option.title) }, onClick = { expanded = false; onChange(option) },
-                            modifier = Modifier.testTag("task-${option.name}"))
+    OutlinedButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+            Text("操作", style = MaterialTheme.typography.labelLarge)
+            Text(value.title, style = MaterialTheme.typography.bodyLarge)
+        }
+        Icon(expandMoreIcon, contentDescription = null)
+    }
+    if (expanded && enabled) AlertDialog(onDismissRequest = { expanded = false },
+        title = { Text(stringResource(R.string.workspace_tasks)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.workspace_selectionOnly))
+                workspaceOperationGroups(values).forEachIndexed { index, actions ->
+                    if (actions.isNotEmpty()) {
+                        Text(stringResource(if (index == 1) R.string.workspace_advanced else R.string.workspace_common),
+                            style = MaterialTheme.typography.titleSmall)
+                        actions.forEach { option ->
+                            TextButton(onClick = { expanded = false; onChange(option) },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("task-${option.name}")) {
+                                Text(option.title, Modifier.fillMaxWidth())
+                            }
+                        }
                     }
                 }
             }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = { expanded = false }) { Text("取消") } })
 }
 
 @Composable

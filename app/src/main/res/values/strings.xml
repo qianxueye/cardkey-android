@@ -130,4 +130,22 @@
     <string name="ssh_publicKeyScope">已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。本操作不验证 SSH 登录。</string>
     <string name="ssh_publicKeyExported">已导出 SSH 公钥。</string>
     <string name="certificate_dateScope">仅检查证书有效期，未验证信任链、吊销状态或与槽位公钥的匹配关系。</string>
+    <string name="workspace_disconnected">当前连接 · 未选择 USB 读卡器</string>
+    <string name="workspace_objects">对象列表</string>
+    <string name="workspace_selectedObject">当前选择</string>
+    <string name="workspace_selectedSlot">槽位 · %1$s</string>
+    <string name="workspace_selectionOnly">选择对象或任务不会发送卡片指令。</string>
+    <string name="workspace_authenticator">认证器</string>
+    <string name="workspace_pivSecurity">PIV 状态与安全设置</string>
+    <string name="workspace_slotCatalog">槽位目录</string>
+    <string name="workspace_slotAuthentication">身份验证</string>
+    <string name="workspace_slotSignature">数字签名</string>
+    <string name="workspace_slotManagement">密钥管理</string>
+    <string name="workspace_slotCardAuthentication">卡片验证</string>
+    <string name="workspace_slotRetired">退役密钥</string>
+    <string name="workspace_credentials">凭据</string>
+    <string name="workspace_credentialReadRequired">选择 RP 后，明确执行“凭据 · 读取”。当前列表不代表卡片没有凭据。</string>
+    <string name="workspace_tasks">选择任务</string>
+    <string name="workspace_receipt">任务结果</string>
+    <string name="workspace_receiptOwner">以下结果属于本次任务记录的对象。改变当前选择不会改变结果中的对象。</string>
 </resources>
