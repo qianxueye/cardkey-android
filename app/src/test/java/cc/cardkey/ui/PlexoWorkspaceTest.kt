@@ -13,6 +13,8 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import cc.cardkey.enrollment.EnrollmentState
+import cc.cardkey.enrollment.EnrollmentCard
+import cc.cardkey.protocol.CardSession
 import cc.cardkey.protocol.Effect
 import cc.cardkey.protocol.OperationResult
 import cc.cardkey.signing.SigningFileState
@@ -107,4 +109,43 @@ class PlexoWorkspaceTest {
             assertEquals(Effect.NONE, result.effect)
         }
     }
+
+    @Test fun sshDetailsAndExportRemainCapturedAfterSelectingAnotherSlot() {
+        val card = EnrollmentCard()
+        val result = CardSession(card).run {
+            ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SSH_EXPORT, slot = 0x9c))
+        } as OperationResult.Completed
+        val report = result.value
+        val publicText = requireNotNull(report.export).decodeToString()
+        val commandCount = card.commands.size
+        var exported: ManagerReport? = null
+        render(360, 640, onExport = { exported = it }) { _, update, action ->
+            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithTag("object-slot-9C").performScrollTo().performClick()
+            compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
+            compose.onNodeWithTag("task-PIV_SSH_EXPORT").performScrollTo().performClick()
+            update(ManagerState(operation = ManagerOperation.PIV_SSH_EXPORT, result = result))
+            compose.onNodeWithText("PIN", substring = false).assertDoesNotExist()
+            compose.onNodeWithText(publicText).assertDoesNotExist()
+            compose.onNodeWithText("piv-9c-ssh.pub").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("result-details").performScrollTo().performClick()
+            compose.onNodeWithText(publicText).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("workspace-object-back").performScrollTo().performClick()
+            compose.onNodeWithTag("object-slot-9D").performScrollTo().performClick()
+            compose.waitForIdle()
+            assertEquals(ManagerOperation.PIV_SLOT to 0x9d, action())
+            compose.onNodeWithText("PIN", substring = false).assertDoesNotExist()
+            compose.onNodeWithText(publicText).assertDoesNotExist()
+            compose.onNodeWithTag("result-details").performScrollTo().performClick()
+            compose.onNodeWithText(publicText).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("piv-9c-ssh.pub").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("导出", substring = false).performScrollTo().performClick()
+            assertSame(report, exported)
+            assertEquals("piv-9c-ssh.pub", exported?.fileName)
+            assertArrayEquals(report.export, exported?.export)
+            assertEquals(commandCount, card.commands.size)
+            assertTrue(card.commands.all { it.ins in setOf(0xa4, 0xf7, 0xc0) })
+        }
+    }
+
 }
