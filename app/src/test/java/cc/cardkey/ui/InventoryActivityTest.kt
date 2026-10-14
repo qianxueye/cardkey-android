@@ -14,6 +14,8 @@ import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.AssertionExtensions
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
+import org.junit.Before
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,12 +33,19 @@ import java.io.ByteArrayOutputStream
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class InventoryActivityTest {
     @get:Rule val compose = createEmptyComposeRule()
+    // Robolectric replaces Applications; AndroidX caches the factory's first Application.
+    @Before @After fun clearCachedApplicationFactory() {
+        ReflectionHelpers.setStaticField(ViewModelProvider.AndroidViewModelFactory::class.java, "_instance", null)
+    }
     private fun choose(operation: String) {
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(operation).performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.waitForIdle()
     }
-    private fun model(activity: MainActivity): ManagerViewModel = ViewModelProvider(activity)[ManagerViewModel::class.java]
+    private fun model(activity: MainActivity): ManagerViewModel = ViewModelProvider(activity)[ManagerViewModel::class.java].also {
+        assertSame("The Activity fixture must use this test's Application", activity.application,
+            it.getApplication<android.app.Application>())
+    }
     private fun prepare(activity: MainActivity): Pair<ManagerViewModel, InventoryCard> {
         val model = model(activity); val card = InventoryCard()
         seedInventory(model.inventory, card)

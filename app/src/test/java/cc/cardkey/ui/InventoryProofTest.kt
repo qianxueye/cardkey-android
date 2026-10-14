@@ -214,6 +214,20 @@ class InventoryProofTest {
         assertEquals(FailureCode.MALFORMED_RESPONSE, failure.code); assertEquals(Effect.NONE, failure.effect)
         assertEquals(0, card.server.tokenRequests); assertEquals(0, card.assertions)
     }
+    @Test fun selectedProofConsentOnlyIncludesTheExtensionItActuallyRequests() {
+        for (operation in listOf(ManagerOperation.FIDO_ASSERT, ManagerOperation.FIDO_VERIFY_CREDENTIAL)) {
+            OperationInput(operation, pin = "1234".toCharArray(),
+                assertionExtensions = AssertionExtensions(credentialBlob = true, hmacSalts = ByteArray(32))).use {
+                val messages = ConfirmationPolicy.messages(it)
+                assertTrue(messages.contains(cc.cardkey.R.string.confirm_authenticate))
+                assertEquals(operation == ManagerOperation.FIDO_ASSERT, messages.contains(cc.cardkey.R.string.confirm_secretRead))
+            }
+        }
+        OperationInput(ManagerOperation.FIDO_VERIFY_CREDENTIAL, pin = "1234".toCharArray(),
+            assertionExtensions = AssertionExtensions(largeBlobKey = true)).use {
+            assertTrue(ConfirmationPolicy.messages(it).contains(cc.cardkey.R.string.confirm_secretRead))
+        }
+    }
     @Test fun wrongPinRetainsRetryEffectAndNeverAsserts() {
         val card = InventoryCard(); seed(card); card.pinError = true
         val failure = run(card) as OperationResult.Failed
