@@ -72,8 +72,10 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var selected by mutableStateOf<UsbReaderDescriptor?>(null)
     private var permissionPending by mutableStateOf(false)
     private var pendingReader: UsbReaderDescriptor? = null
+    private var activeReader: UsbReaderDescriptor? = null
     private var pin by mutableStateOf("")
-    private var pendingPin: CharArray? = null
+    private var credentialOperationStarted by mutableStateOf(false)
+    private var recognition by mutableStateOf<ProviderRecognition?>(null)
     private var requestCancelled = false
     private var retryableCancellation = false
     private var presenceWatch: Job? = null
@@ -223,24 +225,47 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                             Text(stringResource(R.string.plexo_provider_permission_prompt, stringResource(R.string.app_name)))
                         }
                     }
-                    PlexoSection(stringResource(R.string.plexo_provider_confirmation)) {
-                        if (get?.extensions?.largeBlobWrite != null) Text(stringResource(R.string.confirm_blobWrite))
-                        if (create == null) Text(stringResource(R.string.plexo_provider_get_consequence))
-                        create?.let {
-                            Text(stringResource(R.string.plexo_provider_create_consequence))
-                            Text(stringResource(if (it.attestation == AttestationPreference.DIRECT)
-                                R.string.provider_attestation_direct else R.string.provider_attestation_none))
+                    if (credentialOperationStarted && busy) {
+                        PlexoSection(stringResource(R.string.plexo_provider_executing)) {
+                            CircularProgressIndicator()
+                            presenceMessage?.let { Text(stringResource(it)) }
                         }
-                        OutlinedTextField(pin, { pin = it }, label = { Text("PIN") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth(), enabled = !busy,
-                            visualTransformation = PasswordVisualTransformation())
-                        if (pin.isNotEmpty()) Text(stringResource(R.string.confirm_authenticate))
-                        if (busy) CircularProgressIndicator()
-                        presenceMessage?.let { Text(stringResource(it)) }
-                        Button(onClick = ::confirm,
-                            enabled = !busy && !permissionPending && clientData != null,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                            Text(stringResource(R.string.plexo_provider_confirm))
+                    } else if (recognition == null) {
+                        PlexoSection(stringResource(R.string.plexo_provider_recognition)) {
+                            Text(stringResource(R.string.plexo_provider_recognition_explanation))
+                            if (busy) {
+                                CircularProgressIndicator()
+                                Text(stringResource(if (awaitingNfc) R.string.plexo_provider_recognition_nfc
+                                    else R.string.plexo_provider_recognizing))
+                            }
+                            Button(onClick = ::recognize,
+                                enabled = !busy && !permissionPending && clientData != null,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.plexo_provider_recognize))
+                            }
+                        }
+                    } else {
+                        PlexoSection(stringResource(R.string.plexo_provider_confirmation)) {
+                            Text(stringResource(R.string.plexo_provider_recognized))
+                            if (selected == null) Text(stringResource(R.string.plexo_provider_keep_nfc))
+                            if (get?.extensions?.largeBlobWrite != null) Text(stringResource(R.string.confirm_blobWrite))
+                            if (create == null) Text(stringResource(R.string.plexo_provider_get_consequence))
+                            create?.let {
+                                Text(stringResource(R.string.plexo_provider_create_consequence))
+                                Text(stringResource(if (it.attestation == AttestationPreference.DIRECT)
+                                    R.string.provider_attestation_direct else R.string.provider_attestation_none))
+                            }
+                            if (recognition?.pinRequired == true) {
+                                OutlinedTextField(pin, { pin = it }, label = { Text("PIN") }, singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation())
+                                Text(stringResource(R.string.confirm_authenticate))
+                            }
+                            Button(onClick = ::confirm,
+                                enabled = !permissionPending && clientData != null &&
+                                    (recognition?.pinRequired != true || pin.isNotEmpty()),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.plexo_provider_confirm))
+                            }
                         }
                     }
                 }
@@ -273,15 +298,30 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun confirm() {
-        if (busy || loading || rejected || failure != null || clientData == null) return
-        busy = true
-        pendingPin = pin.takeIf { it.isNotEmpty() }?.toCharArray()
+        val observed = recognition ?: return
+        if (!active || completed || requestCancelled || permissionPending || loading || rejected || clientData == null) return
+        activeReader?.let { reader ->
+            if (selected?.routeKey != reader.routeKey || !UsbAuthenticatorReader.isCurrent(usb, reader) || !usb.hasPermission(reader.device)) {
+                cancelRequest()
+                return
+            }
+        }
+        val secret = if (observed.pinRequired) pin.takeIf { it.isNotEmpty() }?.toCharArray() else null
         pin = ""
+        if (runner.confirm(secret)) {
+            recognition = null
+            credentialOperationStarted = true
+        }
+    }
+
+    private fun recognize() {
+        if (!active || completed || requestCancelled || busy || permissionPending || loading || rejected || failure != null || clientData == null) return
+        busy = true
+        pin = ""
+        recognition = null
         val reader = selected
         if (reader == null) {
             if (nfc?.isEnabled != true) {
-                pendingPin?.fill('\u0000')
-                pendingPin = null
                 busy = false
                 failure = OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                 return
@@ -310,17 +350,17 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         val generation = ++presenceGeneration
         userPresenceRequired = false
         val reader = selected
+        activeReader = reader
         failureWire = reader?.wire ?: CardWire.APDU
-        val secret = pendingPin
-        pendingPin = null
         lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
             operationOwnsInputs = true
             var pendingOutput: OperationResult<ProviderOutput>? = null
             var retained = false
             try {
                 val cardResult = withContext(Dispatchers.IO) {
-                    runner.execute(create, get, requireNotNull(clientData), secret, reader?.routeKey, requireNotNull(extracted).claim,
+                    runner.recognizeAndExecute(create, get, requireNotNull(clientData), reader?.routeKey, requireNotNull(extracted).claim,
                         onUserPresenceRequired = { required -> runOnUiThread { updateUserPresence(generation, reader, required) } },
+                        onRecognized = { observed -> runOnUiThread { updateRecognition(generation, reader, observed) } },
                         connect = connect).also { pendingOutput = it }
                 }
                 val result = if (requestCancelled && cardResult is OperationResult.Completed)
@@ -329,6 +369,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                         is ProviderOutput.Assertions -> output.values.any { it.extensions.largeBlobWritten == true }
                     }) else cardResult
                 userPresenceRequired = false
+                recognition = null
+                pin = ""
                 busy = false
                 if (completed || requestCancelled) {
                     if (cardResult is OperationResult.Completed && cardResult.value is ProviderOutput.Assertions)
@@ -352,6 +394,9 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     }
                 }
             } finally {
+                recognition = null
+                activeReader = null
+                pin = ""
                 if (generation == presenceGeneration) { presenceGeneration++; userPresenceRequired = false }
                 operationOwnsInputs = false
                 closeIdleInputs()
@@ -363,6 +408,15 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 }
             }
         }
+    }
+
+    private fun updateRecognition(generation: Long, reader: UsbReaderDescriptor?, observed: ProviderRecognition) {
+        if (generation != presenceGeneration || !runner.isActive || !active || !busy || completed || requestCancelled ||
+            permissionPending || loading || rejected || clientData == null ||
+            selected?.routeKey != reader?.routeKey ||
+            (reader != null && (!UsbAuthenticatorReader.isCurrent(usb, reader) || !usb.hasPermission(reader.device)))) return
+        pin = ""
+        recognition = observed
     }
 
     private val presenceMessage get() = ConfirmationPolicy.presenceMessage(
@@ -411,8 +465,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         presenceGeneration++
         userPresenceRequired = false
         pin = ""
-        pendingPin?.fill('\u0000')
-        pendingPin = null
+        recognition = null
         awaitingNfc = false
         assertions.forEach { it.close() }
         assertions = emptyList()
@@ -472,6 +525,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onPause() {
         active = false
+        recognition = null
         presenceWatch?.cancel()
         nfc?.disableReaderMode(this)
         pin = ""
@@ -489,7 +543,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         presenceGeneration++
         userPresenceRequired = false
         assertions.forEach { it.close() }
-        pendingPin?.fill('\u0000')
+        pin = ""
+        recognition = null
         runner.cancel()
         extracted?.claim?.finish(cancelled = true)
         closeIdleInputs()

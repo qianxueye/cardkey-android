@@ -17,7 +17,12 @@ object CardCredentialOperation {
         validateClientData(clientData)
         val client = FidoClient(session)
         client.select()
-        val info = client.getInfo()
+        create(client, client.getInfo(), request, clientData, pin)
+    } finally { pin?.fill('\u0000'); request.extensions.close() }
+
+    internal fun create(client: FidoClient, info: FidoInfo, request: ParsedCreate, clientData: ClientData,
+        pin: CharArray?): CreatedCredential = try {
+        validateClientData(clientData)
         val resident = when (request.residentKey) {
             ResidentKeyRequirement.REQUIRED -> {
                 if (info.options["rk"] != true) throw CardFailure(FailureCode.UNSUPPORTED)
@@ -26,11 +31,14 @@ object CardCredentialOperation {
             ResidentKeyRequirement.PREFERRED -> info.options["rk"] == true
             ResidentKeyRequirement.DISCOURAGED -> false
         }
-        val requireUv = requireUv(request.userVerification, info, pin)
+        val verification = if (info.options["alwaysUv"] == true ||
+            (info.options["clientPin"] == true && (resident || info.options["makeCredUvNotRqd"] != true)))
+            UserVerificationRequirement.REQUIRED else request.userVerification
+        val requireUv = requireUv(verification, info, pin)
         val extensions = request.extensions.forCard(info, resident)
         val result = client.makeCredential(MakeCredentialRequest(
             request.rpId, request.rpName, request.user, clientData.hash, listOf(-7), resident,
-            requireUv, request.excludeIds, extensions), pin)
+            requireUv, request.excludeIds, extensions), pin, info)
         try {
             val auth = validateAuth(result.authData, request.rpId, requireUv)
             val id = auth.credentialId ?: malformed()
@@ -65,27 +73,33 @@ object CardCredentialOperation {
     } finally { pin?.fill('\u0000'); request.extensions.close() }
 
     fun get(session: CardSession, request: ParsedGet, clientData: ClientData,
-        pin: CharArray? = null): List<ProvidedAssertion> {
+        pin: CharArray? = null): List<ProvidedAssertion> = try {
+        validateClientData(clientData)
+        val client = FidoClient(session)
+        client.select()
+        get(client, client.getInfo(), request, clientData, pin)
+    } finally { pin?.fill('\u0000'); request.extensions.close() }
+
+    internal fun get(client: FidoClient, info: FidoInfo, request: ParsedGet, clientData: ClientData,
+        pin: CharArray?): List<ProvidedAssertion> {
         val completed = mutableListOf<ProvidedAssertion>()
         var results: List<Assertion> = emptyList()
         try {
             validateClientData(clientData)
-            val client = FidoClient(session)
-            client.select()
-            val info = client.getInfo()
             val input = request.extensions
             val effectiveInputs = if (request.allowIds.isEmpty()) listOf(input.prfInputs)
                 else request.allowIds.map(input::inputsFor)
             val initialInputs = effectiveInputs.first()
             var prfInputs = initialInputs
             val supportsPrf = "hmac-secret" in info.extensions
-            val requireUv = requireUv(if (supportsPrf && effectiveInputs.any { it != null })
+            val requireUv = requireUv(if (info.options["alwaysUv"] == true ||
+                (supportsPrf && effectiveInputs.any { it != null }))
                 UserVerificationRequirement.REQUIRED else request.userVerification, info, pin)
             var allowIds = request.allowIds
             var selected: Assertion? = null
             if (supportsPrf && effectiveInputs.any { if (initialInputs == null) it != null else !initialInputs.sameAs(it) }) {
                 val preflight = client.getAssertion(GetAssertionRequest(request.rpId, clientData.hash,
-                    allowIds, requireUv = true, userPresence = false), pin?.copyOf()).singleOrNull() ?: malformed()
+                    allowIds, requireUv = true, userPresence = false), pin?.copyOf(), info).singleOrNull() ?: malformed()
                 val auth = validateAuth(preflight.authData, request.rpId, requireUv = true, requireUp = false)
                 val builtInUv = pin == null && info.options["uv"] == true
                 if ((auth.userPresent && !builtInUv) || auth.credentialId != null || auth.extensions?.value?.isNotEmpty() == true ||
@@ -102,7 +116,7 @@ object CardCredentialOperation {
                 (input.largeBlobRead || input.largeBlobWrite != null) && info.supportsLargeBlob(),
                 input.uvm && "uvm" in info.extensions)
             results = client.getAssertion(GetAssertionRequest(request.rpId, clientData.hash,
-                allowIds, requireUv, extensions), pin?.copyOf())
+                allowIds, requireUv, extensions), pin?.copyOf(), info)
             if (selected != null) {
                 val final = results.singleOrNull() ?: malformed()
                 if (!final.credentialId.contentEquals(selected.credentialId) ||

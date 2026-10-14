@@ -209,7 +209,7 @@ class CardCredentialOperationTest {
         assertArrayEquals(original.signature, response.signature)
         assertTrue(FidoDiagnostics.verifyAssertion(response, key, rp, data.hash).signatureValid)
         assertFalse(FidoDiagnostics.verifyAssertion(response, key, rp, ByteArray(32)).signatureValid)
-        assertEquals(listOf(4, 4, 2), channel.commands.map { it.first })
+        assertEquals(listOf(4, 2), channel.commands.map { it.first })
     }
 
     @Test fun relyingPartyRejectsWrongChallengeSignatureWithoutProviderInventingVerification() {
@@ -225,7 +225,7 @@ class CardCredentialOperationTest {
         val channel = assertions(originals)
         val result = getWith(channel) as OperationResult.Completed
         assertEquals(2, result.value.size)
-        assertEquals(listOf(4, 4, 2, 8), channel.commands.map { it.first })
+        assertEquals(listOf(4, 2, 8), channel.commands.map { it.first })
         for (response in result.value.map { it.assertion }) assertTrue(FidoDiagnostics.verifyAssertion(response, key, rp, data.hash).signatureValid)
         assertEquals(1, channel.selectCount)
     }

@@ -48,7 +48,7 @@ class ScriptedProviderIntegrationTest {
         val card = ScriptedAuthenticator(wire)
         val createData = clientData("webauthn.create", "AQID")
         val createChannel = card.channel(createData.hash)
-        val createdResult = ProviderOperationRunner().execute(create = createRequest, get = null,
+        val createdResult = ProviderOperationRunner().executeAndConfirm(create = createRequest, get = null,
             clientData = createData, pin = null, readerId = null, connect = { createChannel })
         assertTrue(createdResult is OperationResult.Completed)
         val created = ((createdResult as OperationResult.Completed).value as ProviderOutput.Created).credential
@@ -72,7 +72,7 @@ class ScriptedProviderIntegrationTest {
         val getData = clientData("webauthn.get", "BAUG")
         val getChannel = card.channel(getData.hash)
         val getRequest = ParsedGet(rpId, "BAUG", listOf(credentialId), UserVerificationRequirement.REQUIRED)
-        val assertionResult = ProviderOperationRunner().execute(create = null, get = getRequest,
+        val assertionResult = ProviderOperationRunner().executeAndConfirm(create = null, get = getRequest,
             clientData = getData, pin = null, readerId = null, connect = { getChannel })
         assertTrue(assertionResult is OperationResult.Completed)
         val assertions = ((assertionResult as OperationResult.Completed).value as ProviderOutput.Assertions).values
@@ -92,7 +92,7 @@ class ScriptedProviderIntegrationTest {
         assertEquals(5, returnedAuth[32].toInt() and 0x1d)
         assertTrue(verifyAtRelyingParty(registeredKey, returnedAuth, sha256(returnedClientData), returnedSignature))
         assertFalse(verifyAtRelyingParty(registeredKey, returnedAuth, createData.hash, returnedSignature))
-        assertEquals(listOf(4, 4, 2), getChannel.commands)
+        assertEquals(listOf(4, 2), getChannel.commands)
         assertFalse(createChannel.commands.contains(0x0a))
         assertFalse(getChannel.commands.contains(0x0a))
         assertTrue(getChannel.closed)
@@ -103,7 +103,7 @@ class ScriptedProviderIntegrationTest {
         val browserData = clientData("webauthn.get", "BwgJ")
         val delegated = ClientData(byteArrayOf(), browserData.hash, true)
         val channel = card.channel(browserData.hash)
-        val result = ProviderOperationRunner().execute(create = null,
+        val result = ProviderOperationRunner().executeAndConfirm(create = null,
             get = ParsedGet(rpId, "BwgJ", listOf(credentialId), UserVerificationRequirement.REQUIRED),
             clientData = delegated, pin = null, readerId = null, connect = { channel })
         assertTrue(result is OperationResult.Completed)
@@ -121,7 +121,7 @@ class ScriptedProviderIntegrationTest {
         val channel = card.channel(data.hash, loseCreationResponse = true)
         val runner = ProviderOperationRunner()
         var connects = 0
-        val result = runner.execute(create = createRequest, get = null, clientData = data, pin = null,
+        val result = runner.executeAndConfirm(create = createRequest, get = null, clientData = data, pin = null,
             readerId = null, connect = { connects++; channel })
         assertTrue(result is OperationResult.Failed)
         result as OperationResult.Failed
@@ -129,7 +129,7 @@ class ScriptedProviderIntegrationTest {
         assertEquals(Effect.UNKNOWN, result.effect)
         assertEquals(Dispatch.RESPONSE_UNAVAILABLE, result.dispatch)
         assertTrue(channel.closed)
-        val repeated = runner.execute(create = createRequest, get = null, clientData = data, pin = null,
+        val repeated = runner.executeAndConfirm(create = createRequest, get = null, clientData = data, pin = null,
             readerId = null, connect = { connects++; channel }) as OperationResult.Failed
         assertEquals(FailureCode.CANCELLED, repeated.code)
         assertEquals(Dispatch.NOT_DISPATCHED, repeated.dispatch)

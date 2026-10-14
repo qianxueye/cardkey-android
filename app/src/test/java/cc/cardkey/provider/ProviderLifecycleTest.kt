@@ -106,7 +106,7 @@ class ProviderLifecycleTest {
         val old = registry.claim(id)
         old.finish(cancelled = true)
         val current = registry.claim(id)
-        val result = ProviderOperationRunner().execute(null, getRequest(),
+        val result = ProviderOperationRunner().executeAndConfirm(null, getRequest(),
             ClientData(byteArrayOf(), ByteArray(32), true), null, claim = old) { error("stale worker connected") }
         assertEquals(Dispatch.NOT_DISPATCHED, (result as OperationResult.Failed).dispatch)
         assertTrue(current.reserveTransport())
@@ -121,7 +121,7 @@ class ProviderLifecycleTest {
         val resume = CountDownLatch(1)
         val result = AtomicReference<OperationResult<ProviderOutput>>()
         val worker = Thread {
-            result.set(runner.execute(null, getRequest(), ClientData(byteArrayOf(), ByteArray(32), true),
+            result.set(runner.executeAndConfirm(null, getRequest(), ClientData(byteArrayOf(), ByteArray(32), true),
                 null, claim = claim) {
                 connecting.countDown()
                 check(resume.await(5, TimeUnit.SECONDS))
@@ -167,7 +167,7 @@ class ProviderLifecycleTest {
         runner.cancel()
         repeat(2) {
             val pin = "123456".toCharArray()
-            val result = runner.execute(null, getRequest(), data, pin) { connections++; error("must not connect") }
+            val result = runner.executeAndConfirm(null, getRequest(), data, pin) { connections++; error("must not connect") }
             assertEquals(FailureCode.CANCELLED, (result as OperationResult.Failed).code)
             assertTrue(pin.all { char -> char == '\u0000' })
         }
@@ -179,10 +179,10 @@ class ProviderLifecycleTest {
         val data = ClientData(byteArrayOf(), ByteArray(32), true)
         val lease = requireNotNull(CardOperationGate.tryAcquire())
         try {
-            val result = runner.execute(null, getRequest(), data, null) { error("must not connect") }
+            val result = runner.executeAndConfirm(null, getRequest(), data, null) { error("must not connect") }
             assertEquals(FailureCode.BUSY, (result as OperationResult.Failed).code)
         } finally { lease.close() }
-        assertEquals(FailureCode.CANCELLED, (runner.execute(null, getRequest(), data, null) {
+        assertEquals(FailureCode.CANCELLED, (runner.executeAndConfirm(null, getRequest(), data, null) {
             error("must not replay")
         } as OperationResult.Failed).code)
     }
@@ -202,7 +202,7 @@ class ProviderLifecycleTest {
         } }
         val result = AtomicReference<OperationResult<ProviderOutput>>()
         val worker = Thread {
-            result.set(runner.execute(null, ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)),
+            result.set(runner.executeAndConfirm(null, ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)),
                 UserVerificationRequirement.DISCOURAGED), ClientData(byteArrayOf(), ByteArray(32), true), null) { channel })
         }
         worker.start()
@@ -228,12 +228,12 @@ class ProviderLifecycleTest {
             else -> error("unexpected command")
         } }
         try {
-            val result = ProviderOperationRunner().execute(null,
+            val result = ProviderOperationRunner().executeAndConfirm(null,
                 ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.DISCOURAGED),
                 ClientData(byteArrayOf(), ByteArray(32), true), null, reader) { channel }
             assertEquals(FailureCode.PHYSICAL_ACTION_REQUIRED, (result as OperationResult.Failed).code)
             assertTrue(CardOperationGate.isRemovalRequired(reader))
-            assertEquals(listOf(4, 4, 2), channel.commands.map { it.first })
+            assertEquals(listOf(4, 2), channel.commands.map { it.first })
         } finally { CardOperationGate.observedRemoval(reader) }
         assertFalse(CardOperationGate.isRemovalRequired(reader))
     }
@@ -246,7 +246,7 @@ class ProviderLifecycleTest {
             var connections = 0; var apdus = 0
             val pin = "123456".toCharArray()
             runner.cancel()
-            val result = runner.execute(null, request, ClientData(byteArrayOf(), ByteArray(32), true), pin) {
+            val result = runner.executeAndConfirm(null, request, ClientData(byteArrayOf(), ByteArray(32), true), pin) {
                 connections++
                 object : CardChannel {
                     override val medium = Medium.CONTACT
@@ -282,7 +282,7 @@ class ProviderLifecycleTest {
             throw CardFailure(FailureCode.CANCELLED)
         }
         val worker = Thread {
-            runner.execute(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null, claim = claim) { channel }
+            runner.executeAndConfirm(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null, claim = claim) { channel }
         }
         worker.start()
         assertTrue(entered.await(5, TimeUnit.SECONDS))
@@ -292,7 +292,7 @@ class ProviderLifecycleTest {
             assertThrows(IllegalArgumentException::class.java) { registry.claim(id) }
             assertArrayEquals(byteArrayOf(3), prf.first)
             assertArrayEquals(byteArrayOf(5), inputs.largeBlobWrite)
-            val duplicate = runner.execute(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null, claim = claim) { error("no replay") }
+            val duplicate = runner.executeAndConfirm(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null, claim = claim) { error("no replay") }
             assertEquals(FailureCode.CANCELLED, (duplicate as OperationResult.Failed).code)
             assertArrayEquals(byteArrayOf(3), prf.first)
         } finally { resume.countDown(); worker.join(5000) }
@@ -310,7 +310,7 @@ class ProviderLifecycleTest {
             val lease = if (kind == "busy") CardOperationGate.tryAcquire() else null
             if (kind == "cancel") runner.cancel()
             try {
-                assertTrue(runner.execute(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null) {
+                assertTrue(runner.executeAndConfirm(null, request, ClientData(byteArrayOf(), ByteArray(32), true), null) {
                     assertEquals("connect", kind)
                     throw TransportException(Dispatch.NOT_DISPATCHED)
                 } is OperationResult.Failed)
@@ -329,7 +329,7 @@ class ProviderLifecycleTest {
         val oldInputs = GetExtensionInputs(prfInputs = PrfInputs(byteArrayOf(3)), largeBlobWrite = byteArrayOf(5))
         val newInputs = GetExtensionInputs(prfInputs = PrfInputs(byteArrayOf(7)), largeBlobWrite = byteArrayOf(9))
         val oldRequest = ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.DISCOURAGED, oldInputs)
-        val result = ProviderOperationRunner().execute(null, oldRequest,
+        val result = ProviderOperationRunner().executeAndConfirm(null, oldRequest,
             ClientData(byteArrayOf(), ByteArray(32), true), null, claim = stale) { error("stale request connected") }
         assertEquals(FailureCode.CANCELLED, (result as OperationResult.Failed).code)
         assertArrayEquals(byteArrayOf(0), oldInputs.prfInputs!!.first)
@@ -338,7 +338,7 @@ class ProviderLifecycleTest {
         assertArrayEquals(byteArrayOf(9), newInputs.largeBlobWrite)
         assertFalse(stale.finish(cancelled = true))
         val newRequest = oldRequest.copy(extensions = newInputs)
-        val selectedResult = ProviderOperationRunner().execute(null, newRequest,
+        val selectedResult = ProviderOperationRunner().executeAndConfirm(null, newRequest,
             ClientData(byteArrayOf(), ByteArray(32), true), null, claim = selected) {
             assertArrayEquals(byteArrayOf(7), newInputs.prfInputs.first)
             assertArrayEquals(byteArrayOf(9), newInputs.largeBlobWrite)

@@ -95,7 +95,9 @@ class PlexoProviderTest {
     @Test fun pendingNativePermissionKeepsRouteAndConfirmationDisabledWhileCancelIsReachable() {
         render(verified = true, pendingPermission = true) { provider, host, reader ->
             compose.onNodeWithText("NFC", substring = false).performScrollTo().assertIsNotEnabled()
-            compose.onNodeWithText(host.getString(R.string.plexo_provider_confirm)).performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText(host.getString(R.string.plexo_provider_recognize)).performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("PIN").assertDoesNotExist()
+            compose.onNodeWithText(host.getString(R.string.plexo_provider_confirm)).assertDoesNotExist()
             compose.onNodeWithText(host.getString(R.string.plexo_provider_cancel)).performScrollTo().assertIsDisplayed().assertHasClickAction()
             assertSame(reader, ReflectionHelpers.callInstanceMethod<UsbReaderDescriptor>(provider, "getSelected"))
             compose.onNodeWithText("example.com").performScrollTo().assertIsDisplayed()
@@ -107,7 +109,9 @@ class PlexoProviderTest {
         render(verified = false) { _, host, _ ->
             compose.onNodeWithText(host.getString(R.string.plexo_provider_verified)).assertDoesNotExist()
             compose.onNodeWithText("example.com").assertDoesNotExist()
-            compose.onNodeWithText(host.getString(R.string.plexo_provider_confirm)).performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText(host.getString(R.string.plexo_provider_recognize)).performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("PIN").assertDoesNotExist()
+            compose.onNodeWithText(host.getString(R.string.plexo_provider_confirm)).assertDoesNotExist()
             compose.onNodeWithText(host.getString(R.string.plexo_provider_cancel)).performScrollTo().assertIsDisplayed().assertHasClickAction()
         }
     }

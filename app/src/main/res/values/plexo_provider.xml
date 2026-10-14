@@ -20,4 +20,12 @@
     <string name="plexo_provider_confirm">确认</string>
     <string name="plexo_provider_cancel">取消</string>
     <string name="plexo_provider_close">关闭</string>
+    <string name="plexo_provider_recognition">先识别卡片</string>
+    <string name="plexo_provider_recognition_explanation">先读取卡片的 FIDO2 信息。识别后再确认创建或登录；需要 PIN 时才显示输入框。</string>
+    <string name="plexo_provider_recognize">识别卡片</string>
+    <string name="plexo_provider_recognizing">正在识别卡片</string>
+    <string name="plexo_provider_recognition_nfc">请将卡片贴近手机，读取 FIDO2 信息。</string>
+    <string name="plexo_provider_recognized">已读取 FIDO2 信息。请确认本次操作。</string>
+    <string name="plexo_provider_keep_nfc">请保持卡片贴近手机。连接中断后，本次请求会结束。</string>
+    <string name="plexo_provider_executing">正在处理凭据请求</string>
 </resources>

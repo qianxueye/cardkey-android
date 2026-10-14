@@ -34,3 +34,22 @@ Unchanged material text includes attestation none/direct boundaries, large-blob 
 The candidate adds a scrollable, IME-inset-aware provider body, wrapping identity facts and vertical reader targets. It uses the shared native theme and section/fact components. Confirmation remains disabled while busy or awaiting USB permission and additionally requires verified client data. The NFC choice is also disabled while the system USB permission decision is pending. No selection dispatches a card operation. The existing activity owns confirmation, cancellation and completion.
 
 Source inspection and copy review do not establish rendered geometry, TalkBack, installed-device behavior, hardware or external-account acceptance. Integrated tests/build/lint and native create/get, long names, large font, narrow/landscape/wide layouts, light/dark and IME acceptance remain Root-owned gates.
+
+## Recognition before confirmation
+
+Activation: the provider now reserves one verified request, acquires one owned card session and reads FIDO2 information after the user selects **识别卡片**. The final confirmation appears only after that read succeeds. A PIN field appears only when the observed authenticator capabilities and this request require PIN authentication. The same session remains owned until final confirmation and completion or retirement. This is an observation, not continuous card-presence assurance.
+
+| Screen/key | Before | After | Reason and activation |
+| --- | --- | --- | --- |
+| Provider/plexo_provider_recognition | PIN and confirmation before a card read | `先识别卡片` | Name the first step; before recognition. |
+| Provider/plexo_provider_recognition_explanation | No separate explanation | `先读取卡片的 FIDO2 信息。识别后再确认创建或登录；需要 PIN 时才显示输入框。` | Explain when the operation and secret input become available. |
+| Provider/plexo_provider_recognize | `确认` before connection | `识别卡片` | The first action only reads protocol information; it does not authorize credential creation, authentication or writes. |
+| Provider/plexo_provider_recognizing | Spinner only | `正在识别卡片` | Identify the pending no-secret read. |
+| Provider/plexo_provider_recognition_nfc | No distinct recognition prompt | `请将卡片贴近手机，读取 FIDO2 信息。` | Explain the first NFC interaction while waiting for a tag. |
+| Provider/plexo_provider_recognized | No successful-read context | `已读取 FIDO2 信息。请确认本次操作。` | Describe an observed read without claiming continuous presence or same-card authentication. |
+| Provider/plexo_provider_keep_nfc | No held-session instruction | `请保持卡片贴近手机。连接中断后，本次请求会结束。` | Keep the NFC session available; no reconnect or replay is offered. |
+| Provider/plexo_provider_executing | Spinner in confirmation | `正在处理凭据请求` | Separate the begun credential operation from recognition. |
+| Provider/PIN | Always visible before connection | Same `PIN` label, shown only after recognition when required | Prevent secret entry before verified request, native permission and supported recognition; hide and clear on confirmation, cancellation, pause or terminal result. |
+| Provider/plexo_provider_confirm | `确认` starts connection and operation | Same `确认`, now resumes the held session after recognition | Preserve explicit operation consent and existing attestation, authentication and write consequences. |
+
+The changed text was reviewed using `plain-language-iso-24495`. Existing RP/caller identity, native permission choice, attestation and storage consequences, uncertainty/effect result messages and secure-window handling remain in the provider. Recognition does not assert a successful credential operation, physical acceptance or deployment.

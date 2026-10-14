@@ -43,7 +43,7 @@ class ProviderPresenceProgressTest {
                 return byteArrayOf(1)
             }
         }
-        val result = ProviderOperationRunner().execute(null, request(), data, null, claim = claim,
+        val result = ProviderOperationRunner().executeAndConfirm(null, request(), data, null, claim = claim,
             onUserPresenceRequired = { assertNull(CardOperationGate.tryAcquire()); updates += it }) {
             assertFalse(claim.reserveTransport())
             assertTrue(updates.isEmpty())
@@ -72,7 +72,7 @@ class ProviderPresenceProgressTest {
                 return byteArrayOf(0x2d)
             }
         }
-        val worker = Thread { result.set(runner.execute(null, request(), data, null,
+        val worker = Thread { result.set(runner.executeAndConfirm(null, request(), data, null,
             onUserPresenceRequired = { updates += it }) { channel }) }
         worker.start()
         try {
@@ -97,7 +97,7 @@ class ProviderPresenceProgressTest {
             CallerSnapshot("test.package", setOf("certificate"), null), "option")))
         claim.finish(cancelled = true)
         val updates = mutableListOf<Boolean>()
-        val result = ProviderOperationRunner().execute(null, request(), data, null, claim = claim,
+        val result = ProviderOperationRunner().executeAndConfirm(null, request(), data, null, claim = claim,
             onUserPresenceRequired = { updates += it }) { error("Cancelled claim connected") }
         assertEquals(FailureCode.CANCELLED, (result as OperationResult.Failed).code)
         assertTrue(updates.isEmpty())
@@ -112,7 +112,7 @@ class ProviderPresenceProgressTest {
                     return byteArrayOf(status.toByte())
                 }
             }
-            val result = ProviderOperationRunner().execute(null, request(), data, null) { channel }
+            val result = ProviderOperationRunner().executeAndConfirm(null, request(), data, null) { channel }
             assertTrue(result is OperationResult.Failed)
             assertEquals(listOf(expected), cc.cardkey.ui.ConfirmationPolicy.resultMessages(result, channel.wire))
             assertEquals(1, exchanges)
