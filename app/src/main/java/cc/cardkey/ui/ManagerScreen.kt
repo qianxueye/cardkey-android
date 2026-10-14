@@ -318,10 +318,10 @@ fun ManagerScreen(
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
                                 (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(op.title.substringAfter("·").trim()) }
-                            if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
+                            if (state.busy) OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
                         }
                     }
-                    if (tab == 3 && state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
+                    if (tab == 3 && state.busy) OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
                 }
                 Column(modifier = if (compact) Modifier.navigationBarsPadding() else Modifier,
                     horizontalAlignment = Alignment.CenterHorizontally) {
