@@ -14,6 +14,10 @@ import cc.cardkey.enrollment.EnrollmentStage
 import cc.cardkey.protocol.*
 import cc.cardkey.transport.UsbAuthenticatorReader
 import cc.cardkey.ui.ManagerViewModel
+import cc.cardkey.ui.ManagerState
+import cc.cardkey.ui.ManagerOperation
+import cc.cardkey.ui.OperationInput
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.Job
 import org.junit.Assert.*
 import org.junit.Rule
@@ -79,8 +83,23 @@ class TlsActivityTest {
         try {
             val original = controller.get()
             val model = seed(original, f)
+            fun recognize() {
+                val priorCommands = f.card.commands.size
+                compose.runOnIdle {
+                    val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+                    state.value = state.value.copy(busy = true, operation = ManagerOperation.PIV_INFO, result = null)
+                    ReflectionHelpers.setField(model, "cancelled", false)
+                    val run = ManagerViewModel::class.java.getDeclaredMethod("run", OperationInput::class.java, Function0::class.java).apply { isAccessible = true }
+                    run.invoke(model, OperationInput(ManagerOperation.PIV_INFO), { f.card })
+                }
+                waitFor { !model.state.value.busy }
+                assertTrue(model.state.value.canEnterPivSecrets)
+                assertEquals(listOf(0xa4, 0xfd, 0xf8, 0xf7, 0xf7, 0xf7), f.card.commands.drop(priorCommands).map { it.ins })
+            }
             compose.waitForIdle()
             compose.onNodeWithText("证书申请").performClick()
+            compose.onNodeWithTag("tls-pin").assertDoesNotExist()
+            recognize()
             compose.onNodeWithTag("tls-pin").performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("tls-root").performScrollTo().performClick()
             val launch = shadowOf(original).nextStartedActivityForResult
@@ -95,6 +114,9 @@ class TlsActivityTest {
             assertEquals(EnrollmentStage.IMPORTED, model.enrollment.state.value.stage)
             assertSame(f.bundle, model.enrollment.state.value.bundle)
             compose.onNodeWithText("证书申请").performClick()
+            compose.onNodeWithTag("tls-pin").assertDoesNotExist()
+            assertNull(model.state.value.recognition)
+            recognize()
             compose.onNodeWithTag("tls-pin").performScrollTo().assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.EditableText, androidx.compose.ui.text.AnnotatedString("")))
         } finally { controller.pause().stop().destroy() }
     }
