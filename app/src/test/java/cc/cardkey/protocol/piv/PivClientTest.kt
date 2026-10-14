@@ -31,6 +31,7 @@ class PivClientTest {
         var corruptSignature = false
         var certificate: ByteArray? = null
         var slotMetadata: ByteArray? = null
+        var metadataAbsent = false
         var managementAlgorithm = ManagementAlgorithm.TDES
         var managementKey = ByteArray(24) { (it % 8 + 1).toByte() }
         private val witness = ByteArray(16) { (it + 1).toByte() }
@@ -58,7 +59,7 @@ class PivClientTest {
                     0x80, 0x81 -> PivTlv.encode(5, byteArrayOf(1)) + PivTlv.encode(6, byteArrayOf(3,
                         (if (apdu.p2 == 0x80) pinRemaining else pukRemaining).toByte()))
                     0x9b -> PivTlv.encode(1, byteArrayOf(managementAlgorithm.code.toByte())) + PivTlv.encode(5, byteArrayOf(0))
-                    else -> slotMetadata ?: metadata()
+                    else -> if (metadataAbsent) return "6a88".hexBytes() else slotMetadata ?: metadata()
                 }
                 0xcb -> certificate?.let { PivTlv.encode(0x53, PivTlv.encode(0x70, it) + PivTlv.encode(0x71, byteArrayOf(0))) }
                     ?: return "6a82".hexBytes()
@@ -159,10 +160,82 @@ class PivClientTest {
         val session = CardSession(card)
         val slot = PivClient(session).readSlot(0x9c)
         assertEquals(0x9c, slot.slot)
+        assertNotNull(slot.metadata)
+        assertEquals(3, slot.metadata!!.pinPolicy)
+        assertEquals(1, slot.metadata.touchPolicy)
+        assertTrue(slot.metadata.generated)
+        assertNull(slot.metadata.algorithm)
+        assertNull(slot.metadata.publicKey)
+        assertNull(slot.certificate)
+        assertEquals(listOf(0xa4, 0xf7, 0xcb), card.commands.map { it.ins })
+        assertEquals(Effect.NONE, session.effect)
+    }
+
+    @Test fun absentMetadataIsNullOnlyForActualNotFoundStatus() {
+        val card = FakeCard().apply { metadataAbsent = true }
+        val session = CardSession(card)
+        val slot = PivClient(session).readSlot(0x9c)
         assertNull(slot.metadata)
         assertNull(slot.certificate)
         assertEquals(listOf(0xa4, 0xf7, 0xcb), card.commands.map { it.ins })
         assertEquals(Effect.NONE, session.effect)
+    }
+
+    @Test fun emptyMetadataPreservesEveryValidPolicyAndOrigin() {
+        for (pinPolicy in 1..3) for (touchPolicy in 1..3) for (origin in 0..1) {
+            val card = FakeCard().apply {
+                slotMetadata = PivTlv.encode(2, byteArrayOf(pinPolicy.toByte(), touchPolicy.toByte())) +
+                    PivTlv.encode(3, byteArrayOf(origin.toByte()))
+            }
+            val metadata = PivClient(CardSession(card)).readSlot(0x9c).metadata!!
+            assertEquals(pinPolicy, metadata.pinPolicy)
+            assertEquals(touchPolicy, metadata.touchPolicy)
+            assertEquals(origin == 0, metadata.generated)
+            assertNull(metadata.algorithm)
+            assertNull(metadata.publicKey)
+        }
+    }
+
+    @Test fun emptySlotRejectsPrivateOperationsBeforePinOrManagementAuthentication() {
+        val cert = certificate(FakeCard().keyPair)
+        val operations: List<(PivClient, CharArray, ByteArray) -> Unit> = listOf(
+            { client, pin, _ -> client.createCsr(0x9c, pin, "CN=Synthetic") },
+            { client, pin, _ -> client.verifySignature(0x9c, pin) },
+            { client, pin, _ -> client.verifyKeyAgreement(0x9c, pin) },
+            { client, pin, _ -> client.verifyRsaDecryption(0x9c, pin) },
+            { client, _, admin -> client.importCertificate(0x9c, cert, ManagementAlgorithm.TDES, admin) }
+        )
+        for (operation in operations) {
+            val card = FakeCard().apply { slotMetadata = "02020201030100".hexBytes() }
+            val result = CardSession(card).run { operation(PivClient(it), pin(), card.managementKey.copyOf()) }
+            assertEquals(FailureCode.CARD_REJECTED, (result as OperationResult.Failed).code)
+            assertEquals(0x6a88, result.status)
+            assertEquals(Effect.NONE, result.effect)
+            assertEquals(listOf(0xa4, 0xf7), card.commands.map { it.ins })
+        }
+    }
+
+    @Test fun outOfProfileSlotsRejectBeforeAnyApdu() {
+        val card = FakeCard()
+        val cert = certificate(card.keyPair)
+        val operations: List<(PivClient, Int) -> Unit> = listOf(
+            { client, slot -> client.readSlot(slot) },
+            { client, slot -> client.generateKey(slot, KeyAlgorithm.P256, PinPolicy.ONCE,
+                ManagementAlgorithm.TDES, card.managementKey.copyOf()) },
+            { client, slot -> client.createCsr(slot, pin(), "CN=Synthetic") },
+            { client, slot -> client.verifySignature(slot, pin()) },
+            { client, slot -> client.verifyKeyAgreement(slot, pin()) },
+            { client, slot -> client.verifyRsaDecryption(slot, pin()) },
+            { client, slot -> client.importCertificate(slot, cert, ManagementAlgorithm.TDES, card.managementKey.copyOf()) }
+        )
+        for (slot in listOf(0x81, 0x9b) + (0x8d..0x95)) {
+            for (operation in operations) {
+                try { operation(PivClient(CardSession(card)), slot); fail("slot $slot") }
+                catch (_: IllegalArgumentException) { }
+                assertTrue(card.commands.isEmpty())
+            }
+        }
+        assertEquals(listOf(0x9a, 0x9c, 0x9d, 0x9e) + (0x82..0x8c), PivClient.slots)
     }
 
     @Test fun importedSlotsWithoutPublicKeysRemainPopulatedOnContact() {
