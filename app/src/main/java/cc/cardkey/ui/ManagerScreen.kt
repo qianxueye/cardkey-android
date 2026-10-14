@@ -485,9 +485,9 @@ fun ManagerScreen(
                                         }
                                         if (result.value.export != null) OutlinedButton(onClick = {
                                             if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
-                                        }, enabled = result.value.signatureFormat == null || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
+                                        }, enabled = (!result.value.sshPublicKey && result.value.signatureFormat == null) || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
                                         if (signingFiles.exportOwner === result.value) when (signingFiles.exportStatus) {
-                                            SignatureExportStatus.SAVED -> Text(stringResource(R.string.signing_exported))
+                                            SignatureExportStatus.SAVED -> Text(stringResource(if (result.value.sshPublicKey) R.string.ssh_publicKeyExported else R.string.signing_exported))
                                             SignatureExportStatus.CANCELLED -> Text(stringResource(R.string.signing_exportCancelled))
                                             SignatureExportStatus.UNKNOWN -> Text(stringResource(R.string.signing_exportUnknown))
                                             SignatureExportStatus.WRITING -> LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -599,6 +599,6 @@ private val expandLessIcon = ImageVector.Builder("ExpandLess", 24.dp, 24.dp, 24f
 private fun needsPin(op: ManagerOperation): Boolean = op !in setOf(
     ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_RESET,
     ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT,
-    ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT, ManagerOperation.PIV_ADMIN,
+    ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT, ManagerOperation.PIV_SSH_EXPORT, ManagerOperation.PIV_ADMIN,
     ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET,
 )

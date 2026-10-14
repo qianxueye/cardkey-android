@@ -358,11 +358,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun fileSigningAction(operation: ManagerOperation?, slot: Int = 0x9a) {
-        if (operation != signingAction) {
+        if (operation != signingAction || (operation == ManagerOperation.PIV_SSH_EXPORT && slot != signingFiles.state.value.slot)) {
+            if (signingAction == ManagerOperation.PIV_SSH_EXPORT) cancel()
             signingAction = operation
             signingFiles.retire()
         }
-        signingFiles.action(operation?.isFileSigning == true, slot, operation ?: ManagerOperation.PIV_SIGN)
+        signingFiles.action(operation?.isOwnedExport == true, slot, operation ?: ManagerOperation.PIV_SIGN)
     }
 
     fun requestSigningFile(): Boolean {
@@ -376,6 +377,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     internal val signingFileRequestId get() = signingFiles.fileRequestId
     internal val signatureSaveRequestId get() = signingFiles.saveRequestId
     internal val signatureSaveFormat get() = signingFiles.saveFormat
+    internal val signatureSaveMimeType get() = signingFiles.saveMimeType
 
     fun receiveSigningFile(requestId: String, uri: Uri?) {
         val request = signingFiles.takeRequest(requestId) ?: return
@@ -403,7 +405,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun requestSignatureSave(report: ManagerReport): Boolean {
         val result = mutable.value.result as? OperationResult.Completed ?: return false
-        if (mutable.value.busy || mutable.value.operation?.isFileSigning != true || result.value !== report) return false
+        if (mutable.value.busy || mutable.value.operation?.isOwnedExport != true || result.value !== report ||
+            (report.sshPublicKey && signingAction != ManagerOperation.PIV_SSH_EXPORT)) return false
         return signingFiles.requestSave(report, signingAction)
     }
 
@@ -520,6 +523,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         retireInventoryExport()
+        if (input.operation == ManagerOperation.PIV_SSH_EXPORT || mutable.value.operation == ManagerOperation.PIV_SSH_EXPORT) signingFiles.retire()
         signingFiles.retireSelection()
         cancelled = false
         operationRoute = mutable.value.selectedReader?.routeKey ?: "nfc"
@@ -759,8 +763,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         signingInput.getAndSet(null)?.close()
         inventoryInput.getAndSet(null)?.close()
         if (!preserveSigningDocuments) signingFiles.retire()
-        val preserveSignatureResult = preserveSigningDocuments && mutable.value.operation?.isFileSigning == true &&
-            (mutable.value.result as? OperationResult.Completed)?.value?.signatureFormat != null
+        val preserveSignatureResult = preserveSigningDocuments && mutable.value.operation?.isOwnedExport == true &&
+            (mutable.value.result as? OperationResult.Completed)?.value?.let { it.signatureFormat != null || it.sshPublicKey } == true
         tlsAttempt.get()?.close()
         enrollment.pause()
         networkCall.getAndSet(null)?.let { call ->
