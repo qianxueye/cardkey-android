@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import cc.cardkey.R
 import cc.cardkey.enrollment.*
 import cc.cardkey.protocol.hexBytes
@@ -17,7 +18,7 @@ import cc.cardkey.protocol.piv.ManagementAlgorithm
 fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, clearInputs: Int,
                     onSettings: (String, String) -> Unit, onRoot: () -> Unit,
                     onSubmit: (OperationInput) -> Unit, onIssue: (CharArray) -> Unit,
-                    onExport: (ManagerReport) -> Unit, onCancel: () -> Unit, onAbandon: () -> Unit) {
+                    onExport: (ManagerReport) -> Unit, onCancel: () -> Unit, onAbandon: () -> Unit, viewportHeight: Dp) {
     var pin by remember { mutableStateOf("") }
     var admin by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
@@ -63,14 +64,14 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                 Text(receipt.endpoint)
             }
             OutlinedTextField(state.address, { onSettings(it, state.cn) }, enabled = !busy,
-                label = { Text(stringResource(R.string.enrollment_address)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                label = { Text(stringResource(R.string.enrollment_address)) }, singleLine = true, modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
             OutlinedTextField(state.cn, { onSettings(state.address, it) }, enabled = !busy,
-                label = { Text(stringResource(R.string.enrollment_cn)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                label = { Text(stringResource(R.string.enrollment_cn)) }, singleLine = true, modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
             OutlinedButton(onClick = onRoot, enabled = !busy) { Text(stringResource(R.string.enrollment_chooseRoot)) }
             if (state.hasRoot) Text(stringResource(R.string.enrollment_root))
             Text(stringResource(R.string.enrollment_steps), style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
             Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
             Button(onClick = {
                 val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = pin.toCharArray(), text = state.cn)
@@ -86,7 +87,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                 Text(stringResource(R.string.enrollment_scope), style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(token, { token = it }, enabled = !busy && !state.attempted,
                     label = { Text(stringResource(R.string.enrollment_token)) }, visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth())
+                    modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
                 Button(onClick = { val secret = token.toCharArray(); token = ""; pin = ""; admin = ""; onIssue(secret) },
                     enabled = !busy && canUseCard && !state.attempted && token.isNotBlank()) { Text(stringResource(R.string.enrollment_issue)) }
             }
@@ -97,7 +98,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                     }
                 }
                 OutlinedTextField(admin, { admin = it }, enabled = !busy, label = { Text("管理密钥") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
                 Button(onClick = {
                     try {
                         val key = admin.hexBytes()

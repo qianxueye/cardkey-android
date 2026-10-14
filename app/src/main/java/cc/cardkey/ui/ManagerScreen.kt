@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import cc.cardkey.protocol.*
 import cc.cardkey.R
 import cc.cardkey.enrollment.EnrollmentState
@@ -235,8 +236,9 @@ fun ManagerScreen(
         }
     }
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
-        val compact = maxHeight < 480.dp
-        LaunchedEffect(state.busy, state.presenceMessage, state.result, state.awaitingNfc, maxHeight.takeIf { state.busy }) {
+        val viewportHeight = maxHeight
+        val compact = viewportHeight < 480.dp
+        LaunchedEffect(state.busy, state.presenceMessage, state.result, state.awaitingNfc, viewportHeight.takeIf { state.busy }) {
             if (state.busy || state.result != null) {
                 withFrameNanos { }
                 feedbackRequester.bringIntoView()
@@ -423,15 +425,15 @@ fun ManagerScreen(
                                     Text(stringResource(R.string.signing_limit), style = MaterialTheme.typography.bodySmall)
                                     signingFiles.selection?.let { file -> Text(stringResource(R.string.signing_selectedFile, file.name, file.size)) }
                                 }
-                                if (needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy) { pin = it }
+                                if (needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy, viewportHeight) { pin = it }
                                 if (op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
                                 if (op in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
                                         ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK)) {
-                                    SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK) "新 PUK" else "新 PIN", newPin, !state.busy) { newPin = it }
+                                    SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK) "新 PUK" else "新 PIN", newPin, !state.busy, viewportHeight) { newPin = it }
                                 }
                                 if (op in setOf(ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT)) {
                                     Choice("管理密钥 · 算法", adminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { adminAlgorithm = it }
-                                    SecretField("管理密钥 · HEX", adminKey, !state.busy) { adminKey = it }
+                                    SecretField("管理密钥 · HEX", adminKey, !state.busy, viewportHeight) { adminKey = it }
                                 }
                                 if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
                                     Text(stringResource(R.string.blob_help))
@@ -444,7 +446,7 @@ fun ManagerScreen(
                                 }
                                 if (op == ManagerOperation.PIV_ADMIN) {
                                     Choice("新管理密钥 · 算法", newAdminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { newAdminAlgorithm = it }
-                                    SecretField("新管理密钥 · HEX", newAdminKey, !state.busy) { newAdminKey = it }
+                                    SecretField("新管理密钥 · HEX", newAdminKey, !state.busy, viewportHeight) { newAdminKey = it }
                                 }
                                 if (op == ManagerOperation.PIV_GENERATE) {
                                     Choice("算法", algorithm, KeyAlgorithm.entries, { it.name }, !state.busy) { algorithm = it }
@@ -458,16 +460,16 @@ fun ManagerScreen(
                                         ManagerOperation.PIV_CSR -> "Subject · CN=${stringResource(R.string.app_name)}"
                                         else -> "凭据 ID · HEX"
                                     }
-                                    OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
                                 }
                                 if (op == ManagerOperation.FIDO_MIN_PIN) {
                                     OutlinedTextField(disclosureRps, { disclosureRps = it }, label = { Text(stringResource(R.string.minPin_rps)) },
-                                        enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+                                        enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
                                     Text(stringResource(R.string.minPin_rpsHelp))
                                 }
                                 if (op == ManagerOperation.FIDO_UPDATE) {
                                     Text(stringResource(R.string.user_updateHelp))
-                                    OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
                                 }
                                 if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -506,7 +508,7 @@ fun ManagerScreen(
                                         if ("credProtect" in extensionNames && op == ManagerOperation.FIDO_REGISTER)
                                             Choice("credProtect", protection, listOf(1, 2, 3), { it.toString() }, !state.busy) { protection = it }
                                         if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER || "hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) {
-                                            SecretField(if (op == ManagerOperation.FIDO_REGISTER) "credBlob · HEX" else "hmac-secret · salt · HEX", extensionValue, !state.busy) { extensionValue = it }
+                                            SecretField(if (op == ManagerOperation.FIDO_REGISTER) "credBlob · HEX" else "hmac-secret · salt · HEX", extensionValue, !state.busy, viewportHeight) { extensionValue = it }
                                         }
                                     }
                                 }
@@ -527,7 +529,7 @@ fun ManagerScreen(
                         }, { token ->
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                             onEnrollmentIssue(token)
-                        }, onExport, onCancel, onEnrollmentAbandon) }
+                        }, onExport, onCancel, onEnrollmentAbandon, viewportHeight) }
                     if (tab == 3 && enrollment.stage == cc.cardkey.enrollment.EnrollmentStage.IMPORTED) {
                         key(state.selectedReader?.routeKey, enrollment.bundle) {
                             TlsQualificationPanel(tls, enrollment, state.busy,
@@ -535,7 +537,7 @@ fun ManagerScreen(
                                 clearInputs, onTlsSettings, onTlsRoot, { input ->
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                                     onTlsSubmit(input)
-                                }, onCancel)
+                                }, onCancel, viewportHeight)
                         }
                     }
                     if (tab == 0 && state.supportsPiv) Text(stringResource(R.string.restriction_fidoReset), style = MaterialTheme.typography.bodySmall)
@@ -547,9 +549,9 @@ fun ManagerScreen(
 }
 
 @Composable
-private fun SecretField(label: String, value: String, enabled: Boolean, onChange: (String) -> Unit) {
+private fun SecretField(label: String, value: String, enabled: Boolean, viewportHeight: Dp, onChange: (String) -> Unit) {
     OutlinedTextField(value, onChange, label = { Text(label) }, enabled = enabled, singleLine = true,
-        visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+        visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -20,7 +21,7 @@ import java.text.DateFormat
 @Composable
 fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentState, busy: Boolean,
                           canUseCard: Boolean, clearInputs: Int, onSettings: (String) -> Unit,
-                          onRoot: () -> Unit, onSubmit: (TlsQualificationInput) -> Unit, onCancel: () -> Unit) {
+                          onRoot: () -> Unit, onSubmit: (TlsQualificationInput) -> Unit, onCancel: () -> Unit, viewportHeight: Dp) {
     var pin by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<TlsQualificationInput?>(null) }
     val bundle = requireNotNull(enrollment.bundle)
@@ -78,7 +79,7 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
             Text(expiry)
             OutlinedTextField(state.address, onSettings, enabled = !busy,
                 label = { Text(stringResource(R.string.tls_endpoint)) }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("tls-endpoint"))
+                modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)).testTag("tls-endpoint"))
             Text(stringResource(R.string.tls_endpointHelp), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { pin = ""; pending?.close(); pending = null; onRoot() }, enabled = !busy, modifier = Modifier.testTag("tls-root")) {
                 Text(stringResource(R.string.tls_chooseServerRoot))
@@ -89,7 +90,7 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
             }
             Text(stringResource(R.string.tls_serverRootHelp), style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().testTag("tls-pin"))
+                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().then(workspaceInputModifier(viewportHeight)).testTag("tls-pin"))
             Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
             Button(modifier = Modifier.testTag("tls-start"), onClick = {
                 pending = TlsQualificationInput(state.revision, bundle, state.address, pin.toCharArray())
