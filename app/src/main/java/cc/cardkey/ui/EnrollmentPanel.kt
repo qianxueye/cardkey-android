@@ -48,7 +48,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 EnrollmentPurpose.entries.forEach { purpose ->
                     FilterChip(selected = state.selection.purpose == purpose, enabled = !busy,
-                        onClick = { onSelection(EnrollmentSelection(purpose)) },
+                        onClick = { if (state.selection.purpose != purpose) onSelection(EnrollmentSelection(purpose)) },
                         label = { Text(stringResource(if (purpose == EnrollmentPurpose.TLS) R.string.enrollment_purpose else R.string.enrollment_document)) })
                 }
             }

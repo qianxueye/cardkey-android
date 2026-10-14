@@ -12,6 +12,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.dp
+import cc.cardkey.protocol.piv.KeyAlgorithm
+import org.bouncycastle.asn1.ASN1ObjectIdentifier
+import org.bouncycastle.asn1.x509.KeyPurposeId
 import cc.cardkey.protocol.CardWire
 import cc.cardkey.transport.UsbReaderDescriptor
 import cc.cardkey.ui.*
@@ -35,6 +38,8 @@ class EnrollmentPanelTest {
     private fun render(width: Int, height: Int,
                        initial: EnrollmentState = EnrollmentState(address = "https://localhost", cn = fixture.csr.cn, hasRoot = true, csr = fixture.csr, stage = EnrollmentStage.CSR),
                        onExport: (ManagerReport) -> Unit = {},
+                       workflow: EnrollmentWorkflow? = null,
+                       onSelection: (EnrollmentSelection) -> Unit = {},
                        check: (() -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
@@ -43,12 +48,17 @@ class EnrollmentPanelTest {
         val clear = mutableIntStateOf(0)
         val state = mutableStateOf(initial)
         controller.get().setContent {
+            val enrollment = workflow?.state?.collectAsState()?.value ?: state.value
             MaterialTheme {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
                     ManagerScreen(ManagerState(selectedReader = reader, nfc = false), clear.intValue,
-                        {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, state.value,
+                        {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, enrollment,
                         { address, cn -> state.value = state.value.copy(address = address, cn = cn) }, {},
-                        { error("A cancelled confirmation must not submit") }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, { selection -> state.value = state.value.copy(selection = selection, revision = state.value.revision + 1, csr = null) })
+                        { error("A cancelled confirmation must not submit") }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, { selection ->
+                            onSelection(selection)
+                            if (workflow != null) workflow.selection(selection)
+                            else state.value = state.value.copy(selection = selection, revision = state.value.revision + 1, csr = null)
+                        })
                 }
             }
         }
@@ -66,6 +76,63 @@ class EnrollmentPanelTest {
             compose.onNodeWithText("使用所选槽位的现有密钥申请文档签名证书。不会生成或替换密钥。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("导出 CSR").assertDoesNotExist()
             compose.onNodeWithText("123456").assertDoesNotExist()
+        }
+    }
+    @Test fun selectedDocumentPurposePreservesRequestAndVerifiedImportUntilPurposeChanges() {
+        val selection = EnrollmentSelection(EnrollmentPurpose.DOCUMENT, 0x9d, KeyAlgorithm.P384)
+        val key = EnrollmentCard(algorithm = selection.algorithm).keyPair
+        val csr = fixture.csr(key = key, selection = selection)
+        val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(key = key,
+            purposes = arrayOf(KeyPurposeId.getInstance(ASN1ObjectIdentifier(EnrollmentPurpose.DOCUMENT.eku)))),
+            fixture.intermediate), fixture.root, csr)
+        val flow = EnrollmentWorkflow().apply {
+            settings("https://localhost", csr.cn)
+            selection(selection)
+            acceptRoot(rootRequest(), fixture.root)
+            settleCsr(startCsr(), csr)
+        }
+        val changes = mutableListOf<EnrollmentSelection>()
+        render(360, 640, workflow = flow, onSelection = { changes += it }) {
+            val beforeCsr = flow.state.value
+            compose.onNodeWithText("文档签名").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertTrue(changes.isEmpty())
+                assertSame(beforeCsr, flow.state.value)
+                assertSame(csr, flow.state.value.csr)
+                val (owner, _) = flow.startIssuance(fixture.token(csr))
+                flow.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
+            }
+            compose.onNodeWithText("导入证书").performScrollTo().assertIsEnabled()
+            val beforeVerified = flow.state.value
+            compose.onNodeWithText("文档签名").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertTrue(changes.isEmpty())
+                assertSame(beforeVerified, flow.state.value)
+                assertEquals(selection, flow.state.value.selection)
+                assertSame(csr, flow.importRequest().csr)
+                assertSame(bundle, flow.importRequest().bundle)
+            }
+            compose.onNodeWithText("9D").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("P384").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("导入证书").performScrollTo().assertIsEnabled()
+            compose.onNodeWithText("客户端认证（TLS）").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertEquals(listOf(EnrollmentSelection()), changes)
+                assertEquals(EnrollmentSelection(), flow.state.value.selection)
+                assertTrue(flow.state.value.revision > beforeVerified.revision)
+                assertNull(flow.state.value.csr)
+                assertNull(flow.state.value.bundle)
+                assertEquals(EnrollmentStage.EMPTY, flow.state.value.stage)
+                assertTrue(runCatching { flow.importRequest() }.isFailure)
+            }
+            compose.onNodeWithText("导入证书").assertDoesNotExist()
+            compose.onNodeWithText("文档签名").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertEquals(listOf(EnrollmentSelection(), EnrollmentSelection(EnrollmentPurpose.DOCUMENT)), changes)
+                assertEquals(EnrollmentSelection(EnrollmentPurpose.DOCUMENT), flow.state.value.selection)
+            }
+            compose.onNodeWithText("9C").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("P256").performScrollTo().assertIsDisplayed()
         }
     }
     @Test fun portraitEnrollmentCanReachFieldsAndExportAndPauseClearsPendingPinConfirmation() {
