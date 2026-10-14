@@ -36,3 +36,13 @@ Short landscape at sufficient width places the run/cancel group beside the same 
 | Device / workspace_pivReaderRequired | Disabled PIV/CA destinations without a transport explanation | 当前读卡器使用 CTAP，只能访问 FIDO。PIV 和证书申请需要 NFC 或支持 APDU 的 USB 读卡器。 | Explain actual existing capability guards; no new transport or action. |
 | SSH receipt / workspace_outputFile | Export button without captured filename | 本次导出文件 | Display the captured report filename, never the current form slot. |
 | SSH receipt / OpenSSH | Public report export bytes only | OpenSSH | Existing technical disclosure presents exact captured public export text with native selection; no private key/PIN or login claim. |
+
+The integrated lint gate identified five source-unused legacy resources after the approved provider and enrollment copy replacements. A complete `app/src` reference search confirmed no Kotlin/XML consumer; these definitions were removed rather than suppressing lint. Active replacement wording remains in the owning provider/CA copy records.
+
+| Screen / retired key | Before | After | Reason / activation |
+| --- | --- | --- | --- |
+| Provider / provider_create_confirmation | 为 %1$s 在这张卡上创建 FIDO 凭据？请求应用：%2$s。驻留凭据会占用卡内存储，此 App 无法将凭据复制到另一张卡。 | Definition removed; provider's new separate caller/RP and create confirmation remain active. | Proven unused after the same package's provider layout replacement. |
+| Provider / provider_get_confirmation | 使用这张卡登录 %1$s？请求应用：%2$s。 | Definition removed; provider's new separate caller/RP and get confirmation remain active. | Proven unused after the same package's provider layout replacement. |
+| Enrollment / enrollment_root | CA 根证书 | Definition removed; actual CA preparation heading remains active. | Proven unused after the same package's CA layout replacement. |
+| Enrollment / enrollment_import | 导入证书 | Definition removed; 检查导入确认 remains active. | Proven unused; explicit confirmation semantics retained. |
+| Enrollment / enrollment_status | 证书申请 | Definition removed; actual task/result headings remain active. | Proven unused after the same package's CA layout replacement. |
