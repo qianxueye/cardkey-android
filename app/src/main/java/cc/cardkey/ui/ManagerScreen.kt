@@ -73,6 +73,11 @@ fun ManagerScreen(
     signingFiles: SigningFileState,
     onSigningAction: (ManagerOperation?, Int) -> Unit,
     onSigningFile: () -> Unit,
+    inventory: InventoryState,
+    onInventoryRp: (InventoryRp) -> Unit,
+    onInventoryCredential: (InventoryCredential) -> Unit,
+    onInventoryFile: () -> Unit,
+    onInventoryAction: (ManagerOperation?) -> Unit,
 ) {
     val displayName = stringResource(R.string.app_name)
     val feedbackRequester = remember { BringIntoViewRequester() }
@@ -82,7 +87,7 @@ fun ManagerScreen(
         signingFiles.restoreOperation?.piv == true || signingFiles.active -> 1
         else -> 0
     }) }
-    var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) ManagerOperation.PIV_SIGN else ManagerOperation.FIDO_INFO) }
+    var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) ManagerOperation.PIV_SIGN else inventory.action ?: ManagerOperation.FIDO_INFO) }
     var pin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var adminKey by remember { mutableStateOf("") }
@@ -107,11 +112,14 @@ fun ManagerScreen(
     var invalid by remember { mutableStateOf(false) }
     var validationFailures by remember { mutableIntStateOf(0) }
     var confirmation by remember { mutableStateOf<PendingOperation?>(null) }
-    LaunchedEffect(tab, operation, slot) { onSigningAction(operation.takeIf { tab != 2 }, slot) }
+    LaunchedEffect(tab, operation, slot) {
+        onSigningAction(operation.takeIf { tab != 2 }, slot)
+        onInventoryAction(operation.takeIf { tab == 0 })
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle, operation) {
+    DisposableEffect(lifecycle, operation, inventory.credential) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE && operation == ManagerOperation.PIV_SIGN) {
+            if (event == Lifecycle.Event.ON_PAUSE && (operation == ManagerOperation.PIV_SIGN || inventory.credential != null)) {
                 pin = ""; confirmation?.close(); confirmation = null
             }
         }
@@ -125,7 +133,7 @@ fun ManagerScreen(
         ManagerOperation.PIV_IMPORT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE))
     SideEffect { onSecureChange(tab == 1 || secretForm || secretResult || state.lastRetry != null) }
     LaunchedEffect(state.result) { showSecrets = false; showSecretConfirmation = false; exportConfirmation = null }
-    LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc) {
+    LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc, inventory.generation) {
         pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""; invalid = false
         confirmation?.close(); confirmation = null
         showSecrets = false; showSecretConfirmation = false; exportConfirmation = null
@@ -148,6 +156,10 @@ fun ManagerScreen(
         AlertDialog(onDismissRequest = { input.close(); confirmation = null },
             title = { Text(input.operation.title) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL ||
+                    input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
+                    inventory.credential?.let { Text("RP · ${it.rp.id}"); Text("凭据 ID · ${it.idHex}") }
+                }
                 input.messages.forEach { Text(stringResource(it)) }
             } },
             confirmButton = { TextButton(onClick = { confirmation = null; input.dispatch(onSubmit) }) { Text("确认") } },
@@ -233,11 +245,15 @@ fun ManagerScreen(
                         Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(onClick = {
                                 try {
-                                    require(op != ManagerOperation.FIDO_BLOB_WRITE || imported != null)
+                                    require(op != ManagerOperation.FIDO_BLOB_WRITE || if (inventory.credential != null) inventory.fileSize != null else imported != null)
+                                    require(op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null)
+                                    require(op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty())
+                                    if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) && inventory.credential != null)
+                                        require(inventory.blobReady && pin.isNotEmpty())
                                     require(op != ManagerOperation.PIV_SIGN || signingFiles.selection != null)
                                     val input = OperationInput(op, pin.toCharArray(), newPin.toCharArray(), adminKey.hexBytes(), newAdminKey.hexBytes(),
                                         adminAlgorithm, newAdminAlgorithm, slot, algorithm, pinPolicy, text, secondary, enabled,
-                                        if (op == ManagerOperation.PIV_SIGN) byteArrayOf() else imported?.copyOf() ?: byteArrayOf(),
+                                        if (op == ManagerOperation.PIV_SIGN || inventory.credential != null && op == ManagerOperation.FIDO_BLOB_WRITE) byteArrayOf() else imported?.copyOf() ?: byteArrayOf(),
                                         makeExtensions = MakeExtensions(if ("credProtect" in extensionNames) protection else null,
                                             if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER) extensionValue.hexBytes() else null,
                                             "hmac-secret" in extensionNames, "minPinLength" in extensionNames, enabled && "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
@@ -246,12 +262,16 @@ fun ManagerScreen(
                                             "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
                                         rpIds = if (op == ManagerOperation.FIDO_MIN_PIN) parseDisclosureRps(disclosureRps) else emptyList(),
                                         enterpriseMode = enterpriseMode.takeIf { it != 0 }, displayName = displayName,
-                                        signingFileGeneration = signingFiles.selection?.generation.takeIf { op == ManagerOperation.PIV_SIGN })
+                                        signingFileGeneration = signingFiles.selection?.generation.takeIf { op == ManagerOperation.PIV_SIGN },
+                                        inventoryGeneration = inventory.generation)
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
                                     if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                     else confirmation = PendingOperation(input)
                                 } catch (_: IllegalArgumentException) { invalid = true; validationFailures++ }
                             }, modifier = Modifier.weight(1f).testTag("manager-run"), enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
+                                (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
+                                (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
+                                (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
                                 (op != ManagerOperation.PIV_SIGN || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(op.title.substringAfter("·").trim()) }
                             if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
                         }
@@ -285,6 +305,12 @@ fun ManagerScreen(
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Choice("操作", operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && it !in setOf(ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, { it.title }, !state.busy) { operation = it }
                                 val op = operation
+                                if (!op.piv && inventory.rps.isNotEmpty()) {
+                                    Choice("RP", inventory.rp, inventory.rps,
+                                        { it?.id ?: "RP" }, !state.busy) { it?.let(onInventoryRp) }
+                                    if (inventory.credentials.isNotEmpty()) Choice("凭据 ID", inventory.credential,
+                                        inventory.credentials, { it?.idHex ?: "凭据 ID" }, !state.busy) { it?.let(onInventoryCredential) }
+                                }
                                 Text(op.title, style = MaterialTheme.typography.titleLarge)
                                 if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
                                         ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
@@ -312,8 +338,10 @@ fun ManagerScreen(
                                 if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
                                     Text(stringResource(R.string.blob_help))
                                     if (op == ManagerOperation.FIDO_BLOB_WRITE) {
-                                        OutlinedButton(onClick = onImport, enabled = !state.busy) { Text("导入") }
-                                        imported?.let { Text("${it.size} bytes", style = MaterialTheme.typography.bodySmall) }
+                                        OutlinedButton(onClick = if (inventory.credential != null) onInventoryFile else onImport, enabled = !state.busy) { Text("导入") }
+                                        (if (inventory.credential != null) inventory.fileSize else imported?.size)?.let {
+                                            Text("$it bytes", style = MaterialTheme.typography.bodySmall)
+                                        }
                                     }
                                 }
                                 if (op == ManagerOperation.PIV_ADMIN) {
@@ -324,7 +352,7 @@ fun ManagerScreen(
                                     Choice("算法", algorithm, KeyAlgorithm.entries, { it.name }, !state.busy) { algorithm = it }
                                     Choice("PIN", pinPolicy, PinPolicy.entries, { it.name }, !state.busy) { pinPolicy = it }
                                 }
-                                if (op in setOf(ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
+                                if (op in setOf(ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
                                         ManagerOperation.FIDO_MIN_PIN, ManagerOperation.PIV_CSR)) {
                                     val label = when (op) {
                                         ManagerOperation.FIDO_CREDENTIALS -> "RP SHA-256 · HEX"
@@ -350,6 +378,12 @@ fun ManagerScreen(
                                             enabled = it
                                             if (op == ManagerOperation.FIDO_REGISTER && !it) extensionNames = extensionNames - "largeBlobKey"
                                         }, enabled = !state.busy)
+                                    }
+                                }
+                                if (op == ManagerOperation.FIDO_VERIFY_CREDENTIAL) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("largeBlobKey", Modifier.weight(1f))
+                                        Checkbox("largeBlobKey" in extensionNames, { checked -> extensionNames = if (checked) extensionNames + "largeBlobKey" else extensionNames - "largeBlobKey" }, enabled = !state.busy)
                                     }
                                 }
                                 if (op == ManagerOperation.FIDO_REGISTER || op == ManagerOperation.FIDO_ASSERT) {

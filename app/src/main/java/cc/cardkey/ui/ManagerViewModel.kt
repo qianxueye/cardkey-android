@@ -61,6 +61,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     val state = mutable.asStateFlow()
     val enrollment = EnrollmentWorkflow()
     val signingFiles = PivSigningFiles()
+    val inventory = FidoInventory()
+
+    fun inventoryAction(operation: ManagerOperation?) { if (!mutable.value.busy) inventory.action(operation) }
+    fun selectInventoryRp(rp: InventoryRp) { if (!mutable.value.busy) { retireResult(); inventory.selectRp(rp); mutable.update { it.copy(result = null) } } }
+    fun selectInventoryCredential(credential: InventoryCredential) { if (!mutable.value.busy) { retireResult(); inventory.selectCredential(credential); mutable.update { it.copy(result = null) } } }
     private var signingAction: ManagerOperation? = null
     private val signingInput = AtomicReference<OperationInput?>()
     private var pendingEnrollmentRoot: Pair<Long, Long>? = null
@@ -109,10 +114,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
         retireResult()
+        retireInventoryExport()
         signingFiles.retire()
         retireTls()
         enrollment.retire()
         operations.clearSession()
+        inventory.retire()
         presenceGeneration++
         mutable.value = mutable.value.copy(userPresenceRequired = false, ctap2Reader = null, selectedReader = reader, nfc = reader == null, result = null)
     }
@@ -256,6 +263,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         operationRoute = reader.routeKey
         operationWire = CardWire.APDU
         operations.clearSession()
+        inventory.retire()
         retireResult()
         tlsMutable.value = tlsMutable.value.copy(result = null, running = true)
         mutable.update { it.copy(busy = true, operation = null, result = null, resultWire = CardWire.APDU) }
@@ -311,6 +319,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             val call = ca.call(csr, String(token))
             token.fill('\u0000')
             operations.clearSession()
+            inventory.retire()
             retireResult()
             signingFiles.retireSelection()
             networkCall.set(call)
@@ -396,6 +405,57 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private class InventoryExport(val id: String, private var bytes: ByteArray?) : AutoCloseable {
+        @Synchronized fun take(): ByteArray? = bytes.also { bytes = null }
+        @Synchronized override fun close() { bytes?.fill(0); bytes = null }
+    }
+    private var inventoryExport: InventoryExport? = null
+    val inventoryExportId get() = inventoryExport?.id
+    fun requestInventoryExport(report: ManagerReport): String? {
+        if (mutable.value.busy || report !== (mutable.value.result as? OperationResult.Completed)?.value ||
+            report.inventoryGeneration != inventory.state.value.generation || !report.protectedExport || report.export == null) return null
+        inventoryExport?.close()
+        return java.util.UUID.randomUUID().toString().also { inventoryExport = InventoryExport(it, report.export.copyOf()) }
+    }
+    fun receiveInventoryExport(id: String, uri: Uri?) {
+        val request = inventoryExport?.takeIf { it.id == id } ?: return
+        inventoryExport = null
+        if (uri == null) { request.close(); return }
+        val bytes = request.take() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try { runCatching { getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } } }
+            finally { bytes.fill(0) }
+        }
+    }
+    private fun retireInventoryExport() { inventoryExport?.close(); inventoryExport = null }
+
+    fun requestInventoryFile(): String? = if (!mutable.value.busy) inventory.requestFile() else null
+    fun receiveInventoryFile(id: String, uri: Uri?) {
+        val generation = inventory.receiveFile(id) ?: return
+        if (uri == null) { inventory.finishFile(id, generation, null); return }
+        viewModelScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                val buffer = ByteArray(65537)
+                try { runCatching {
+                    var length = 0
+                    val stream = getApplication<Application>().contentResolver.openInputStream(uri) ?: return@runCatching null
+                    stream.use {
+                        while (length < buffer.size) {
+                            val read = it.read(buffer, length, buffer.size - length)
+                            if (read < 0) break
+                            if (read == 0) throw java.io.IOException()
+                            length += read
+                        }
+                        require(length <= 65536)
+                    }
+                    buffer.copyOf(length)
+                }.getOrNull() } finally { buffer.fill(0) }
+            }
+            if (inventory.finishFile(id, generation, bytes) && bytes == null)
+                mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+        }
+    }
+
     fun submit(input: OperationInput) {
         if (input.operation != ManagerOperation.PIV_SIGN) { submitOwned(input); return }
         if (mutable.value.busy || mutable.value.requiresInspection) { input.close(); return }
@@ -425,6 +485,18 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (mutable.value.requiresInspection && !ConfirmationPolicy.canInspect(input.operation)) {
             input.close(); return
         }
+        try {
+            input.inventoryRequest = inventory.begin(input)
+            if (input.operation == ManagerOperation.FIDO_BLOB_WRITE && input.inventoryRequest?.credential != null && !input.deleteBlob) {
+                input.inventoryBytes = inventory.takeFile()
+            }
+        }
+        catch (failure: CardFailure) {
+            input.close()
+            mutable.update { it.copy(result = OperationResult.Failed(failure.code, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)) }
+            return
+        }
+        retireInventoryExport()
         signingFiles.retireSelection()
         cancelled = false
         operationRoute = mutable.value.selectedReader?.routeKey ?: "nfc"
@@ -574,17 +646,19 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 presenceBlockedReader?.let(CardOperationGate::requireRemoval)
                 observeCardRemoval(reader)
             }
-            val retired = cancelled || (reader != null && (mutable.value.selectedReader?.routeKey != reader.routeKey ||
+            val retired = cancelled || input.inventoryRequest?.let { !inventory.current(it) } == true || (reader != null && (mutable.value.selectedReader?.routeKey != reader.routeKey ||
                 !UsbAuthenticatorReader.isCurrent(usb, reader)))
             if (retired) {
                 mutable.update { it.copy(ctap2Reader = null) }
                 operations.clearSession()
+            inventory.retire()
                 (result as? OperationResult.Completed)?.value?.let { report ->
                     report.secrets?.close()
                     if (report.protectedExport) report.export?.fill(0)
                 }
             }
             if (!retired && result is OperationResult.Completed) {
+                input.inventoryRequest?.let { inventory.settle(it, result.value) }
                 result.value.enrollmentCsr?.let { enrollment.settleCsr(enrollmentOwner, it) }
                 if (input.operation == ManagerOperation.PIV_ENROLL_IMPORT) enrollment.imported(enrollmentOwner)
             }
@@ -642,12 +716,14 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun pauseForActivity(changingConfigurations: Boolean) {
-        cancel(changingConfigurations || signingFiles.hasDocumentRequest)
+        cancel(changingConfigurations || signingFiles.hasDocumentRequest, !mutable.value.busy && inventory.fileRequestId != null,
+            !mutable.value.busy && inventoryExport != null)
     }
 
     fun cancel() { cancel(false) }
 
-    private fun cancel(preserveSigningDocuments: Boolean) {
+    private fun cancel(preserveSigningDocuments: Boolean, preserveInventoryDocument: Boolean = false, preserveInventoryExport: Boolean = false) {
+        if (!preserveInventoryExport) retireInventoryExport()
         signingInput.getAndSet(null)?.close()
         if (!preserveSigningDocuments) signingFiles.retire()
         val preserveSignatureResult = preserveSigningDocuments && mutable.value.operation == ManagerOperation.PIV_SIGN &&
@@ -661,6 +737,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         cancelled = true
         presenceGeneration++
         operations.clearSession()
+        if (!preserveInventoryDocument) inventory.retire()
         if (!preserveSignatureResult) retireResult()
         mutable.value = mutable.value.copy(result = mutable.value.result.takeIf { preserveSignatureResult }, userPresenceRequired = false)
         retryApproval?.complete(false)

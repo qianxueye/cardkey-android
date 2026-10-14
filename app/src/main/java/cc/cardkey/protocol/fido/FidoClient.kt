@@ -341,10 +341,10 @@ class FidoClient(private val session: CardSession) {
                 val authenticated = Cbor.Map(params.value + if (token == null) emptyMap() else cborMap(
                     6 to token.authenticate(request.clientDataHash).cbor(), 7 to token.version.cbor()).value)
                 val first = command(2, authenticated, effectful = true, applied = true)
-                val count = first[5]?.count() ?: 1
-                if (count == 0 || (request.allowIds.isNotEmpty() && count != 1)) malformed()
                 val assertions = mutableListOf<Assertion>()
                 try {
+                    val count = first[5]?.count() ?: 1
+                    if (count == 0 || (request.allowIds.isNotEmpty() && count != 1)) malformed()
                     repeat(count) { index ->
                         val response = if (index == 0) first else command(8, effectful = true, applied = true)
                         val id = response[1]?.let(::parseDescriptor) ?: request.allowIds.singleOrNull() ?: malformed()
@@ -371,6 +371,7 @@ class FidoClient(private val session: CardSession) {
                     }
                     return assertions
                 } catch (failure: Exception) {
+                    (first[7] as? Cbor.Bytes)?.value?.fill(0)
                     assertions.forEach { it.hmacSecret?.fill(0); it.largeBlobKey?.fill(0) }
                     throw failure
                 }
