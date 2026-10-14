@@ -30,3 +30,9 @@ Wide layout uses one 280 dp object pane and one detail pane when remaining width
 Fresh FIDO/PIV startup and destination navigation enter the object list. Actual active signing/save restoration enters its existing owned detail. Card-wide tasks require deliberate overview selection; observed slot/RP/credential rows open only their selected detail. Existing task/IME regression fixtures now explicitly enter the overview before testing their original input/receipt behavior.
 
 Short landscape at sufficient width places the run/cancel group beside the same four bottom destinations to retain readable input space. Phone widths keep the action group above navigation. Both layouts preserve native target sizing and consumed IME/navigation insets; inset regression tests assess actual destination/action boundaries and the retained input viewport.
+
+| Screen / key | Before | Applied wording | Reason / activation |
+| --- | --- | --- | --- |
+| Device / workspace_pivReaderRequired | Disabled PIV/CA destinations without a transport explanation | 当前读卡器使用 CTAP，只能访问 FIDO。PIV 和证书申请需要 NFC 或支持 APDU 的 USB 读卡器。 | Explain actual existing capability guards; no new transport or action. |
+| SSH receipt / workspace_outputFile | Export button without captured filename | 本次导出文件 | Display the captured report filename, never the current form slot. |
+| SSH receipt / OpenSSH | Public report export bytes only | OpenSSH | Existing technical disclosure presents exact captured public export text with native selection; no private key/PIN or login claim. |

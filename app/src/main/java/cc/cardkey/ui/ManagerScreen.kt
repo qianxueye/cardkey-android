@@ -229,6 +229,8 @@ fun ManagerScreen(
                         }
                     }, enabled = !state.busy) { Text("读卡器") }
                 }
+                if (!state.supportsPiv) Text(stringResource(R.string.workspace_pivReaderRequired),
+                    modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(), style = MaterialTheme.typography.bodyMedium)
                 if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission, displayName),
                     modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth(), style = MaterialTheme.typography.bodyMedium)
             }
@@ -236,6 +238,7 @@ fun ManagerScreen(
     }
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val viewportHeight = maxHeight
+        val viewportWidth = maxWidth
         val twoPanes = workspaceUsesTwoPanes(maxWidth, LocalDensity.current.fontScale, viewportHeight)
         val detailVisible = tab >= 2 || twoPanes || objectDetail || state.busy
         BackHandler(tab < 2 && objectDetail && !twoPanes && !state.busy) {
@@ -325,7 +328,7 @@ fun ManagerScreen(
                 }
                 Column(modifier = if (compact) Modifier.navigationBarsPadding() else Modifier,
                     horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (compact && maxWidth >= 600.dp && tab < 2 && detailVisible) {
+                    if (compact && viewportWidth >= 600.dp && tab < 2 && detailVisible) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.weight(1f)) { actionControls() }
                             Box(Modifier.width(360.dp)) { navigationBar() }
@@ -415,6 +418,9 @@ fun ManagerScreen(
                                             SignatureExportStatus.WRITING -> LinearProgressIndicator(Modifier.fillMaxWidth())
                                             null -> Unit
                                         }
+                                        if (result.value.sshPublicKey) result.value.fileName?.let {
+                                            PlexoFactRow(stringResource(R.string.workspace_outputFile), it)
+                                        }
                                         val technicalLabels = setOf("公钥", "RP SHA-256", "用户 ID", "证明", "计数",
                                             "支持的协议", "支持的扩展", "PIN · 协议", "算法", "版本", "序列号",
                                             "credProtect", "credBlob", "用户验证方法")
@@ -423,12 +429,15 @@ fun ManagerScreen(
                                             PlexoFactRow(row.label, row.value)
                                         }
                                         var detailsExpanded by remember(result.value) { mutableStateOf(false) }
-                                        if (technicalRows.isNotEmpty()) {
+                                        if (technicalRows.isNotEmpty() || result.value.sshPublicKey && result.value.export != null) {
                                             TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.fillMaxWidth().testTag("result-details")) {
                                                 Text(stringResource(R.string.workspace_details), Modifier.weight(1f))
                                                 Icon(if (detailsExpanded) expandLessIcon else expandMoreIcon, contentDescription = null)
                                             }
                                             if (detailsExpanded) {
+                                                if (result.value.sshPublicKey) result.value.export?.let { publicKey ->
+                                                    PlexoFactRow("OpenSSH", publicKey.decodeToString())
+                                                }
                                                 technicalRows.forEach { row ->
                                                     HorizontalDivider()
                                                     PlexoFactRow(row.label, row.value)

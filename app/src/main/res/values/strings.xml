@@ -148,4 +148,6 @@
     <string name="workspace_tasks">选择任务</string>
     <string name="workspace_receipt">任务结果</string>
     <string name="workspace_receiptOwner">以下结果属于本次任务记录的对象。改变当前选择不会改变结果中的对象。</string>
+    <string name="workspace_pivReaderRequired">当前读卡器使用 CTAP，只能访问 FIDO。PIV 和证书申请需要 NFC 或支持 APDU 的 USB 读卡器。</string>
+    <string name="workspace_outputFile">本次导出文件</string>
 </resources>
