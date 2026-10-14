@@ -13,7 +13,8 @@ import java.util.Date
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.*
 
-internal class EnrollmentHttpsServer(private val fixture: EnrollmentFixtures, private val response: () -> String) : AutoCloseable {
+internal class EnrollmentHttpsServer(private val fixture: EnrollmentFixtures, private val responseBody: ByteArray = byteArrayOf(),
+                                    private val response: () -> String) : AutoCloseable {
     private val keys = EnrollmentFixtures.key()
     private val builder = JcaX509v3CertificateBuilder(fixture.rootName, BigInteger.TEN,
         Date(fixture.now - 60000), Date(fixture.now + 3600000), X500Name("CN=localhost"), keys.public).apply {
@@ -34,6 +35,8 @@ internal class EnrollmentHttpsServer(private val fixture: EnrollmentFixtures, pr
     private val socket = context.serverSocketFactory.createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket
     val address = "https://localhost:${socket.localPort}"
     val requests = AtomicInteger()
+    @Volatile var acceptEncoding: String? = null
+        private set
     @Volatile var lastFailure: Throwable? = null
         private set
     private val worker = Thread {
@@ -47,6 +50,7 @@ internal class EnrollmentHttpsServer(private val fixture: EnrollmentFixtures, pr
                         val line = input.readLine() ?: return@use
                         if (line.isEmpty()) break
                         if (line.startsWith("Content-Length:", true)) length = line.substringAfter(':').trim().toInt()
+                        if (line.startsWith("Accept-Encoding:", true)) acceptEncoding = line.substringAfter(':').trim()
                     }
                     var remaining = length
                     val buffer = CharArray(1024)
@@ -56,7 +60,7 @@ internal class EnrollmentHttpsServer(private val fixture: EnrollmentFixtures, pr
                         remaining -= read
                     }
                     requests.incrementAndGet()
-                    client.getOutputStream().write(response().toByteArray())
+                    client.getOutputStream().write(response().toByteArray() + responseBody)
                     client.getOutputStream().flush()
                 }
             }.onFailure { lastFailure = it }
@@ -100,4 +104,40 @@ class EnrollmentHttpsTest {
             assertEquals(1, server.requests.get())
         }
     }
+    @Test fun identityRequestRejectsCompleteAndTruncatedGzipResponsesWithoutRetry() {
+        val leaf = fixture.leaf()
+        val json = com.google.gson.JsonObject().apply {
+            add("certChain", com.google.gson.JsonArray().apply {
+                add(EnrollmentProfile.pem(leaf))
+                add(EnrollmentProfile.pem(fixture.intermediate))
+            })
+        }.toString().toByteArray(Charsets.UTF_8)
+        val compressed = java.io.ByteArrayOutputStream().apply {
+            java.util.zip.GZIPOutputStream(this).use { it.write(json) }
+        }.toByteArray()
+        java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(compressed)).use {
+            assertArrayEquals(json, it.readBytes())
+        }
+        val cases = listOf(compressed to compressed.size, compressed to compressed.size + 1,
+            compressed.copyOf(compressed.size / 2) to compressed.size / 2,
+            compressed.copyOf(compressed.size - 8) to compressed.size - 8)
+        for ((body, length) in cases) {
+            EnrollmentHttpsServer(fixture, body) {
+                "HTTP/1.1 201 Created\r\nContent-Encoding: gzip\r\nContent-Length: $length\r\nConnection: close\r\n\r\n"
+            }.use { server ->
+                assertEquals(IssuanceFailure.UNKNOWN, request(server).failure)
+                assertEquals("identity", server.acceptEncoding)
+                assertEquals(1, server.requests.get())
+            }
+        }
+        EnrollmentHttpsServer(fixture, json) {
+            "HTTP/1.1 201 Created\r\nContent-Encoding: identity\r\nContent-Length: ${json.size}\r\nConnection: close\r\n\r\n"
+        }.use { server ->
+            val token = fixture.token(address = server.address)
+            assertArrayEquals(leaf, EnrollmentCA(server.address, fixture.root).let { it.execute(it.call(fixture.csr, token), fixture.csr) }.leaf)
+            assertEquals("identity", server.acceptEncoding)
+            assertEquals(1, server.requests.get())
+        }
+    }
+
 }

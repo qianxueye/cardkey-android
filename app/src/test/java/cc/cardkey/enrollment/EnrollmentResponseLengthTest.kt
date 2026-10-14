@@ -17,10 +17,10 @@ class EnrollmentResponseLengthTest {
     private val fixture = EnrollmentFixtures()
     private val ca = EnrollmentCA("https://localhost", fixture.root)
 
-    private fun execute(bytes: ByteArray, length: Long): Result<EnrollmentBundle> {
+    private fun execute(bytes: ByteArray, length: Long, codings: List<String> = emptyList(), unread: Boolean = false): Result<EnrollmentBundle> {
         val request = Request.Builder().url(ca.endpoint).build()
+        val buffer = Buffer().write(bytes)
         val body = object : ResponseBody() {
-            private val buffer = Buffer().write(bytes)
             override fun contentType(): MediaType? = null
             override fun contentLength() = length
             override fun source() = buffer
@@ -30,10 +30,13 @@ class EnrollmentResponseLengthTest {
             override fun execute(): Response {
                 executions++
                 return Response.Builder().request(request).protocol(Protocol.HTTP_2).code(201)
-                    .message("Created").body(body).build()
+                    .message("Created").body(body).apply { codings.forEach { addHeader("Content-Encoding", it) } }.build()
             }
         }
-        return runCatching { ca.execute(call, fixture.csr) }.also { assertEquals(1, executions) }
+        return runCatching { ca.execute(call, fixture.csr) }.also {
+            assertEquals(1, executions)
+            if (unread) assertEquals(bytes.size.toLong(), buffer.size)
+        }
     }
 
     private fun certificateBody(leaf: ByteArray): ByteArray = JsonObject().apply {
@@ -69,4 +72,19 @@ class EnrollmentResponseLengthTest {
             assertEquals(IssuanceFailure.INVALID, failure.failure)
         }
     }
+    @Test fun explicitIdentityCodingIsCaseInsensitiveAndTrimmed() {
+        val leaf = fixture.leaf()
+        val bytes = certificateBody(leaf)
+        assertArrayEquals(leaf, execute(bytes, bytes.size.toLong(), listOf("  IdEnTiTy  ")).getOrThrow().leaf)
+    }
+
+    @Test fun unexpectedEmptyCombinedAndDuplicateCodingAreUnknownWithoutReadingBody() {
+        val bytes = certificateBody(fixture.leaf())
+        for (codings in listOf(listOf(""), listOf("gzip"), listOf("br"), listOf("identity, gzip"),
+            listOf("identity", "identity"), listOf("identity", "gzip"))) {
+            val failure = execute(bytes, bytes.size.toLong(), codings, unread = true).exceptionOrNull() as EnrollmentException
+            assertEquals(IssuanceFailure.UNKNOWN, failure.failure)
+        }
+    }
+
 }
