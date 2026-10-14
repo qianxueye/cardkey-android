@@ -45,6 +45,7 @@ class OperationInput(
     val enrollmentImport: EnrollmentImport? = null,
     val signingFileGeneration: Long? = null,
     val inventoryGeneration: Long? = null,
+    val inventorySelection: InventoryCredential? = null,
 ) : AutoCloseable {
     internal var inventoryRequest: InventoryRequest? = null
     internal var inventoryBytes: ByteArray? = null
@@ -191,6 +192,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
                 val blob = try { request?.requireCurrent(); fido.readLargeBlob(key) } finally { key.fill(0) }
                 if (cancelled()) { blob?.fill(0); throw CardFailure(FailureCode.CANCELLED) }
                 ManagerReport(listOfNotNull(request?.credential?.let { ResultRow("RP", it.rp.id) },
+                    request?.credential?.let { ResultRow("凭据 ID", it.idHex) },
                     ResultRow("bytes", (blob?.size ?: 0).toString())), blob, "credential-blob.bin", protectedExport = true, inventoryGeneration = request?.generation)
             }
             ManagerOperation.FIDO_BLOB_WRITE -> {

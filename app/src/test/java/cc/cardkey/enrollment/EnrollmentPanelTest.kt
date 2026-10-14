@@ -48,7 +48,7 @@ class EnrollmentPanelTest {
                     ManagerScreen(ManagerState(selectedReader = reader, nfc = false), clear.intValue,
                         {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, state.value,
                         { address, cn -> state.value = state.value.copy(address = address, cn = cn) }, {},
-                        { error("A cancelled confirmation must not submit") }, { it.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), {}, {}, {}, {})
+                        { error("A cancelled confirmation must not submit") }, { it.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
                 }
             }
         }

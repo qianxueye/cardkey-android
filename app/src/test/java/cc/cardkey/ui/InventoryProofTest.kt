@@ -24,17 +24,21 @@ internal class InventoryCard(val rp: String = "login.example.test", val id: Byte
     var count = 1
     var key: ByteArray? = ByteArray(32) { 9 }
     var blobReads = 0
+    var blobWrites = 0
+    var lostWrite = false
+    var failReadback = false
+    var blobData = LargeBlobs.encode(listOf(LargeBlobs.encrypt(ByteArray(32) { 9 }, "private".toByteArray())))
     var assertions = 0
     var pinError = false
     var lostAssertion = false
     var afterAssertion: (() -> Unit)? = null
     val hashes = mutableListOf<ByteArray>()
     val server = FidoClientTest.PinServer(2)
-    fun channel() = ManagerTestChannel(CardWire.CTAP) { code, parameters -> when (code) {
+    fun channel(wire: CardWire = CardWire.CTAP) = ManagerTestChannel(wire) { code, parameters -> when (code) {
         4 -> success(info(mapOf("pinUvAuthToken" to true, "clientPin" to true, "credMgmt" to true, "alwaysUv" to true, "largeBlobs" to true),
             extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
         6 -> if (pinError && parameters!![2].number() == 9L) byteArrayOf(0x31) else server.respond(parameters!!,
-            if (parameters[9]?.number() == 4L) 4 else 2, if (parameters[9]?.number() == 4L) null else rp)
+            parameters[9]?.number()?.toInt() ?: 2, if (parameters[9]?.number() in listOf(4L, 16L)) null else rp)
         10 -> when (parameters!![1].number()) {
             2L -> success(cborMap(3 to textMap("id" to rp.cbor(), "name" to "Synthetic RP".cbor()), 4 to relyingParty.idHash.cbor(), 5 to 1.cbor()))
             4L -> { assertArrayEquals(relyingParty.idHash, parameters[2].map()[1].bytes()); success(cborMap(6 to credential.user.encode(), 7 to descriptor(id), 8 to publicKey, 9 to 1.cbor(), 10 to 3.cbor())) }
@@ -52,7 +56,22 @@ internal class InventoryCard(val rp: String = "login.example.test", val id: Byte
             afterAssertion?.invoke()
             success(cborMap(1 to descriptor(returnedId), 2 to auth.cbor(), 3 to signature.cbor(), 5 to count.cbor(), 7 to key?.cbor()))
         }
-        12 -> { blobReads++; success(cborMap(1 to LargeBlobs.encode(listOf(LargeBlobs.encrypt(ByteArray(32) { 9 }, "private".toByteArray()))).cbor())) }
+        12 -> {
+            if (parameters!![2] != null) {
+                blobWrites++
+                if (lostWrite) throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+                val offset = parameters[3].number().toInt()
+                if (offset == 0) blobData = ByteArray(parameters[4].number().toInt())
+                parameters[2].bytes().copyInto(blobData, offset)
+                success()
+            } else {
+                blobReads++
+                if (failReadback && blobWrites > 0) throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+                val offset = parameters[3].number().toInt()
+                val length = parameters[1].number().toInt()
+                success(cborMap(1 to blobData.copyOfRange(offset, minOf(offset + length, blobData.size)).cbor()))
+            }
+        }
         else -> error("Unexpected command $code")
     } }
 }
@@ -151,6 +170,49 @@ class InventoryProofTest {
         card.afterAssertion = null; seed(card); card.lostAssertion = true
         val failure = run(card) as OperationResult.Failed
         assertEquals(Effect.UNKNOWN, failure.effect); assertEquals(Dispatch.RESPONSE_UNAVAILABLE, failure.dispatch)
+    }
+    @Test fun emptyPinDoesNotConsumePendingKeyAndFreshMissingUvCannotReachBlob() {
+        val card = InventoryCard(); seed(card); assertTrue(run(card) is OperationResult.Completed)
+        val before = card.assertions
+        assertThrows(CardFailure::class.java) { run(card, ManagerOperation.FIDO_BLOB_READ, pin = "") }
+        assertTrue(inventory.state.value.blobReady); assertEquals(before, card.assertions)
+        card.flags = 1
+        val failure = run(card, ManagerOperation.FIDO_BLOB_READ) as OperationResult.Failed
+        assertEquals(Effect.APPLIED, failure.effect); assertTrue(failure.writeAccepted)
+        assertEquals(0, card.blobReads); assertFalse(inventory.state.value.blobReady)
+    }
+    @Test fun metadataChangesAndArrayCopiesDoNotResetCounterOrMutateSelection() {
+        val card = InventoryCard(); seed(card); card.counter = 12; assertTrue(run(card) is OperationResult.Completed)
+        val rp = card.relyingParty.copy(name = "new label")
+        inventory.begin(OperationInput(ManagerOperation.FIDO_RPS)).use {
+            inventory.settle(it, ManagerReport(emptyList(), relyingParties = listOf(rp)))
+        }
+        inventory.selectRp(inventory.state.value.rps.single())
+        val source = card.credential.copy(protection = 2)
+        inventory.begin(OperationInput(ManagerOperation.FIDO_CREDENTIALS)).use {
+            inventory.settle(it, ManagerReport(emptyList(), credentials = listOf(source)))
+        }
+        val selected = inventory.state.value.credentials.single()
+        val output = selected.value(); output.id.fill(0); output.publicKey[-2].bytes().fill(0)
+        rp.idHash.fill(0)
+        inventory.selectCredential(selected)
+        card.counter = 11
+        assertEquals(FailureCode.AUTHORIZATION_DENIED, (run(card) as OperationResult.Failed).code)
+        assertArrayEquals(card.id, selected.value().id)
+    }
+    @Test fun inconsistentEnumeratedRpHashFailsBeforePinAndSignature() {
+        val card = InventoryCard()
+        inventory.begin(OperationInput(ManagerOperation.FIDO_RPS)).use {
+            inventory.settle(it, ManagerReport(emptyList(), relyingParties = listOf(card.relyingParty.copy(idHash = ByteArray(32)))))
+        }
+        inventory.selectRp(inventory.state.value.rps.single())
+        inventory.begin(OperationInput(ManagerOperation.FIDO_CREDENTIALS)).use {
+            inventory.settle(it, ManagerReport(emptyList(), credentials = listOf(card.credential)))
+        }
+        inventory.selectCredential(inventory.state.value.credentials.single())
+        val failure = run(card) as OperationResult.Failed
+        assertEquals(FailureCode.MALFORMED_RESPONSE, failure.code); assertEquals(Effect.NONE, failure.effect)
+        assertEquals(0, card.server.tokenRequests); assertEquals(0, card.assertions)
     }
     @Test fun wrongPinRetainsRetryEffectAndNeverAsserts() {
         val card = InventoryCard(); seed(card); card.pinError = true

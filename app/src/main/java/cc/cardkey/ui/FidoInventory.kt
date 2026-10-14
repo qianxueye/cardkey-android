@@ -115,9 +115,10 @@ class FidoInventory {
             input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) && before.credential != null
         val blob = selected && input.operation != ManagerOperation.FIDO_VERIFY_CREDENTIAL
         if (selected && (before.credential == null || input.inventoryGeneration == null || input.pin.isEmpty())) {
-            clearKey(); mutable.value = before.copy(blobReady = false)
             throw CardFailure(FailureCode.INVALID_INPUT)
         }
+        if (selected && input.inventorySelection != null && input.inventorySelection != before.credential)
+            throw CardFailure(FailureCode.CANCELLED)
         if (blob && key == null) throw CardFailure(FailureCode.INVALID_INPUT)
         val transferred = if (blob) key.also { key = null } else null
         clearKey()

@@ -8,11 +8,27 @@ The Owner approved the FIDO extension text and activation batch on 2026-10-10. U
 
 Secrets never enter ordinary result rows or automatic exports. Reading and viewing secret outputs use separate confirmations. Result buffers and the diagnostic session are cleared on cancellation, activity pause, reader change or reader removal. Ordinary operations clear the preceding secret output. Secret views use the existing secure-window policy.
 
+## Selected inventory credentials
+
+Read **RP · 读取**, select an enumerated RP, then read **凭据 · 读取** and select a credential. **验证签名** uses that credential's returned public key and exact RP. Enter a PIN for each proof. The response must contain one matching credential and a valid signature over a fresh challenge, with both user presence and user verification signed into the authenticator data. The manager does not infer an RP from its hash or accept a manually supplied public key.
+
+The first verified assertion establishes the counter baseline; enumeration does not supply one. Later assertions accept zero-to-zero counters or a strict increase. The baseline follows the RP ID, credential ID and exact COSE public key across selection changes and inventory refreshes in the current selection lifetime. Changes to display names or protection metadata do not reset it. Cancellation, ordinary backgrounding and reader changes end that lifetime.
+
+To read a selected credential's Large Blob, enable **largeBlobKey** for **验证签名**, complete the proof, then choose **扩展数据 · 读取** and enter the PIN again. To write, choose **扩展数据 · 设置**, import a file of at most 64 KiB, explicitly run **验证签名** with **largeBlobKey**, then return to **扩展数据 · 设置** and enter the PIN again. The importer preserves exact raw bytes, including certificate-looking content. Empty files represent an encrypted empty entry.
+
+The private key from the explicit proof authorizes one accepted Blob operation. Missing PIN is rejected before transferring that key. A missing or retired key requires another explicit proof; a Blob action cannot reacquire one on its own. Before Blob I/O, a new assertion in the same card session must verify the selected RP, credential ID, public key, UP, UV and counter, and return the same key. A failed proof prevents Blob I/O and preserves any PIN or assertion effects already observed. An uncertain write is not replayed.
+
+Selection and confirmation snapshots use copied public data and a generation identifier. NFC reconnection proves the selected credential again rather than treating a tag or reader as card identity. Selected keys never enter ordinary results, the secret viewer, logs or persistent storage. Imported plaintext remains bound to its selected tuple through the related explicit proof; unrelated accepted actions, selection changes, ordinary backgrounding and cancellation clear it.
+
+An intentional file-picker handoff preserves only the public selection and pending request while retiring the private key. A retained ViewModel can receive that request after Activity recreation. Process death, retired requests and old A-to-B-to-A callbacks cannot restore it. Decrypted export requires the existing confirmation showing the actual RP and credential ID, then captures one result for one destination callback. That authorized snapshot survives picker recreation and is wiped after writing, provider failure or cancellation. It is never replaced with a newer result or saved in instance state.
+
+## Controlled diagnostics
+
 Large Blob operations use a fresh assertion and the blob operation in the same `CardSession` and operation lease. The assertion addresses the previously verified diagnostic credential and its RP, requires UV, and requests `up:false`; it is a management identity proof rather than an RP login. The manager checks the signature with the cached credential public key, RP hash, credential ID and counter before using the fresh `largeBlobKey`. If an earlier key remains in the workflow, it must match the fresh key. An unsupported no-UP request, failed verification or missing key prevents the blob operation. Cancellation is checked before each manager APDU or direct CTAP exchange and after the verified proof, preserving any known counter effect. No reconnect or automatic retry occurs between this proof and the blob operation.
 
 Import plaintext before the verification workflow. Importing a document pauses the activity and clears earlier keys. Empty plaintext creates an encrypted empty entry; backend deletion passes `null` and removes the selected encrypted entry. Deletion is not exposed in the interface because a deletion consequence confirmation is outside the approved text batch.
 
-Decrypted content export requires the approved confirmation and an explicit document destination. Only the authorized export buffer survives the document picker; it is cleared after writing, cancellation or activity destruction. The manager does not export `largeBlobKey` or hmac-secret output.
+Decrypted content export requires the approved confirmation and an explicit document destination. For the controlled diagnostic path, only the authorized export buffer survives the document picker; it is cleared after writing, cancellation or Activity destruction. The manager does not export `largeBlobKey` or hmac-secret output.
 
 Local software tests and physical card/account qualification are separate. The management no-UP proof does not establish physical user-presence acceptance for RP login.
 

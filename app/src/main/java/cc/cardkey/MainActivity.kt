@@ -71,8 +71,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         if (model.inventory.fileRequestId != id) { inventoryFilePickers.remove(id); launcher.unregister() }
         return launcher
     }
-    private fun chooseInventoryFile() {
-        model.requestInventoryFile()?.let { inventoryFilePicker(it).launch(arrayOf("*/*")) }
+    private fun chooseInventoryFile(generation: Long) {
+        model.requestInventoryFile(generation)?.let { inventoryFilePicker(it).launch(arrayOf("*/*")) }
     }
 
     private val signingFilePickers = mutableMapOf<String, ActivityResultLauncher<Array<String>>>()

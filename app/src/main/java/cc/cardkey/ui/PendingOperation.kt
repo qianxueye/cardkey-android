@@ -2,6 +2,7 @@ package cc.cardkey.ui
 
 class PendingOperation(input: OperationInput) : AutoCloseable {
     val operation = input.operation
+    val inventorySelection = input.inventorySelection
     val messages = ConfirmationPolicy.messages(input)
     private var pending: OperationInput? = input
 

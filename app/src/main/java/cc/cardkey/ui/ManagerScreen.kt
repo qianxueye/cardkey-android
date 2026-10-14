@@ -74,9 +74,9 @@ fun ManagerScreen(
     onSigningAction: (ManagerOperation?, Int) -> Unit,
     onSigningFile: () -> Unit,
     inventory: InventoryState,
-    onInventoryRp: (InventoryRp) -> Unit,
-    onInventoryCredential: (InventoryCredential) -> Unit,
-    onInventoryFile: () -> Unit,
+    onInventoryRp: (Long, InventoryRp) -> Unit,
+    onInventoryCredential: (Long, InventoryCredential) -> Unit,
+    onInventoryFile: (Long) -> Unit,
     onInventoryAction: (ManagerOperation?) -> Unit,
 ) {
     val displayName = stringResource(R.string.app_name)
@@ -153,24 +153,29 @@ fun ManagerScreen(
     DisposableEffect(Unit) { onDispose { confirmation?.close() } }
 
     confirmation?.let { input ->
-        AlertDialog(onDismissRequest = { input.close(); confirmation = null },
+        val dismiss = { input.close(); confirmation = null; if (input.inventorySelection != null) onCancel() }
+        AlertDialog(onDismissRequest = dismiss,
             title = { Text(input.operation.title) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL ||
                     input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
-                    inventory.credential?.let { Text("RP · ${it.rp.id}"); Text("凭据 ID · ${it.idHex}") }
+                    input.inventorySelection?.let { Text("RP · ${it.rp.id}"); Text("凭据 ID · ${it.idHex}") }
                 }
                 input.messages.forEach { Text(stringResource(it)) }
             } },
             confirmButton = { TextButton(onClick = { confirmation = null; input.dispatch(onSubmit) }) { Text("确认") } },
-            dismissButton = { TextButton(onClick = { input.close(); confirmation = null }) { Text("取消") } })
+            dismissButton = { TextButton(onClick = dismiss) { Text("取消") } })
     }
     if (showSecretConfirmation) AlertDialog(onDismissRequest = { showSecretConfirmation = false },
         title = { Text(stringResource(R.string.secret_view)) }, text = { Text(stringResource(R.string.confirm_secretShow)) },
         confirmButton = { TextButton(onClick = { showSecretConfirmation = false; showSecrets = true }) { Text("确认") } },
         dismissButton = { TextButton(onClick = { showSecretConfirmation = false }) { Text("取消") } })
     exportConfirmation?.let { pending -> AlertDialog(onDismissRequest = { exportConfirmation = null },
-        title = { Text("导出") }, text = { Text(stringResource(R.string.confirm_blobExport)) },
+        title = { Text("导出") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (pending.inventoryGeneration != null) pending.rows.filter { it.label in setOf("RP", "凭据 ID") }
+                .forEach { Text("${it.label} · ${it.value}") }
+            Text(stringResource(R.string.confirm_blobExport))
+        } },
         confirmButton = { TextButton(onClick = { exportConfirmation = null; onExport(pending) }) { Text("确认") } },
         dismissButton = { TextButton(onClick = { exportConfirmation = null }) { Text("取消") } }) }
     state.lastRetry?.let { (current, other) ->
@@ -263,7 +268,8 @@ fun ManagerScreen(
                                         rpIds = if (op == ManagerOperation.FIDO_MIN_PIN) parseDisclosureRps(disclosureRps) else emptyList(),
                                         enterpriseMode = enterpriseMode.takeIf { it != 0 }, displayName = displayName,
                                         signingFileGeneration = signingFiles.selection?.generation.takeIf { op == ManagerOperation.PIV_SIGN },
-                                        inventoryGeneration = inventory.generation)
+                                        inventoryGeneration = inventory.generation, inventorySelection = inventory.credential.takeIf {
+                                            op in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) })
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
                                     if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                     else confirmation = PendingOperation(input)
@@ -307,9 +313,9 @@ fun ManagerScreen(
                                 val op = operation
                                 if (!op.piv && inventory.rps.isNotEmpty()) {
                                     Choice("RP", inventory.rp, inventory.rps,
-                                        { it?.id ?: "RP" }, !state.busy) { it?.let(onInventoryRp) }
+                                        { it?.id ?: "RP" }, !state.busy) { it?.let { rp -> onInventoryRp(inventory.generation, rp) } }
                                     if (inventory.credentials.isNotEmpty()) Choice("凭据 ID", inventory.credential,
-                                        inventory.credentials, { it?.idHex ?: "凭据 ID" }, !state.busy) { it?.let(onInventoryCredential) }
+                                        inventory.credentials, { it?.idHex ?: "凭据 ID" }, !state.busy) { it?.let { credential -> onInventoryCredential(inventory.generation, credential) } }
                                 }
                                 Text(op.title, style = MaterialTheme.typography.titleLarge)
                                 if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
@@ -338,7 +344,7 @@ fun ManagerScreen(
                                 if (op in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
                                     Text(stringResource(R.string.blob_help))
                                     if (op == ManagerOperation.FIDO_BLOB_WRITE) {
-                                        OutlinedButton(onClick = if (inventory.credential != null) onInventoryFile else onImport, enabled = !state.busy) { Text("导入") }
+                                        OutlinedButton(onClick = { if (inventory.credential != null) onInventoryFile(inventory.generation) else onImport() }, enabled = !state.busy) { Text("导入") }
                                         (if (inventory.credential != null) inventory.fileSize else imported?.size)?.let {
                                             Text("$it bytes", style = MaterialTheme.typography.bodySmall)
                                         }
