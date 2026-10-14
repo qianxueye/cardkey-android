@@ -143,6 +143,27 @@ class PivSecureContextTest {
         assertEquals(Effect.NONE, session.effect)
     }
 
+    @Test fun protectedEmptyMetadataRejectsProofBeforePinOrPrivateCommands() {
+        val operations: List<(PivClient, CharArray) -> Unit> = listOf(
+            { client, pin -> client.createCsr(0x9c, pin, "CN=Synthetic") },
+            { client, pin -> client.verifySignature(0x9c, pin) },
+            { client, pin -> client.verifyKeyAgreement(0x9c, pin) },
+            { client, pin -> client.verifyRsaDecryption(0x9c, pin) }
+        )
+        for (operation in operations) {
+            val card = Peer().apply { slotMetadata = "02020201030100".hexBytes() }
+            val (session, context) = establish(card)
+            val pin = "123456".toCharArray()
+            val exception = failure { operation(PivClient(session, context), pin) } as CardFailure
+            assertEquals(FailureCode.CARD_REJECTED, exception.code)
+            assertEquals(0x6a88, exception.status)
+            assertEquals(2, card.protectedCommands)
+            assertEquals(0, card.pinTries)
+            assertEquals(Effect.NONE, session.effect)
+            assertTrue(pin.all { it == '\u0000' })
+        }
+    }
+
     @Test fun protectedImportedSlotsWithoutPublicKeysRemainPopulated() {
         for (algorithm in listOf(KeyAlgorithm.P256, KeyAlgorithm.RSA2048)) {
             val card = Peer().apply {

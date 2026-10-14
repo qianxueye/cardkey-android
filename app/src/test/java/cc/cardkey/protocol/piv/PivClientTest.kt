@@ -31,6 +31,7 @@ class PivClientTest {
         var corruptSignature = false
         var certificate: ByteArray? = null
         var slotMetadata: ByteArray? = null
+        var metadataAbsent = false
         var managementAlgorithm = ManagementAlgorithm.TDES
         var managementKey = ByteArray(24) { (it % 8 + 1).toByte() }
         private val witness = ByteArray(16) { (it + 1).toByte() }
@@ -58,7 +59,7 @@ class PivClientTest {
                     0x80, 0x81 -> PivTlv.encode(5, byteArrayOf(1)) + PivTlv.encode(6, byteArrayOf(3,
                         (if (apdu.p2 == 0x80) pinRemaining else pukRemaining).toByte()))
                     0x9b -> PivTlv.encode(1, byteArrayOf(managementAlgorithm.code.toByte())) + PivTlv.encode(5, byteArrayOf(0))
-                    else -> slotMetadata ?: metadata()
+                    else -> if (metadataAbsent) return "6a88".hexBytes() else slotMetadata ?: metadata()
                 }
                 0xcb -> certificate?.let { PivTlv.encode(0x53, PivTlv.encode(0x70, it) + PivTlv.encode(0x71, byteArrayOf(0))) }
                     ?: return "6a82".hexBytes()
@@ -168,6 +169,31 @@ class PivClientTest {
         assertNull(slot.certificate)
         assertEquals(listOf(0xa4, 0xf7, 0xcb), card.commands.map { it.ins })
         assertEquals(Effect.NONE, session.effect)
+    }
+
+    @Test fun absentMetadataIsNullOnlyForActualNotFoundStatus() {
+        val card = FakeCard().apply { metadataAbsent = true }
+        val session = CardSession(card)
+        val slot = PivClient(session).readSlot(0x9c)
+        assertNull(slot.metadata)
+        assertNull(slot.certificate)
+        assertEquals(listOf(0xa4, 0xf7, 0xcb), card.commands.map { it.ins })
+        assertEquals(Effect.NONE, session.effect)
+    }
+
+    @Test fun emptyMetadataPreservesEveryValidPolicyAndOrigin() {
+        for (pinPolicy in 1..3) for (touchPolicy in 1..3) for (origin in 0..1) {
+            val card = FakeCard().apply {
+                slotMetadata = PivTlv.encode(2, byteArrayOf(pinPolicy.toByte(), touchPolicy.toByte())) +
+                    PivTlv.encode(3, byteArrayOf(origin.toByte()))
+            }
+            val metadata = PivClient(CardSession(card)).readSlot(0x9c).metadata!!
+            assertEquals(pinPolicy, metadata.pinPolicy)
+            assertEquals(touchPolicy, metadata.touchPolicy)
+            assertEquals(origin == 0, metadata.generated)
+            assertNull(metadata.algorithm)
+            assertNull(metadata.publicKey)
+        }
     }
 
     @Test fun emptySlotRejectsPrivateOperationsBeforePinOrManagementAuthentication() {
