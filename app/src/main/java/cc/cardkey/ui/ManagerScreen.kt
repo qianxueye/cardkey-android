@@ -27,6 +27,12 @@ import androidx.compose.ui.unit.dp
 import cc.cardkey.protocol.*
 import cc.cardkey.R
 import cc.cardkey.enrollment.EnrollmentState
+import cc.cardkey.signing.SigningFileState
+import cc.cardkey.signing.SignatureExportStatus
+import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import cc.cardkey.protocol.piv.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.transport.UsbReaderDescriptor
@@ -64,12 +70,19 @@ fun ManagerScreen(
     onTlsSettings: (String) -> Unit,
     onTlsRoot: () -> Unit,
     onTlsSubmit: (TlsQualificationInput) -> Unit,
+    signingFiles: SigningFileState,
+    onSigningAction: (ManagerOperation?, Int) -> Unit,
+    onSigningFile: () -> Unit,
 ) {
     val displayName = stringResource(R.string.app_name)
     val feedbackRequester = remember { BringIntoViewRequester() }
     val validationRequester = remember { BringIntoViewRequester() }
-    var tab by remember { mutableIntStateOf(0) }
-    var operation by remember { mutableStateOf(ManagerOperation.FIDO_INFO) }
+    var tab by remember { mutableIntStateOf(when {
+        signingFiles.restoringSave && signingFiles.restoreOperation == null -> 2
+        signingFiles.restoreOperation?.piv == true || signingFiles.active -> 1
+        else -> 0
+    }) }
+    var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) ManagerOperation.PIV_SIGN else ManagerOperation.FIDO_INFO) }
     var pin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var adminKey by remember { mutableStateOf("") }
@@ -86,7 +99,7 @@ fun ManagerScreen(
     var showSecretConfirmation by remember { mutableStateOf(false) }
     var showSecrets by remember { mutableStateOf(false) }
     var exportConfirmation by remember { mutableStateOf<ManagerReport?>(null) }
-    var slot by remember { mutableIntStateOf(0x9a) }
+    var slot by remember { mutableIntStateOf(if (signingFiles.active || signingFiles.restoringSave) signingFiles.slot else 0x9a) }
     var algorithm by remember { mutableStateOf(KeyAlgorithm.P256) }
     var pinPolicy by remember { mutableStateOf(PinPolicy.ONCE) }
     var adminAlgorithm by remember { mutableStateOf(ManagementAlgorithm.TDES) }
@@ -94,6 +107,17 @@ fun ManagerScreen(
     var invalid by remember { mutableStateOf(false) }
     var validationFailures by remember { mutableIntStateOf(0) }
     var confirmation by remember { mutableStateOf<PendingOperation?>(null) }
+    LaunchedEffect(tab, operation, slot) { onSigningAction(operation.takeIf { tab != 2 }, slot) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, operation) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE && operation == ManagerOperation.PIV_SIGN) {
+                pin = ""; confirmation?.close(); confirmation = null
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     val report = (state.result as? OperationResult.Completed)?.value
     val secretResult = report?.secrets != null || report?.protectedExport == true
     val secretForm = tab != 2 && (needsPin(operation) || operation in setOf(
@@ -210,9 +234,10 @@ fun ManagerScreen(
                             Button(onClick = {
                                 try {
                                     require(op != ManagerOperation.FIDO_BLOB_WRITE || imported != null)
+                                    require(op != ManagerOperation.PIV_SIGN || signingFiles.selection != null)
                                     val input = OperationInput(op, pin.toCharArray(), newPin.toCharArray(), adminKey.hexBytes(), newAdminKey.hexBytes(),
                                         adminAlgorithm, newAdminAlgorithm, slot, algorithm, pinPolicy, text, secondary, enabled,
-                                        imported?.copyOf() ?: byteArrayOf(),
+                                        if (op == ManagerOperation.PIV_SIGN) byteArrayOf() else imported?.copyOf() ?: byteArrayOf(),
                                         makeExtensions = MakeExtensions(if ("credProtect" in extensionNames) protection else null,
                                             if ("credBlob" in extensionNames && op == ManagerOperation.FIDO_REGISTER) extensionValue.hexBytes() else null,
                                             "hmac-secret" in extensionNames, "minPinLength" in extensionNames, enabled && "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
@@ -220,12 +245,14 @@ fun ManagerScreen(
                                             if ("hmac-secret" in extensionNames && op == ManagerOperation.FIDO_ASSERT) extensionValue.hexBytes() else null,
                                             "largeBlobKey" in extensionNames, uvm = "uvm" in extensionNames),
                                         rpIds = if (op == ManagerOperation.FIDO_MIN_PIN) parseDisclosureRps(disclosureRps) else emptyList(),
-                                        enterpriseMode = enterpriseMode.takeIf { it != 0 }, displayName = displayName)
+                                        enterpriseMode = enterpriseMode.takeIf { it != 0 }, displayName = displayName,
+                                        signingFileGeneration = signingFiles.selection?.generation.takeIf { op == ManagerOperation.PIV_SIGN })
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
                                     if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                     else confirmation = PendingOperation(input)
                                 } catch (_: IllegalArgumentException) { invalid = true; validationFailures++ }
-                            }, modifier = Modifier.weight(1f), enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op))) { Text(op.title.substringAfter("·").trim()) }
+                            }, modifier = Modifier.weight(1f).testTag("manager-run"), enabled = !state.busy && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
+                                (op != ManagerOperation.PIV_SIGN || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(op.title.substringAfter("·").trim()) }
                             if (state.busy) OutlinedButton(onClick = onCancel) { Text("取消") }
                         }
                     }
@@ -262,6 +289,15 @@ fun ManagerScreen(
                                 if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
                                         ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
                                     Choice("槽位", slot, PivClient.slots, { "%02X".format(it) }, !state.busy) { slot = it }
+                                }
+                                if (op == ManagerOperation.PIV_SIGN) {
+                                    OutlinedButton(onClick = {
+                                        pin = ""; confirmation?.close(); confirmation = null; onSigningFile()
+                                    }, enabled = !state.busy && !state.nfc && state.selectedReader?.wire == CardWire.APDU &&
+                                        signingFiles.exportStatus != SignatureExportStatus.WRITING,
+                                        modifier = Modifier.testTag("signing-file-picker")) { Text(stringResource(R.string.signing_chooseFile)) }
+                                    Text(stringResource(R.string.signing_limit), style = MaterialTheme.typography.bodySmall)
+                                    signingFiles.selection?.let { file -> Text(stringResource(R.string.signing_selectedFile, file.name, file.size)) }
                                 }
                                 if (needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy) { pin = it }
                                 if (op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
@@ -408,7 +444,14 @@ fun ManagerScreen(
                                         }
                                         if (result.value.export != null) OutlinedButton(onClick = {
                                             if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
-                                        }) { Text("导出") }
+                                        }, enabled = result.value.fileName != "signature.bin" || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
+                                        if (signingFiles.exportOwner === result.value) when (signingFiles.exportStatus) {
+                                            SignatureExportStatus.SAVED -> Text(stringResource(R.string.signing_exported))
+                                            SignatureExportStatus.CANCELLED -> Text(stringResource(R.string.signing_exportCancelled))
+                                            SignatureExportStatus.UNKNOWN -> Text(stringResource(R.string.signing_exportUnknown))
+                                            SignatureExportStatus.WRITING -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                                            null -> Unit
+                                        }
                                     }
                                     is OperationResult.Failed -> {
                                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

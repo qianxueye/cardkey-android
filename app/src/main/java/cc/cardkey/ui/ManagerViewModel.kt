@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import cc.cardkey.protocol.*
 import cc.cardkey.enrollment.*
 import cc.cardkey.tls.*
+import cc.cardkey.signing.*
+import android.provider.OpenableColumns
 import cc.cardkey.transport.*
 import cc.cardkey.protocol.piv.PivClient
 import kotlinx.coroutines.CompletableDeferred
@@ -58,6 +60,9 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
     val enrollment = EnrollmentWorkflow()
+    val signingFiles = PivSigningFiles()
+    private var signingAction: ManagerOperation? = null
+    private val signingInput = AtomicReference<OperationInput?>()
     private var pendingEnrollmentRoot: Pair<Long, Long>? = null
     private val tlsMutable = MutableStateFlow(TlsQualificationState())
     val tls = tlsMutable.asStateFlow()
@@ -104,6 +109,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
         retireResult()
+        signingFiles.retire()
         retireTls()
         enrollment.retire()
         operations.clearSession()
@@ -243,6 +249,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
             return
         }
+        signingFiles.retireSelection()
         tlsAttempt.set(attempt)
         cancelled = false
         inProgress = true
@@ -305,6 +312,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             token.fill('\u0000')
             operations.clearSession()
             retireResult()
+            signingFiles.retireSelection()
             networkCall.set(call)
             mutable.update { it.copy(busy = true, result = null, operation = null) }
             viewModelScope.launch {
@@ -327,11 +335,97 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         } finally { token.fill('\u0000') }
     }
 
+    fun fileSigningAction(operation: ManagerOperation?, slot: Int = 0x9a) {
+        if (operation != signingAction) {
+            signingAction = operation
+            signingFiles.retire()
+        }
+        signingFiles.action(operation == ManagerOperation.PIV_SIGN, slot)
+    }
+
+    fun requestSigningFile(): Boolean {
+        val reader = mutable.value.selectedReader
+        if (mutable.value.busy || signingFiles.hasSaveOwner || signingAction != ManagerOperation.PIV_SIGN ||
+            mutable.value.nfc || reader?.wire != CardWire.APDU || !UsbAuthenticatorReader.isCurrent(usb, reader)) return false
+        signingFiles.request(reader.routeKey)
+        return true
+    }
+
+    internal val signingFileRequestId get() = signingFiles.fileRequestId
+    internal val signatureSaveRequestId get() = signingFiles.saveRequestId
+
+    fun receiveSigningFile(requestId: String, uri: Uri?) {
+        val request = signingFiles.takeRequest(requestId) ?: return
+        if (uri == null) { signingFiles.retireSelection(); return }
+        viewModelScope.launch {
+            var bytes: ByteArray? = null
+            try {
+                val name = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                        if (it.moveToFirst()) it.getString(0) else null
+                    } ?: uri.lastPathSegment.orEmpty()
+                    require(name.isNotBlank())
+                    bytes = PivSigningFiles.readRaw(resolver.openInputStream(uri) ?: throw java.io.IOException())
+                    name.take(255).filterNot { it.isISOControl() }
+                }
+                signingFiles.accept(request, mutable.value.selectedReader?.takeIf { UsbAuthenticatorReader.isCurrent(usb, it) }?.routeKey,
+                    name, requireNotNull(bytes))
+            } catch (_: Exception) {
+                if (signingFiles.current(request, mutable.value.selectedReader?.routeKey))
+                    mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+            } finally { bytes?.fill(0) }
+        }
+    }
+
+    fun requestSignatureSave(report: ManagerReport): Boolean {
+        val result = mutable.value.result as? OperationResult.Completed ?: return false
+        if (mutable.value.busy || mutable.value.operation != ManagerOperation.PIV_SIGN || result.value !== report) return false
+        return signingFiles.requestSave(report, signingAction)
+    }
+
+    fun receiveSignatureSave(requestId: String, uri: Uri?) {
+        val snapshot = signingFiles.takeSave(requestId) ?: return
+        if (uri == null) { signingFiles.finishSave(snapshot, SignatureExportStatus.CANCELLED); return }
+        signingFiles.writing(snapshot)
+        viewModelScope.launch {
+            val status = withContext(Dispatchers.IO) {
+                PivSigningFiles.writeSignature(snapshot) { getApplication<Application>().contentResolver.openOutputStream(uri, "wt") }
+            }
+            signingFiles.finishSave(snapshot, status)
+        }
+    }
+
     fun submit(input: OperationInput) {
+        if (input.operation != ManagerOperation.PIV_SIGN) { submitOwned(input); return }
+        if (mutable.value.busy || mutable.value.requiresInspection) { input.close(); return }
+        if (!mutable.value.supportsPiv) { submitOwned(input); return }
+        if (mutable.value.nfc) {
+            input.close()
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.CONTACT_REQUIRED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)) }
+            return
+        }
+        val owned = try {
+            val reader = requireNotNull(mutable.value.selectedReader)
+            require(signingAction == ManagerOperation.PIV_SIGN && !mutable.value.nfc && reader.wire == CardWire.APDU &&
+                UsbAuthenticatorReader.isCurrent(usb, reader) && usb.hasPermission(reader.device) && input.bytes.isEmpty())
+            val bytes = signingFiles.take(input.signingFileGeneration, reader.routeKey)
+            OperationInput(ManagerOperation.PIV_SIGN, pin = input.pin.copyOf(), slot = input.slot, bytes = bytes)
+        } catch (_: Exception) {
+            input.close()
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+            return
+        }
+        input.close()
+        submitOwned(owned)
+    }
+
+    private fun submitOwned(input: OperationInput) {
         if (mutable.value.busy) { input.close(); return }
         if (mutable.value.requiresInspection && !ConfirmationPolicy.canInspect(input.operation)) {
             input.close(); return
         }
+        signingFiles.retireSelection()
         cancelled = false
         operationRoute = mutable.value.selectedReader?.routeKey ?: "nfc"
         operationWire = mutable.value.selectedReader?.wire ?: CardWire.APDU
@@ -386,6 +480,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun run(input: OperationInput, connect: () -> CardChannel) {
+        if (input.operation == ManagerOperation.PIV_SIGN) signingInput.set(input)
         inProgress = true
         val generation = ++presenceGeneration
         val enrollmentOwner = enrollment.generation
@@ -395,6 +490,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             var negotiatedCtap2: Boolean? = null
             val result = withContext(Dispatchers.IO) {
                 try {
+                    if (input.operation == ManagerOperation.PIV_SIGN && !signingInput.compareAndSet(input, null))
+                        return@withContext OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                     if (cancelled) OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
                     else {
                         val lease = CardOperationGate.tryAcquire()
@@ -544,7 +641,17 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun cancel() {
+    fun pauseForActivity(changingConfigurations: Boolean) {
+        cancel(changingConfigurations || signingFiles.hasDocumentRequest)
+    }
+
+    fun cancel() { cancel(false) }
+
+    private fun cancel(preserveSigningDocuments: Boolean) {
+        signingInput.getAndSet(null)?.close()
+        if (!preserveSigningDocuments) signingFiles.retire()
+        val preserveSignatureResult = preserveSigningDocuments && mutable.value.operation == ManagerOperation.PIV_SIGN &&
+            (mutable.value.result as? OperationResult.Completed)?.value?.fileName == "signature.bin"
         tlsAttempt.get()?.close()
         enrollment.pause()
         networkCall.getAndSet(null)?.let { call ->
@@ -554,8 +661,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         cancelled = true
         presenceGeneration++
         operations.clearSession()
-        retireResult()
-        mutable.value = mutable.value.copy(result = null, userPresenceRequired = false)
+        if (!preserveSignatureResult) retireResult()
+        mutable.value = mutable.value.copy(result = mutable.value.result.takeIf { preserveSignatureResult }, userPresenceRequired = false)
         retryApproval?.complete(false)
         presenceWatch?.cancel()
         pending?.close()

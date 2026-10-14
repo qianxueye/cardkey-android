@@ -103,4 +103,12 @@
     <string name="tls_timeout">连接验证已超时。</string>
     <string name="tls_mayHaveSubmitted">认证可能已提交，请核对服务器记录。</string>
     <string name="tls_unknown">未确认认证结果。请先核对服务器记录，勿重复提交。</string>
+    <string name="signing_chooseFile">选择文件</string>
+    <string name="signing_limit">选择非空文件，最大 1 MiB。</string>
+    <string name="signing_selectedFile">%1$s · %2$d 字节</string>
+    <string name="signing_verified">签名验证：通过</string>
+    <string name="signing_exportScope">导出的是所选文件的独立签名；原文件保持不变。</string>
+    <string name="signing_exported">已导出签名。</string>
+    <string name="signing_exportCancelled">已取消导出。</string>
+    <string name="signing_exportUnknown">未确认导出结果。请检查所选文件。</string>
 </resources>

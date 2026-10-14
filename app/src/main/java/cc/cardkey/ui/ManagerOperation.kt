@@ -22,7 +22,7 @@ enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     PIV_CHANGE_PIN("PIN · 修改", true), PIV_CHANGE_PUK("PUK · 修改", true),
     PIV_UNBLOCK("PIN · 解锁", true), PIV_ADMIN("管理密钥 · 修改", true),
     PIV_GENERATE("生成密钥", true), PIV_CSR("导出 CSR", true),
-    PIV_IMPORT("导入证书", true), PIV_SIGN("验证签名", true),
+    PIV_IMPORT("导入证书", true), PIV_SIGN("文件签名", true),
     PIV_ECDH("ECDH · 验证", true), PIV_DECRYPT("RSA · 验证", true),
     PIV_ENROLL_CSR("生成 CSR", true), PIV_ENROLL_IMPORT("导入证书", true),
     PIV_RESET("PIV · 重置", true)
@@ -43,6 +43,7 @@ class OperationInput(
     val rpIds: List<String> = emptyList(), val enterpriseMode: Int? = null,
     val deleteBlob: Boolean = false, val displayName: String = "diagnostic",
     val enrollmentImport: EnrollmentImport? = null,
+    val signingFileGeneration: Long? = null,
 ) : AutoCloseable {
     val makeExtensions = if (operation == ManagerOperation.FIDO_REGISTER)
         makeExtensions.copy(largeBlobKey = enabled && makeExtensions.largeBlobKey) else makeExtensions
@@ -50,7 +51,7 @@ class OperationInput(
     override fun close() {
         pin.fill('\u0000'); newPin.fill('\u0000'); adminKey.fill(0); newAdminKey.fill(0)
         makeExtensions.credentialBlob?.fill(0); assertionExtensions.hmacSalts?.fill(0)
-        if (operation == ManagerOperation.FIDO_BLOB_WRITE) bytes.fill(0)
+        if (operation in setOf(ManagerOperation.FIDO_BLOB_WRITE, ManagerOperation.PIV_SIGN)) bytes.fill(0)
     }
 }
 
@@ -215,7 +216,11 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.PIV_IMPORT -> piv.importCertificate(input.slot, input.bytes, input.managementAlgorithm, input.adminKey).let {
                 ManagerReport(listOf(ResultRow("证书", it.subjectX500Principal.name)))
             }
-            ManagerOperation.PIV_SIGN -> { piv.verifySignature(input.slot, input.pin); empty() }
+            ManagerOperation.PIV_SIGN -> {
+                val signature = piv.signFile(input.slot, input.pin, input.bytes)
+                if (cancelled()) { signature.fill(0); throw CardFailure(FailureCode.CANCELLED) }
+                ManagerReport(emptyList(), signature, "signature.bin", messages = listOf(R.string.signing_verified, R.string.signing_exportScope))
+            }
             ManagerOperation.PIV_ECDH -> { piv.verifyKeyAgreement(input.slot, input.pin); empty() }
             ManagerOperation.PIV_DECRYPT -> { piv.verifyRsaDecryption(input.slot, input.pin); empty() }
             ManagerOperation.PIV_RESET -> { piv.reset(); empty() }
