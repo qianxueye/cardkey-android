@@ -120,7 +120,8 @@ internal object QualificationResponse {
     }
 }
 
-internal class PivTlsConnection(private val deadlineMillis: Long = 45000) : Closeable {
+internal class PivTlsConnection(private val deadlineMillis: Long = 45000,
+                                private val dns: PivTlsDns = AndroidPivTlsDns()) : Closeable {
     private val closed = AtomicBoolean()
     private val used = AtomicBoolean()
     private val socket = AtomicReference<Socket?>()
@@ -129,13 +130,16 @@ internal class PivTlsConnection(private val deadlineMillis: Long = 45000) : Clos
         check(used.compareAndSet(false, true))
         if (closed.get()) throw IOException("cancelled")
         val timer = Timer("piv-tls-deadline", true)
-        val transport = Socket()
-        socket.set(transport)
         timer.schedule(object : TimerTask() { override fun run() { try { onDeadline() } finally { close() } } }, deadlineMillis)
         try {
             if (closed.get()) throw IOException("cancelled")
             identity.validate()
-            transport.connect(InetSocketAddress(endpoint.host, endpoint.port), 10000)
+            val address = dns.resolve(endpoint.host)
+            if (closed.get()) throw IOException("cancelled")
+            val transport = Socket()
+            socket.set(transport)
+            if (closed.get()) throw IOException("cancelled")
+            transport.connect(InetSocketAddress(address, endpoint.port), 10000)
             transport.soTimeout = 15000
             val protocol = TlsClientProtocol(transport.getInputStream(), transport.getOutputStream())
             protocol.connect(PivTlsPeer(identity, endpoint, sign))
@@ -147,6 +151,7 @@ internal class PivTlsConnection(private val deadlineMillis: Long = 45000) : Clos
     }
     override fun close() {
         closed.set(true)
+        dns.close()
         socket.getAndSet(null)?.let { runCatching { it.close() } }
     }
 }

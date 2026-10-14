@@ -18,6 +18,7 @@ import kotlinx.coroutines.Job
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -30,10 +31,11 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w400dp-h800dp-mdpi")
+@Config(sdk = [34], shadows = [TlsDnsShadow::class], qualifiers = "w400dp-h800dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class TlsActivityTest {
+    @Before fun resetDns() { TlsDnsShadow.reset() }
     @get:Rule val compose = createEmptyComposeRule()
     private fun seed(activity: MainActivity, f: TlsFixture): ManagerViewModel {
         fun endpoint(address: Int) = Shadow.newInstanceOf(UsbEndpoint::class.java).also {

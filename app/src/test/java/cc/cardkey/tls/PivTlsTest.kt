@@ -20,6 +20,14 @@ import java.util.Date
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.*
 
+internal class LoopbackTlsDns : PivTlsDns {
+    override fun resolve(host: String): InetAddress {
+        require(host == "localhost")
+        return InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
+    }
+    override fun close() = Unit
+}
+
 internal class TlsFixture {
     val issued = EnrollmentFixtures()
     val card = EnrollmentCard()
@@ -29,7 +37,7 @@ internal class TlsFixture {
     val identity = PivTlsIdentity(EnrollmentImport(csr, EnrollmentCA("https://localhost", issued.root), bundle))
     init { card.certificate = leaf }
     fun attempt(endpoint: PivTlsEndpoint, current: () -> Boolean = { true }, connect: () -> CardChannel = { card }) =
-        PivTlsAttempt(identity, endpoint, "123456".toCharArray(), current, connect)
+        PivTlsAttempt(identity, endpoint, "123456".toCharArray(), current, connect, PivTlsConnection(dns = LoopbackTlsDns()))
 }
 
 internal class TlsServer(
@@ -75,6 +83,7 @@ internal class TlsServer(
     val requests = AtomicInteger()
     val accepted = AtomicInteger()
     @Volatile var failure: Throwable? = null
+    @Volatile var requestedNames: List<SNIServerName> = emptyList()
     private val worker = Thread {
         try {
             socket.accept().use { raw ->
@@ -82,6 +91,7 @@ internal class TlsServer(
                 val client = raw as SSLSocket
                 client.soTimeout = 5000
                 client.startHandshake()
+                requestedNames = (client.session as ExtendedSSLSession).requestedServerNames
                 val input = client.inputStream.bufferedReader()
                 assertEquals("GET /qualify HTTP/1.1", input.readLine())
                 while (input.readLine()?.isNotEmpty() == true) { }
@@ -151,7 +161,7 @@ class PivTlsTest {
                 if (doubleHash) {
                     var signatures = 0
                     assertThrows(Exception::class.java) {
-                        PivTlsConnection().execute(f.identity, PivTlsEndpoint(server.address, f.issued.root), { digest ->
+                        PivTlsConnection(dns = LoopbackTlsDns()).execute(f.identity, PivTlsEndpoint(server.address, f.issued.root), { digest ->
                             signatures++
                             assertEquals(32, digest.size)
                             Signature.getInstance("SHA256withECDSA").run { initSign(f.card.keyPair.private); update(digest); sign() }
@@ -192,7 +202,7 @@ class PivTlsTest {
         }.apply { isDaemon = true; start() }
         val cancelled = java.util.concurrent.CountDownLatch(1)
         try {
-            val connection = PivTlsConnection(300)
+            val connection = PivTlsConnection(300, LoopbackTlsDns())
             assertThrows(Exception::class.java) {
                 connection.execute(f.identity, PivTlsEndpoint("https://localhost:${socket.localPort}", f.issued.root),
                     { error("no PIN before authenticated server") }, { cancelled.countDown() })

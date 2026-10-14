@@ -27,10 +27,10 @@ import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], manifest = Config.NONE)
+@Config(sdk = [34], shadows = [TlsDnsShadow::class], manifest = Config.NONE)
 class TlsViewModelTest {
     private val app get() = RuntimeEnvironment.getApplication()
-    @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+    @Before fun setup() { TlsDnsShadow.reset(); Dispatchers.setMain(UnconfinedTestDispatcher()) }
     @After fun teardown() { Dispatchers.resetMain() }
     private fun model(f: TlsFixture): ManagerViewModel = ManagerViewModel(app).apply {
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
@@ -158,6 +158,32 @@ class TlsViewModelTest {
             assertEquals(Effect.NONE, (model.state.value.result as OperationResult.Failed).effect)
             assertEquals(0, server.accepted.get())
             assertEquals(0, f.card.commands.count { it.ins == 0x20 || it.ins == 0x87 })
+        }
+    }
+
+    @Test fun dnsWithoutCallbackCannotKeepManagerBusyAfterCancelOrReviveFromLateAnswer() {
+        TlsDnsShadow.defer = true
+        val f = TlsFixture()
+        val model = model(f)
+        TlsServer(f).use { server ->
+            model.tlsSettings(server.address); root(model, f)
+            val pin = start(model, f.card)
+            await { TlsDnsShadow.answer != null }
+            assertTrue(pin.all { it == '\u0000' })
+            assertTrue(model.state.value.busy)
+            assertTrue(f.card.closed)
+            CardOperationGate.tryAcquire()!!.close()
+            model.cancel()
+            await { !model.state.value.busy }
+            assertTrue(TlsDnsShadow.cancellation!!.isCanceled)
+            assertEquals(PivTlsOutcome.CANCELLED, model.tls.value.result?.outcome)
+            assertEquals(Effect.NONE, (model.state.value.result as OperationResult.Failed).effect)
+            assertFalse(model.state.value.requiresInspection)
+            assertFalse(model.tls.value.running)
+            TlsDnsShadow.answer!!.invoke(listOf(java.net.InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))), 0)
+            assertEquals(0, server.accepted.get())
+            assertEquals(0, f.card.commands.count { it.ins == 0x20 || it.ins == 0x87 })
+            assertEquals(PivTlsOutcome.CANCELLED, model.tls.value.result?.outcome)
         }
     }
 

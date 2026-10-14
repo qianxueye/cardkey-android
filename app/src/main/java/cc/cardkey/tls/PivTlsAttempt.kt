@@ -12,12 +12,13 @@ enum class PivTlsOutcome { QUALIFIED, FAILED, CANCELLED, TIMED_OUT }
 data class PivTlsResult(val outcome: PivTlsOutcome, val card: OperationResult<Unit>,
                         val authenticationMayHaveBeenSubmitted: Boolean = false)
 
-class PivTlsAttempt(
+class PivTlsAttempt internal constructor(
     private val identity: PivTlsIdentity,
     private val endpoint: PivTlsEndpoint,
     pin: CharArray,
     private val current: () -> Boolean,
     private val connect: () -> CardChannel,
+    private val connection: PivTlsConnection = PivTlsConnection(),
 ) : Closeable {
     private val lock = Any()
     private var secret: CharArray? = pin.copyOf().also { pin.fill('\u0000') }
@@ -26,7 +27,6 @@ class PivTlsAttempt(
     private var signatureReturned = false
     private val used = AtomicBoolean()
     private val channel = AtomicReference<CancellableCardChannel?>()
-    private val connection = PivTlsConnection()
     private var facts: PivInfo? = null
     @Volatile private var cardResult: OperationResult<Unit> = OperationResult.Completed(Unit, Effect.NONE)
 
