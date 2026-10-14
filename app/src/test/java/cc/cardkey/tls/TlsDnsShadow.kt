@@ -20,8 +20,8 @@ class TlsDnsShadow {
         queries++
         host = domain
         cancellation = requireNotNull(signal)
-        answer = { addresses, rcode -> executor.execute { callback.onAnswer(addresses, rcode) } }
         error = { failure -> executor.execute { callback.onError(failure) } }
+        answer = { addresses, rcode -> executor.execute { callback.onAnswer(addresses, rcode) } }
         if (!defer) answer!!.invoke(listOf(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))), 0)
     }
     companion object {
