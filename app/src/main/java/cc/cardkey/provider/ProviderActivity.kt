@@ -41,6 +41,8 @@ import cc.cardkey.transport.UsbAuthenticatorReader
 import cc.cardkey.transport.UsbReaderDescriptor
 import cc.cardkey.ui.CardKeyTheme
 import cc.cardkey.ui.ConfirmationPolicy
+import cc.cardkey.ui.PlexoSection
+import cc.cardkey.ui.PlexoFactRow
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -146,51 +148,105 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable private fun ProviderContent() {
-        Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) }) { padding ->
-            Column(Modifier.padding(padding).padding(20.dp).fillMaxSize().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("凭据提供者", style = MaterialTheme.typography.headlineSmall)
-                if (loading) CircularProgressIndicator()
-                else if (rejected) {
-                    Text(stringResource(R.string.provider_request_rejected))
-                    Button(onClick = { finishException(false) }) { Text("关闭") }
+        Scaffold(topBar = {
+            TopAppBar(title = {
+                Column {
+                    Text(stringResource(R.string.plexo_provider_title))
+                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.labelMedium)
+                }
+            })
+        }) { padding ->
+            Column(
+                Modifier.fillMaxSize().padding(padding).imePadding()
+                    .verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (!loading && !rejected && clientData != null) {
+                    PlexoSection(stringResource(if (create != null)
+                        R.string.plexo_provider_create_title else R.string.plexo_provider_get_title)) {
+                        Text(stringResource(R.string.plexo_provider_verified), style = MaterialTheme.typography.bodyMedium)
+                        PlexoFactRow(stringResource(R.string.plexo_provider_rp), create?.rpId ?: requireNotNull(get).rpId)
+                        PlexoFactRow(stringResource(R.string.plexo_provider_caller), requireNotNull(extracted).caller.packageName)
+                        create?.let {
+                            PlexoFactRow(stringResource(R.string.plexo_provider_account), it.user.displayName ?: it.user.name ?: "")
+                        }
+                    }
+                }
+                if (loading) {
+                    PlexoSection(stringResource(R.string.plexo_provider_verifying)) {
+                        CircularProgressIndicator()
+                    }
+                } else if (rejected) {
+                    PlexoSection(stringResource(R.string.plexo_provider_rejected)) {
+                        Text(stringResource(R.string.provider_request_rejected))
+                    }
+                    Button(onClick = { finishException(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.plexo_provider_close))
+                    }
                 } else if (failure != null) {
-                    ConfirmationPolicy.resultMessages(requireNotNull(failure), failureWire).forEach { Text(stringResource(it)) }
-                    Button(onClick = { finishException(requestCancelled || failure?.code == FailureCode.CANCELLED) }) { Text("关闭") }
+                    PlexoSection(stringResource(R.string.plexo_provider_result)) {
+                        ConfirmationPolicy.resultMessages(requireNotNull(failure), failureWire).forEach {
+                            Text(stringResource(it))
+                        }
+                    }
+                    Button(onClick = { finishException(requestCancelled || failure?.code == FailureCode.CANCELLED) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.plexo_provider_close))
+                    }
                 } else if (assertions.isNotEmpty()) {
-                    Text(stringResource(R.string.provider_choose_account, requireNotNull(get).rpId))
-                    assertions.forEachIndexed { index, assertion ->
-                        OutlinedButton(onClick = { completeAssertion(assertion) }, modifier = Modifier.fillMaxWidth()) {
-                            Text(assertion.assertion.user?.displayName ?: assertion.assertion.user?.name ?: "${index + 1}")
+                    PlexoSection(stringResource(R.string.plexo_provider_accounts)) {
+                        Text(stringResource(R.string.provider_choose_account, requireNotNull(get).rpId))
+                        assertions.forEachIndexed { index, assertion ->
+                            OutlinedButton(onClick = { completeAssertion(assertion) },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Text(assertion.assertion.user?.displayName ?: assertion.assertion.user?.name ?: "${index + 1}")
+                            }
                         }
                     }
                 } else {
-                    val rp = create?.rpId ?: requireNotNull(get).rpId
-                    val caller = requireNotNull(extracted).caller.packageName
-                    Text(stringResource(if (create != null) R.string.provider_create_confirmation else R.string.provider_get_confirmation, rp, caller))
-                    if (get?.extensions?.largeBlobWrite != null) Text(stringResource(R.string.confirm_blobWrite))
-                    create?.let {
-                        Text(stringResource(if (it.attestation == AttestationPreference.DIRECT)
-                            R.string.provider_attestation_direct else R.string.provider_attestation_none))
-                        Text(it.user.displayName ?: it.user.name ?: "")
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected == null, { if (!busy) selected = null }, label = { Text("NFC") }, enabled = !busy)
+                    PlexoSection(stringResource(R.string.plexo_provider_reader)) {
+                        FilterChip(selected == null, { if (!busy && !permissionPending) selected = null },
+                            label = { Text("NFC") }, enabled = !busy && !permissionPending,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
                         readers.forEach { reader ->
                             FilterChip(selected === reader, { selectReader(reader) },
-                                label = { Text(reader.device.productName ?: "USB") }, enabled = !busy && !permissionPending)
+                                label = { Text(reader.device.productName ?: "USB") }, enabled = !busy && !permissionPending,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                        }
+                        if (selected == null && !permissionPending) Text(stringResource(R.string.reader_nfc))
+                    }
+                    if (permissionPending) {
+                        PlexoSection(stringResource(R.string.plexo_provider_permission)) {
+                            pendingReader?.let {
+                                PlexoFactRow(stringResource(R.string.plexo_provider_reader), it.device.productName ?: "USB")
+                            }
+                            Text(stringResource(R.string.plexo_provider_permission_prompt, stringResource(R.string.app_name)))
                         }
                     }
-                    if (permissionPending) Text(stringResource(R.string.reader_usbPermission, stringResource(R.string.app_name)))
-                    if (selected == null) Text(stringResource(R.string.reader_nfc))
-                    OutlinedTextField(pin, { pin = it }, label = { Text("PIN") }, singleLine = true,
-                        enabled = !busy, visualTransformation = PasswordVisualTransformation())
-                    if (pin.isNotEmpty()) Text(stringResource(R.string.confirm_authenticate))
-                    if (busy) CircularProgressIndicator()
-                    presenceMessage?.let { Text(stringResource(it)) }
-                    Button(onClick = ::confirm, enabled = !busy && !permissionPending) { Text("确认") }
+                    PlexoSection(stringResource(R.string.plexo_provider_confirmation)) {
+                        if (get?.extensions?.largeBlobWrite != null) Text(stringResource(R.string.confirm_blobWrite))
+                        if (create == null) Text(stringResource(R.string.plexo_provider_get_consequence))
+                        create?.let {
+                            Text(stringResource(R.string.plexo_provider_create_consequence))
+                            Text(stringResource(if (it.attestation == AttestationPreference.DIRECT)
+                                R.string.provider_attestation_direct else R.string.provider_attestation_none))
+                        }
+                        OutlinedTextField(pin, { pin = it }, label = { Text("PIN") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth(), enabled = !busy,
+                            visualTransformation = PasswordVisualTransformation())
+                        if (pin.isNotEmpty()) Text(stringResource(R.string.confirm_authenticate))
+                        if (busy) CircularProgressIndicator()
+                        presenceMessage?.let { Text(stringResource(it)) }
+                        Button(onClick = ::confirm,
+                            enabled = !busy && !permissionPending && clientData != null,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.plexo_provider_confirm))
+                        }
+                    }
                 }
-                OutlinedButton(onClick = ::cancelRequest) { Text("取消") }
+                OutlinedButton(onClick = ::cancelRequest, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.plexo_provider_cancel))
+                }
             }
         }
     }
