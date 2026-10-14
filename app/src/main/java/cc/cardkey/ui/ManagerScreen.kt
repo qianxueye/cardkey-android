@@ -338,14 +338,23 @@ fun ManagerScreen(
                                             SignatureExportStatus.WRITING -> LinearProgressIndicator(Modifier.fillMaxWidth())
                                             null -> Unit
                                         }
+                                        val technicalLabels = setOf("公钥", "RP SHA-256", "用户 ID", "证明", "计数",
+                                            "支持的协议", "支持的扩展", "PIN · 协议", "算法", "版本", "序列号",
+                                            "credProtect", "credBlob", "用户验证方法")
+                                        val technicalRows = result.value.rows.filter { it.label in technicalLabels }
+                                        result.value.rows.filterNot { it.label in technicalLabels }.forEach { row ->
+                                            SelectionContainer {
+                                                Text(if (row.label.isBlank()) row.value else "${row.label} · ${row.value}")
+                                            }
+                                        }
                                         var detailsExpanded by remember(result.value) { mutableStateOf(false) }
-                                        if (result.value.rows.isNotEmpty()) {
+                                        if (technicalRows.isNotEmpty()) {
                                             TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.fillMaxWidth().testTag("result-details")) {
                                                 Text(stringResource(R.string.workspace_details), Modifier.weight(1f))
                                                 Icon(if (detailsExpanded) expandLessIcon else expandMoreIcon, contentDescription = null)
                                             }
                                             if (detailsExpanded) {
-                                                result.value.rows.forEach { row ->
+                                                technicalRows.forEach { row ->
                                                     HorizontalDivider()
                                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                                         Text(row.label, modifier = Modifier.weight(0.35f), style = MaterialTheme.typography.labelLarge)
@@ -387,7 +396,6 @@ fun ManagerScreen(
                         Text(if (tab == 0) "FIDO2" else "PIV", style = MaterialTheme.typography.headlineSmall)
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                OperationChoice(operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && it !in setOf(ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, !state.busy) { operation = it }
                                 val op = operation
                                 if (!op.piv && inventory.rps.isNotEmpty()) {
                                     Choice("RP", inventory.rp, inventory.rps,
@@ -395,13 +403,17 @@ fun ManagerScreen(
                                     if (inventory.credentials.isNotEmpty()) Choice("凭据 ID", inventory.credential,
                                         inventory.credentials, { it?.idHex ?: "凭据 ID" }, !state.busy) { it?.let { credential -> onInventoryCredential(inventory.generation, credential) } }
                                 }
-                                Text(op.title, style = MaterialTheme.typography.titleLarge)
-                                if (op.piv) Text(stringResource(R.string.workspace_slotContext), style = MaterialTheme.typography.bodySmall)
-                                else if (inventory.rps.isEmpty()) Text(stringResource(R.string.workspace_credentialsUnread), style = MaterialTheme.typography.bodySmall)
                                 if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
                                         ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
+                                    Text(stringResource(R.string.workspace_slotContext), style = MaterialTheme.typography.bodySmall)
                                     Choice("槽位", slot, PivClient.slots, { "%02X".format(it) }, !state.busy) { slot = it }
                                 }
+                                OperationChoice(operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && it !in setOf(ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, !state.busy) { operation = it }
+                                Text(op.title, style = MaterialTheme.typography.titleLarge)
+                                if (op in setOf(ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_CAPACITY, ManagerOperation.FIDO_RPS,
+                                        ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
+                                        ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) && inventory.rps.isEmpty())
+                                    Text(stringResource(R.string.workspace_credentialsUnread), style = MaterialTheme.typography.bodySmall)
                                 if (op == ManagerOperation.PIV_SIGN) {
                                     OutlinedButton(onClick = {
                                         pin = ""; confirmation?.close(); confirmation = null; onSigningFile()
