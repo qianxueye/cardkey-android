@@ -223,6 +223,24 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         }
     }
 
+    fun signFile(slot: Int, pin: CharArray, bytes: ByteArray): ByteArray = withPin(pin) { encodedPin ->
+        session.requireContact()
+        require(bytes.size in 1..MAX_SIGNING_FILE_BYTES)
+        requireSlot(slot)
+        select()
+        val info = slotMetadata(slot)
+        val algorithm = requireNotNull(info.algorithm)
+        val key = info.publicKey ?: throw CardFailure(FailureCode.UNSUPPORTED)
+        verifyEncoded(encodedPin)
+        val signature = sign(slot, algorithm, bytes)
+        val verifier = Signature.getInstance(algorithm.signature)
+        verifier.initVerify(key)
+        verifier.update(bytes)
+        try { if (!verifier.verify(signature)) malformed() }
+        catch (_: SignatureException) { malformed() }
+        signature
+    }
+
     fun checkTlsIdentity(expectedLeaf: ByteArray, expectedSpki: ByteArray): PivInfo {
         session.requireContact()
         val info = readInfo()
@@ -424,6 +442,7 @@ public class PivClient(private val session: CardSession, private val secure: Piv
             data = PivTlv.encode(0x7c, PivTlv.encode(0x82, byteArrayOf()) + PivTlv.encode(tag, input))), true), 0x7c), 0x82)
 
     companion object {
+        const val MAX_SIGNING_FILE_BYTES = 1_048_576
         val slots: List<Int> = listOf(0x9a, 0x9c, 0x9d, 0x9e) + (0x82..0x8c)
         private fun requireSlot(slot: Int) { require(slot in slots) }
         // CardKey applies the same digit and padding rules to PIN and PUK.

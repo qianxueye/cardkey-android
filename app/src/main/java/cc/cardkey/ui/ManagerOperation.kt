@@ -43,6 +43,7 @@ class OperationInput(
     val rpIds: List<String> = emptyList(), val enterpriseMode: Int? = null,
     val deleteBlob: Boolean = false, val displayName: String = "diagnostic",
     val enrollmentImport: EnrollmentImport? = null,
+    val signingFileGeneration: Long? = null,
 ) : AutoCloseable {
     val makeExtensions = if (operation == ManagerOperation.FIDO_REGISTER)
         makeExtensions.copy(largeBlobKey = enabled && makeExtensions.largeBlobKey) else makeExtensions
@@ -50,7 +51,7 @@ class OperationInput(
     override fun close() {
         pin.fill('\u0000'); newPin.fill('\u0000'); adminKey.fill(0); newAdminKey.fill(0)
         makeExtensions.credentialBlob?.fill(0); assertionExtensions.hmacSalts?.fill(0)
-        if (operation == ManagerOperation.FIDO_BLOB_WRITE) bytes.fill(0)
+        if (operation in setOf(ManagerOperation.FIDO_BLOB_WRITE, ManagerOperation.PIV_SIGN)) bytes.fill(0)
     }
 }
 
@@ -208,7 +209,11 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.PIV_IMPORT -> piv.importCertificate(input.slot, input.bytes, input.managementAlgorithm, input.adminKey).let {
                 ManagerReport(listOf(ResultRow("证书", it.subjectX500Principal.name)))
             }
-            ManagerOperation.PIV_SIGN -> { piv.verifySignature(input.slot, input.pin); empty() }
+            ManagerOperation.PIV_SIGN -> {
+                val signature = piv.signFile(input.slot, input.pin, input.bytes)
+                if (cancelled()) { signature.fill(0); throw CardFailure(FailureCode.CANCELLED) }
+                ManagerReport(emptyList(), signature, "signature.bin")
+            }
             ManagerOperation.PIV_ECDH -> { piv.verifyKeyAgreement(input.slot, input.pin); empty() }
             ManagerOperation.PIV_DECRYPT -> { piv.verifyRsaDecryption(input.slot, input.pin); empty() }
             ManagerOperation.PIV_RESET -> { piv.reset(); empty() }
