@@ -115,7 +115,7 @@ class PivFileSigningPanelTest {
 
     @Test fun exportWritingAndUnknownRemainSeparateFromCardRecoveryBlocking() {
         render(360, 480) { _, _ ->
-            val report = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin")
+            val report = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin", signatureFormat = SignatureFormat.RAW)
             compose.runOnIdle {
                 manager.value = manager.value.copy(operation = ManagerOperation.PIV_SIGN, result = OperationResult.Completed(report, Effect.APPLIED))
                 files.value = files.value.copy(exportOwner = report, exportStatus = SignatureExportStatus.WRITING)

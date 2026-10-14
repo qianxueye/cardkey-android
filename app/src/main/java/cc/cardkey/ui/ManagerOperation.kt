@@ -1,6 +1,7 @@
 package cc.cardkey.ui
 
 import cc.cardkey.R
+import cc.cardkey.signing.SignatureFormat
 import cc.cardkey.enrollment.*
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
@@ -44,6 +45,7 @@ class OperationInput(
     val deleteBlob: Boolean = false, val displayName: String = "diagnostic",
     val enrollmentImport: EnrollmentImport? = null,
     val signingFileGeneration: Long? = null,
+    val signatureFormat: SignatureFormat = SignatureFormat.RAW,
     val inventoryGeneration: Long? = null,
     val inventorySelection: InventoryCredential? = null,
 ) : AutoCloseable {
@@ -68,7 +70,7 @@ class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob:
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
     val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null,
     val relyingParties: List<RelyingParty>? = null, val credentials: List<Credential>? = null,
-    val inventoryGeneration: Long? = null) {
+    val inventoryGeneration: Long? = null, val signatureFormat: SignatureFormat? = null) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
@@ -250,9 +252,14 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
                 ManagerReport(listOf(ResultRow("证书", it.subjectX500Principal.name)))
             }
             ManagerOperation.PIV_SIGN -> {
-                val signature = piv.signFile(input.slot, input.pin, input.bytes)
+                val signature = when (input.signatureFormat) {
+                    SignatureFormat.RAW -> piv.signFile(input.slot, input.pin, input.bytes)
+                    SignatureFormat.CMS -> piv.signCmsFile(input.slot, input.pin, input.bytes)
+                }
                 if (cancelled()) { signature.fill(0); throw CardFailure(FailureCode.CANCELLED) }
-                ManagerReport(emptyList(), signature, "signature.bin", messages = listOf(R.string.signing_verified, R.string.signing_exportScope))
+                ManagerReport(emptyList(), signature, input.signatureFormat.fileName,
+                    messages = if (input.signatureFormat == SignatureFormat.RAW) listOf(R.string.signing_verified, R.string.signing_exportScope) else emptyList(),
+                    signatureFormat = input.signatureFormat)
             }
             ManagerOperation.PIV_ECDH -> { piv.verifyKeyAgreement(input.slot, input.pin); empty() }
             ManagerOperation.PIV_DECRYPT -> { piv.verifyRsaDecryption(input.slot, input.pin); empty() }

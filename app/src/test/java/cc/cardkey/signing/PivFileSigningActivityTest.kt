@@ -76,9 +76,9 @@ class PivFileSigningActivityTest {
         shadowOf(Looper.getMainLooper()).idle(); test()
     }
     private fun state(model: ManagerViewModel) = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
-    private fun signedResult(model: ManagerViewModel): ManagerReport {
-        val card = EnrollmentCard()
-        val input = OperationInput(ManagerOperation.PIV_SIGN, pin = "123456".toCharArray(), bytes = byteArrayOf(1, 2, 3))
+    private fun signedResult(model: ManagerViewModel, format: SignatureFormat = SignatureFormat.RAW): ManagerReport {
+        val card = EnrollmentCard().apply { if (format == SignatureFormat.CMS) certificate = documentCertificate(this).encoded }
+        val input = OperationInput(ManagerOperation.PIV_SIGN, pin = "123456".toCharArray(), bytes = byteArrayOf(1, 2, 3), signatureFormat = format)
         val result = try { CardSession(card).run { ManagerOperations().execute(it, input) } } finally { input.close() }
         state(model).value = model.state.value.copy(operation = ManagerOperation.PIV_SIGN, result = result)
         compose.waitForIdle()
@@ -205,12 +205,13 @@ class PivFileSigningActivityTest {
 
     @Test fun saveRecreationWritesCapturedSignatureOnceAndCancellationKeepsVerifiedResult() = saveRecreation(false)
     @Test fun saveFromReaderPageKeepsCapturedSignatureAcrossRecreation() = saveRecreation(true)
-    private fun saveRecreation(readerPage: Boolean) {
+    @Test fun cmsSaveRecreationKeepsMimeFilenameCapturedBytesAndCancellationReceipt() = saveRecreation(false, SignatureFormat.CMS)
+    private fun saveRecreation(readerPage: Boolean, format: SignatureFormat = SignatureFormat.RAW) {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup().visible()
         try {
             val original = controller.get()
             val model = model(original)
-            val report = signedResult(model)
+            val report = signedResult(model, format)
             val expected = report.export!!.copyOf()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.onNodeWithText("PIV · 读取").performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -223,12 +224,13 @@ class PivFileSigningActivityTest {
             compose.onNodeWithText("导出").performScrollTo().performClick()
             val launch = shadowOf(original).nextStartedActivityForResult
             assertEquals(Intent.ACTION_CREATE_DOCUMENT, launch.intent.action)
-            assertEquals("signature.bin", launch.intent.getStringExtra(Intent.EXTRA_TITLE))
+            assertEquals(format.fileName, launch.intent.getStringExtra(Intent.EXTRA_TITLE))
+            assertEquals(format.mimeType, launch.intent.type)
             controller.recreate()
             val recreated = controller.get()
             assertSame(report, (model.state.value.result as OperationResult.Completed).value)
-            val newer = signedResult(model)
-            val uri = Uri.parse("content://signing-activity/signature.bin")
+            val newer = signedResult(model, format)
+            val uri = Uri.parse("content://signing-activity/${format.fileName}")
             var writes = 0
             val output = object : ByteArrayOutputStream() {
                 override fun write(bytes: ByteArray, offset: Int, length: Int) { writes++; super.write(bytes, offset, length) }
@@ -256,18 +258,21 @@ class PivFileSigningActivityTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Test fun oldSaveCallbackCannotConsumeANewerCapturedSignature() {
+    @Test fun oldSaveCallbackCannotConsumeANewerCapturedSignature() = oldSaveCallback(SignatureFormat.RAW)
+    @Test fun retiredCmsCallbackCannotConsumeNewerCapturedRawOutput() = oldSaveCallback(SignatureFormat.CMS)
+    private fun oldSaveCallback(firstFormat: SignatureFormat) {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup().visible()
         try {
             val activity = controller.get()
             val model = model(activity)
-            signedResult(model)
+            signedResult(model, firstFormat)
             compose.onNodeWithText("导出").performScrollTo().performClick()
             val oldLaunch = shadowOf(activity).nextStartedActivityForResult
             model.cancel()
             val newer = signedResult(model)
             compose.onNodeWithText("导出").performScrollTo().performClick()
             val currentLaunch = shadowOf(activity).nextStartedActivityForResult
+            assertEquals("application/octet-stream", currentLaunch.intent.type)
             assertNotEquals(oldLaunch.requestCode, currentLaunch.requestCode)
             val oldUri = Uri.parse("content://signing-activity/old-output.bin")
             var oldOpens = 0
@@ -286,7 +291,9 @@ class PivFileSigningActivityTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Test fun actualSaveCallbacksReportNullWriteAndCloseFailuresWithoutRetry() {
+    @Test fun actualSaveCallbacksReportNullWriteAndCloseFailuresWithoutRetry() = actualSaveCallbacks(SignatureFormat.RAW)
+    @Test fun cmsActualCallbacksPreserveUnknownForNullWriteAndCloseFailures() = actualSaveCallbacks(SignatureFormat.CMS)
+    private fun actualSaveCallbacks(format: SignatureFormat) {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup().visible()
         try {
             val activity = controller.get()
@@ -296,7 +303,7 @@ class PivFileSigningActivityTest {
             }
             ShadowContentResolver.registerProviderInternal("null-signing-output", nullProvider)
             for (mode in listOf("null-output", "write", "close")) {
-                val report = signedResult(model)
+                val report = signedResult(model, format)
                 compose.onNodeWithText("导出").performScrollTo().performClick()
                 val launch = shadowOf(activity).nextStartedActivityForResult
                 val uri = Uri.parse(if (mode == "null-output") "content://null-signing-output/signature.bin" else "content://signing-activity/$mode")

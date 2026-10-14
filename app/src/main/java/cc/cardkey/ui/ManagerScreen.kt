@@ -484,7 +484,7 @@ fun ManagerScreen(
                                         }
                                         if (result.value.export != null) OutlinedButton(onClick = {
                                             if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
-                                        }, enabled = result.value.fileName != "signature.bin" || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
+                                        }, enabled = result.value.signatureFormat == null || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
                                         if (signingFiles.exportOwner === result.value) when (signingFiles.exportStatus) {
                                             SignatureExportStatus.SAVED -> Text(stringResource(R.string.signing_exported))
                                             SignatureExportStatus.CANCELLED -> Text(stringResource(R.string.signing_exportCancelled))

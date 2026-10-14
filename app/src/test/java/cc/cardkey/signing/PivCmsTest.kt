@@ -73,6 +73,26 @@ class PivCmsTest {
         }
     }
 
+    @Test fun managerDispatchesTypedCmsForAllAlgorithmsWithoutRawSignatureClaims() {
+        for (algorithm in KeyAlgorithm.entries) {
+            val card = EnrollmentCard(algorithm = algorithm).apply { certificate = documentCertificate(this).encoded }
+            val bytes = byteArrayOf(0, 1, 2, 13, 10)
+            val input = cc.cardkey.ui.OperationInput(cc.cardkey.ui.ManagerOperation.PIV_SIGN,
+                pin = "123456".toCharArray(), bytes = bytes.copyOf(), signatureFormat = SignatureFormat.CMS)
+            val result = try { CardSession(card).run { cc.cardkey.ui.ManagerOperations().execute(it, input) } } finally { input.close() }
+            assertTrue(result.toString(), result is OperationResult.Completed)
+            val report = (result as OperationResult.Completed).value
+            assertEquals(SignatureFormat.CMS, report.signatureFormat)
+            assertEquals("signature.p7s", report.fileName)
+            assertTrue(report.messages.isEmpty())
+            PivCms.verify(requireNotNull(report.export), bytes,
+                java.security.cert.CertificateFactory.getInstance("X.509").generateCertificate(card.certificate!!.inputStream()) as X509Certificate, algorithm)
+            assertEquals(1, card.commands.count { it.ins == 0x87 })
+            assertTrue(input.pin.all { it == '\u0000' })
+            assertTrue(input.bytes.all { it == 0.toByte() })
+        }
+    }
+
     @Test fun sizeAndContactBoundariesRejectBeforeAuthentication() {
         for ((size, medium) in listOf(0 to Medium.CONTACT, 1_048_577 to Medium.CONTACT,
                 1 to Medium.NFC, 1_048_576 to Medium.CONTACT)) {

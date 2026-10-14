@@ -375,6 +375,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     internal val signingFileRequestId get() = signingFiles.fileRequestId
     internal val signatureSaveRequestId get() = signingFiles.saveRequestId
+    internal val signatureSaveFormat get() = signingFiles.saveFormat
 
     fun receiveSigningFile(requestId: String, uri: Uri?) {
         val request = signingFiles.takeRequest(requestId) ?: return
@@ -491,7 +492,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             require(signingAction == ManagerOperation.PIV_SIGN && !mutable.value.nfc && reader.wire == CardWire.APDU &&
                 UsbAuthenticatorReader.isCurrent(usb, reader) && usb.hasPermission(reader.device) && input.bytes.isEmpty())
             val bytes = signingFiles.take(input.signingFileGeneration, reader.routeKey)
-            OperationInput(ManagerOperation.PIV_SIGN, pin = input.pin.copyOf(), slot = input.slot, bytes = bytes)
+            OperationInput(ManagerOperation.PIV_SIGN, pin = input.pin.copyOf(), slot = input.slot, bytes = bytes,
+                signatureFormat = input.signatureFormat)
         } catch (_: Exception) {
             input.close()
             mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
@@ -758,7 +760,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         inventoryInput.getAndSet(null)?.close()
         if (!preserveSigningDocuments) signingFiles.retire()
         val preserveSignatureResult = preserveSigningDocuments && mutable.value.operation == ManagerOperation.PIV_SIGN &&
-            (mutable.value.result as? OperationResult.Completed)?.value?.fileName == "signature.bin"
+            (mutable.value.result as? OperationResult.Completed)?.value?.signatureFormat != null
         tlsAttempt.get()?.close()
         enrollment.pause()
         networkCall.getAndSet(null)?.let { call ->

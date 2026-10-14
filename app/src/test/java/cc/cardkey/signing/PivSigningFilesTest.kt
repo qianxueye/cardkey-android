@@ -66,8 +66,8 @@ class PivSigningFilesTest {
 
     @Test fun saveCapturesOneVerifiedOutputAndWritesOnceWithCloseAcknowledgement() {
         val files = PivSigningFiles()
-        val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin")
-        val newer = ManagerReport(emptyList(), byteArrayOf(7, 8, 9), "signature.bin")
+        val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin", signatureFormat = SignatureFormat.RAW)
+        val newer = ManagerReport(emptyList(), byteArrayOf(7, 8, 9), "signature.bin", signatureFormat = SignatureFormat.RAW)
         assertTrue(files.requestSave(source))
         assertFalse(files.requestSave(newer))
         val captured = files.takeSave(files.saveRequestId ?: "retired")!!
@@ -87,7 +87,7 @@ class PivSigningFilesTest {
     @Test fun cancelNullWriteAndCloseFailuresNeverRetryOrDiscardVerifiedSource() {
         for (mode in listOf("cancel", "null", "write", "close")) {
             val files = PivSigningFiles()
-            val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin")
+            val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin", signatureFormat = SignatureFormat.RAW)
             files.requestSave(source)
             val snapshot = files.takeSave(files.saveRequestId ?: "retired")!!
             var opens = 0; var writes = 0
@@ -114,7 +114,7 @@ class PivSigningFilesTest {
     }
     @Test fun retiringAnActiveWriteDoesNotWipeItsBytesUntilTheStreamCloses() {
         val files = PivSigningFiles()
-        val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin")
+        val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin", signatureFormat = SignatureFormat.RAW)
         files.requestSave(source)
         val snapshot = files.takeSave(files.saveRequestId ?: "retired")!!
         val entered = java.util.concurrent.CountDownLatch(1)
@@ -146,7 +146,7 @@ class PivSigningFilesTest {
 
     @Test fun retiringAQueuedSaveWipesItBeforeAnyStreamCanOpen() {
         val files = PivSigningFiles()
-        files.requestSave(ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin"))
+        files.requestSave(ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin", signatureFormat = SignatureFormat.RAW))
         val snapshot = files.takeSave(files.saveRequestId ?: "retired")!!
         files.retire()
         assertTrue(snapshot.bytes.all { it == 0.toByte() })

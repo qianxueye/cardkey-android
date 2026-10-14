@@ -10,6 +10,11 @@ import java.io.OutputStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+enum class SignatureFormat(val fileName: String, val mimeType: String) {
+    RAW("signature.bin", "application/octet-stream"),
+    CMS("signature.p7s", "application/pkcs7-signature")
+}
+
 data class SigningFileSelection(val name: String, val size: Int, val generation: Long)
 enum class SignatureExportStatus { WRITING, SAVED, CANCELLED, UNKNOWN }
 data class SigningFileState(val selection: SigningFileSelection? = null,
@@ -44,6 +49,7 @@ class PivSigningFiles {
     internal val hasSaveOwner get() = save != null || writing
     internal val fileRequestId get() = picker?.id
     internal val saveRequestId get() = save?.id
+    internal val saveFormat get() = save?.source?.signatureFormat
     internal fun current(request: SigningFileRequest, currentRoute: String?) =
         request.generation == generation && request.route == route && request.route == currentRoute
 
@@ -84,7 +90,7 @@ class PivSigningFiles {
     internal fun requestSave(report: ManagerReport, operation: ManagerOperation? = null): Boolean {
         if (save != null || writing) return false
         val signature = requireNotNull(report.export)
-        require(report.fileName == "signature.bin" && signature.isNotEmpty())
+        require(report.signatureFormat != null && report.fileName == report.signatureFormat.fileName && signature.isNotEmpty())
         save = SignatureSave(report, signature.copyOf())
         mutable.value = mutable.value.copy(exportOwner = report, exportStatus = null, restoreOperation = operation)
         return true
