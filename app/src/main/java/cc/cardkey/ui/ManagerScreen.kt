@@ -245,6 +245,7 @@ fun ManagerScreen(
         }
         val objectPane: @Composable () -> Unit = {
             PlexoObjects(tab, slot, inventory, !state.busy, objectListScroll,
+                deviceContext = { if (viewportHeight < 480.dp) { topBar(); readerContext() } },
                 onOverview = {
                     confirmation?.close(); confirmation = null
                     operation = if (tab == 1) ManagerOperation.PIV_INFO else ManagerOperation.FIDO_INFO

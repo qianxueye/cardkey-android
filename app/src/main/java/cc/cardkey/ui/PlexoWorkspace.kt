@@ -35,6 +35,7 @@ internal fun PlexoObjects(
     inventory: InventoryState,
     enabled: Boolean,
     scroll: ScrollState,
+    deviceContext: @Composable () -> Unit,
     onOverview: () -> Unit,
     onSlot: (Int) -> Unit,
     onRp: (InventoryRp) -> Unit,
@@ -42,6 +43,7 @@ internal fun PlexoObjects(
 ) {
     Column(Modifier.fillMaxSize().testTag("workspace-objects").verticalScroll(scroll).padding(16.dp)
         .selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        deviceContext()
         Text(stringResource(R.string.workspace_objects), style = MaterialTheme.typography.titleLarge)
         Text(stringResource(R.string.workspace_selectionOnly), style = MaterialTheme.typography.bodyMedium)
         ObjectOption(stringResource(if (destination == 1) R.string.workspace_pivSecurity else R.string.workspace_authenticator),
