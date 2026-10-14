@@ -213,9 +213,14 @@ class InventoryActivityTest {
         try {
             val owner = model(controller.get()); val card = InventoryCard()
             compose.waitForIdle()
-            val applicationAdapter = android.nfc.NfcAdapter.getDefaultAdapter(org.robolectric.RuntimeEnvironment.getApplication())
+            val application = owner.getApplication<android.app.Application>()
+            assertSame(org.robolectric.RuntimeEnvironment.getApplication(), application)
+            val applicationAdapter = android.nfc.NfcAdapter.getDefaultAdapter(application)
+            assertSame(applicationAdapter, android.nfc.NfcAdapter.getDefaultAdapter(controller.get().application))
             shadowOf(applicationAdapter).setEnabled(true)
-            shadowOf(android.nfc.NfcAdapter.getDefaultAdapter(controller.get())).setEnabled(true)
+            val activityAdapter = android.nfc.NfcAdapter.getDefaultAdapter(controller.get())
+            shadowOf(activityAdapter).setEnabled(true)
+            assertTrue(applicationAdapter.isEnabled); assertTrue(activityAdapter.isEnabled)
             fun submit() = owner.submit(OperationInput(ManagerOperation.FIDO_VERIFY_CREDENTIAL,
                 pin = "1234".toCharArray(), inventoryGeneration = owner.inventory.state.value.generation))
             seedInventory(owner.inventory, card); submit()
