@@ -145,6 +145,23 @@ class ManagerViewModelTest {
         authorizedExport.export!!.fill(0)
     }
 
+    @Test fun certificateInspectionRetiresOnReaderChangeWithoutChangingCapturedExport() {
+        val model = ManagerViewModel(application)
+        val originalReader = reader("certificate-original", CardWire.APDU)
+        model.selectReader(originalReader)
+        val fixture = CertificateLifecycleFixture()
+        val result = fixture.read({ fixture.start }) as OperationResult.Completed
+        outcome(model, originalReader.routeKey, CardWire.APDU, ManagerOperation.PIV_SLOT, result)
+        assertSame(result.value, (model.state.value.result as OperationResult.Completed).value)
+        assertEquals(ManagerOperation.PIV_SLOT, model.state.value.operation)
+        val captured = result.value
+        model.selectReader(reader("certificate-next", CardWire.APDU))
+        assertNull(model.state.value.result)
+        assertEquals("9D", captured.rows.single { it.label == "槽位" }.value)
+        assertEquals("piv-9d.cer", captured.fileName)
+        assertArrayEquals(fixture.der, captured.export)
+    }
+
     private fun reader(name: String, wire: CardWire, interfaceId: Int = 0): UsbReaderDescriptor {
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", name)

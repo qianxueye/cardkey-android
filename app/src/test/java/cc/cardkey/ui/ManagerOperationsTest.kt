@@ -68,7 +68,7 @@ class ManagerOperationsTest {
         val result = CardSession(card).run {
             ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SLOT))
         } as OperationResult.Completed
-        assertTrue(result.value.rows.isEmpty())
+        assertEquals(listOf(ResultRow("槽位", "9A"), ResultRow("证书", "未存储证书")), result.value.rows)
         assertEquals(listOf(0xa4, 0xf7, 0xcb), commands)
     }
 
