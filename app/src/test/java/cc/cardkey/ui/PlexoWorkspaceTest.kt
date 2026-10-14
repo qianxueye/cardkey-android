@@ -98,6 +98,7 @@ class PlexoWorkspaceTest {
             update(ManagerState(operation = ManagerOperation.PIV_SLOT, result = result))
             compose.onNodeWithTag("workspace-object-back").performScrollTo().performClick()
             compose.onNodeWithTag("object-slot-9C").performScrollTo().performClick()
+            compose.waitForIdle()
             assertEquals(ManagerOperation.PIV_SLOT to 0x9c, action())
             compose.onNodeWithText("导出", substring = false).performScrollTo().performClick()
             assertSame(result.value, exported)
