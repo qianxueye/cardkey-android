@@ -208,23 +208,41 @@ class PlexoWorkspaceTest {
         }
     }
 
-    @Test fun pivAdminRequiresPivRecognitionAndPublicNfcProbeOnlySelectsTask() {
-        render(360, 640) { _, update, action ->
-            chooseTask(ManagerOperation.PIV_ADMIN)
-            compose.onNodeWithText("管理密钥 · HEX", substring = false).assertDoesNotExist()
-            compose.onNodeWithText("新管理密钥 · HEX", substring = false).assertDoesNotExist()
-            compose.onNodeWithTag("recognition-task").performScrollTo().performClick()
-            compose.waitForIdle()
-            assertEquals(ManagerOperation.PIV_INFO to 0x9a, action())
-            compose.onNodeWithTag("manager-run").assertIsDisplayed().assertIsEnabled()
-            compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
-            compose.onNodeWithTag("task-PIV_ADMIN").performScrollTo().performClick()
-            update(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
-            compose.onNodeWithText("管理密钥 · HEX", substring = false).assertDoesNotExist()
-            update(ManagerState(recognition = CardRecognition("nfc", 2, CardFamily.PIV)))
-            compose.onNodeWithText("管理密钥 · HEX", substring = false).performScrollTo().assertIsEnabled()
-            compose.onNodeWithText("新管理密钥 · HEX", substring = false).performScrollTo().assertIsEnabled()
-        }
+    @Test fun explicitPublicNfcProbePreservesProspectiveTaskAndSlotUntilRecognition() {
+        val reads = mutableListOf<OperationInput>()
+        try {
+            render(360, 640, onSubmit = { reads += it }) { _, update, action ->
+                compose.onNodeWithText("PIV").performClick()
+                compose.onNodeWithTag("object-slot-9D").performScrollTo().performClick()
+                compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
+                compose.onNodeWithTag("task-PIV_ADMIN").performScrollTo().performClick()
+                compose.waitForIdle()
+                assertTrue(reads.isEmpty())
+                assertEquals(ManagerOperation.PIV_ADMIN to 0x9d, action())
+                compose.onNodeWithText("管理密钥 · HEX", substring = false).assertDoesNotExist()
+                compose.onNodeWithText("新管理密钥 · HEX", substring = false).assertDoesNotExist()
+                compose.onNodeWithTag("recognition-task").performScrollTo().performClick()
+                compose.waitForIdle()
+                val read = reads.single()
+                assertEquals(ManagerOperation.PIV_INFO, read.operation)
+                assertEquals(0x9d, read.slot)
+                assertEquals(0L, read.inventoryGeneration)
+                assertTrue(read.pin.isEmpty() && read.newPin.isEmpty())
+                assertTrue(read.adminKey.isEmpty() && read.newAdminKey.isEmpty() && read.bytes.isEmpty())
+                assertNull(read.signingFileGeneration)
+                assertNull(read.enrollmentImport)
+                assertEquals(ManagerOperation.PIV_ADMIN to 0x9d, action())
+                compose.onNodeWithTag("manager-run").assertIsDisplayed().assertIsNotEnabled()
+                compose.onNodeWithText("管理密钥 · HEX", substring = false).assertDoesNotExist()
+                update(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
+                compose.onNodeWithText("管理密钥 · HEX", substring = false).assertDoesNotExist()
+                update(ManagerState(recognition = CardRecognition("nfc", 2, CardFamily.PIV)))
+                compose.onNodeWithText("管理密钥 · HEX", substring = false).performScrollTo().assertIsEnabled()
+                compose.onNodeWithText("新管理密钥 · HEX", substring = false).performScrollTo().assertIsEnabled()
+                assertEquals(ManagerOperation.PIV_ADMIN to 0x9d, action())
+                assertEquals(1, reads.size)
+            }
+        } finally { reads.forEach(OperationInput::close) }
     }
 
     @Test fun matchingFamilyEpochAndRouteReplacementRetirePinAndPendingConfirmation() {
