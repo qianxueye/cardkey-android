@@ -15,7 +15,7 @@ enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     FIDO_CREDENTIALS("凭据 · 读取"), FIDO_DELETE("凭据 · 删除"),
     FIDO_UPDATE("凭据 · 修改"), FIDO_ALWAYS_UV("始终验证用户"),
     FIDO_MIN_PIN("PIN · 最短长度"), FIDO_ENTERPRISE("企业证明 · 启用"),
-    FIDO_REGISTER("注册 · 验证"), FIDO_ASSERT("签名 · 验证"),
+    FIDO_REGISTER("注册 · 验证"), FIDO_ASSERT("签名 · 验证"), FIDO_VERIFY_CREDENTIAL("验证签名"),
     U2F_INFO("U2F · 读取"), U2F_REGISTER("U2F · 注册"), U2F_ASSERT("U2F · 验证"),
     FIDO_BLOB_READ("扩展数据 · 读取"), FIDO_BLOB_WRITE("扩展数据 · 设置"),
     PIV_INFO("PIV · 读取", true), PIV_SLOT("证书 · 读取", true),
@@ -44,11 +44,17 @@ class OperationInput(
     val deleteBlob: Boolean = false, val displayName: String = "diagnostic",
     val enrollmentImport: EnrollmentImport? = null,
     val signingFileGeneration: Long? = null,
+    val inventoryGeneration: Long? = null,
+    val inventorySelection: InventoryCredential? = null,
 ) : AutoCloseable {
+    internal var inventoryRequest: InventoryRequest? = null
+    internal var inventoryBytes: ByteArray? = null
     val makeExtensions = if (operation == ManagerOperation.FIDO_REGISTER)
         makeExtensions.copy(largeBlobKey = enabled && makeExtensions.largeBlobKey) else makeExtensions
 
     override fun close() {
+        inventoryRequest?.close()
+        inventoryBytes?.fill(0)
         pin.fill('\u0000'); newPin.fill('\u0000'); adminKey.fill(0); newAdminKey.fill(0)
         makeExtensions.credentialBlob?.fill(0); assertionExtensions.hmacSalts?.fill(0)
         if (operation in setOf(ManagerOperation.FIDO_BLOB_WRITE, ManagerOperation.PIV_SIGN)) bytes.fill(0)
@@ -60,7 +66,9 @@ class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob:
     override fun close() { hmac?.fill(0); blobKey?.fill(0); credBlob?.fill(0) }
 }
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
-    val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null) {
+    val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null,
+    val relyingParties: List<RelyingParty>? = null, val credentials: List<Credential>? = null,
+    val inventoryGeneration: Long? = null) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
@@ -110,6 +118,7 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
     }
 
     fun execute(session: CardSession, input: OperationInput): ManagerReport {
+        input.inventoryRequest?.requireCurrent()
         if (input.operation == ManagerOperation.FIDO_RESET && (session.wire != CardWire.CTAP || !session.supportsCtap2))
             throw CardFailure(FailureCode.UNSUPPORTED)
         if (input.operation !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) clearSecrets()
@@ -138,13 +147,20 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
                 ManagerReport(listOf(ResultRow("已存储凭据", "${it.existing} 个"),
                     ResultRow("剩余凭据容量（估算）", "${it.remaining} 个")))
             }
-            ManagerOperation.FIDO_RPS -> ManagerReport(fido.enumerateRelyingParties(input.pin).flatMap {
-                listOf(ResultRow("RP", it.id), ResultRow("RP SHA-256", it.idHash.hex()))
-            })
-            ManagerOperation.FIDO_CREDENTIALS -> ManagerReport(fido.enumerateCredentials(input.pin, input.text.hexBytes()).flatMap {
-                listOf(ResultRow("凭据 ID", it.id.hex()), ResultRow("用户 ID", it.user.id.hex()),
-                    ResultRow("名称", it.user.name.orEmpty()), ResultRow("显示名称", it.user.displayName.orEmpty()))
-            })
+            ManagerOperation.FIDO_RPS -> fido.enumerateRelyingParties(input.pin).let { rps ->
+                ManagerReport(rps.flatMap { listOf(ResultRow("RP", it.id), ResultRow("RP SHA-256", it.idHash.hex())) }, relyingParties = rps)
+            }
+            ManagerOperation.FIDO_CREDENTIALS -> {
+                val rp = input.inventoryRequest?.rp?.value()
+                val hash = rp?.idHash ?: input.text.hexBytes()
+                if (rp != null && !sha256(rp.id.toByteArray(Charsets.UTF_8)).contentEquals(hash))
+                    throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+                val credentials = fido.enumerateCredentials(input.pin, hash)
+                ManagerReport(credentials.flatMap {
+                    listOf(ResultRow("凭据 ID", it.id.hex()), ResultRow("用户 ID", it.user.id.hex()),
+                        ResultRow("名称", it.user.name.orEmpty()), ResultRow("显示名称", it.user.displayName.orEmpty()))
+                }, credentials = credentials)
+            }
             ManagerOperation.FIDO_DELETE -> {
                 val id = input.text.hexBytes()
                 if (diagnosticCredential?.credentialId?.contentEquals(id) == true) diagnosticCredential = null
@@ -159,17 +175,34 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.FIDO_MIN_PIN -> info(fido.setMinPinLength(input.pin.takeIf { it.isNotEmpty() }, input.text.toInt(), rpIds = input.rpIds, forceChange = input.enabled))
             ManagerOperation.FIDO_ENTERPRISE -> info(fido.enableEnterpriseAttestation(input.pin.takeIf { it.isNotEmpty() }))
             ManagerOperation.FIDO_REGISTER, ManagerOperation.FIDO_ASSERT -> diagnostic(fido, input)
+            ManagerOperation.FIDO_VERIFY_CREDENTIAL -> {
+                val request = input.inventoryRequest ?: throw CardFailure(FailureCode.INVALID_INPUT)
+                selectedProof(fido, input, request, retainKey = true)
+                ManagerReport(listOf(ResultRow("RP", requireNotNull(request.credential).rp.id),
+                    ResultRow("凭据 ID", request.credential.idHex)))
+            }
             ManagerOperation.U2F_INFO -> {
                 val client = U2fClient(session); client.select()
                 ManagerReport(listOf(ResultRow("支持的协议", client.version())))
             }
             ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT -> u2fDiagnostic(session, input)
             ManagerOperation.FIDO_BLOB_READ -> {
-                val blob = fido.readLargeBlob(verifiedBlobKey(fido, input))
-                ManagerReport(listOf(ResultRow("bytes", (blob?.size ?: 0).toString())), blob, "credential-blob.bin", protectedExport = true)
+                val request = input.inventoryRequest?.takeIf { it.credential != null }
+                val key = if (request != null) selectedProof(fido, input, request, retainKey = false) else verifiedBlobKey(fido, input)
+                val blob = try { request?.requireCurrent(); fido.readLargeBlob(key) } finally { key.fill(0) }
+                if (cancelled()) { blob?.fill(0); throw CardFailure(FailureCode.CANCELLED) }
+                ManagerReport(listOfNotNull(request?.credential?.let { ResultRow("RP", it.rp.id) },
+                    request?.credential?.let { ResultRow("凭据 ID", it.idHex) },
+                    ResultRow("bytes", (blob?.size ?: 0).toString())), blob, "credential-blob.bin", protectedExport = true, inventoryGeneration = request?.generation)
             }
             ManagerOperation.FIDO_BLOB_WRITE -> {
-                fido.writeLargeBlob(input.pin.takeIf { it.isNotEmpty() }, verifiedBlobKey(fido, input), if (input.deleteBlob) null else input.bytes.copyOf()); empty()
+                val request = input.inventoryRequest?.takeIf { it.credential != null }
+                val key = if (request != null) selectedProof(fido, input, request, retainKey = false) else verifiedBlobKey(fido, input)
+                try {
+                    request?.requireCurrent()
+                    fido.writeLargeBlob(input.pin.takeIf { it.isNotEmpty() }, key, if (input.deleteBlob) null else (input.inventoryBytes ?: input.bytes).copyOf())
+                } finally { key.fill(0) }
+                empty()
             }
             ManagerOperation.PIV_INFO -> piv.readInfo().let {
                 ManagerReport(listOf(ResultRow("版本", it.version), ResultRow("序列号", it.serial.toString()),
@@ -224,6 +257,40 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.PIV_ECDH -> { piv.verifyKeyAgreement(input.slot, input.pin); empty() }
             ManagerOperation.PIV_DECRYPT -> { piv.verifyRsaDecryption(input.slot, input.pin); empty() }
             ManagerOperation.PIV_RESET -> { piv.reset(); empty() }
+        }
+    }
+
+    private fun selectedProof(fido: FidoClient, input: OperationInput, request: InventoryRequest, retainKey: Boolean): ByteArray {
+        request.requireCurrent()
+        val selected = request.credential ?: throw CardFailure(FailureCode.INVALID_INPUT)
+        val credential = selected.value()
+        require(input.pin.isNotEmpty())
+        if (!sha256(selected.rp.id.toByteArray(Charsets.UTF_8)).contentEquals(selected.rp.value().idHash))
+            throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+        FidoDiagnostics.publicKey(credential.publicKey)
+        if (!retainKey && request.expectedKey == null) throw CardFailure(FailureCode.INVALID_INPUT)
+        val challenge = ByteArray(32).also(SecureRandom()::nextBytes)
+        val results = fido.getAssertion(GetAssertionRequest(selected.rp.id, challenge, listOf(credential.id),
+            requireUv = true, extensions = AssertionExtensions(largeBlobKey = !retainKey || input.assertionExtensions.largeBlobKey), userPresence = true), input.pin.copyOf())
+        try {
+            if (results.size != 1 || !results.single().credentialId.contentEquals(credential.id))
+                throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+            val result = results.single()
+            val verified = FidoDiagnostics.verifyAssertion(result, credential.publicKey, selected.rp.id,
+                challenge, request.previousCounter, requireUv = true, requireUp = true)
+            if (!verified.signatureValid) throw CardFailure(FailureCode.MALFORMED_RESPONSE)
+            if (verified.counterAdvanced == false) throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
+            if (cancelled()) throw CardFailure(FailureCode.CANCELLED)
+            request.requireCurrent()
+            request.verified(verified.counter, null)
+            val fresh = result.largeBlobKey
+            if (!retainKey && (fresh == null || !java.security.MessageDigest.isEqual(request.expectedKey, fresh)))
+                throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
+            request.verified(verified.counter, fresh.takeIf { retainKey })
+            return if (retainKey) byteArrayOf() else requireNotNull(fresh).copyOf()
+        } finally {
+            challenge.fill(0)
+            results.forEach { it.hmacSecret?.fill(0); it.largeBlobKey?.fill(0) }
         }
     }
 

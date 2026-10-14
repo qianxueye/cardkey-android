@@ -29,6 +29,7 @@ object ConfirmationPolicy {
                 ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET)
         val secretWarning = input.operation == ManagerOperation.FIDO_ASSERT &&
             (input.assertionExtensions.hmacSalts != null || input.assertionExtensions.largeBlobKey || input.assertionExtensions.credentialBlob) ||
+            input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL && input.assertionExtensions.largeBlobKey ||
             input.operation == ManagerOperation.FIDO_REGISTER && input.makeExtensions.largeBlobKey ||
             input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)
         return listOfNotNull(primary) + (if (secretWarning) listOf(R.string.confirm_secretRead) else emptyList()) + if (pinWarning) listOf(R.string.confirm_authenticate) else emptyList()

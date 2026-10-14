@@ -58,7 +58,7 @@ class PivFileSigningPanelTest {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
                     ManagerScreen(manager.value, 0, {}, {}, { submitted = it }, {}, {}, null, {}, {}, {}, {},
                         EnrollmentState(), { _, _ -> }, {}, { it.close() }, { it.fill('\u0000') }, {},
-                        TlsQualificationState(), {}, {}, { it.close() }, files.value, { _, _ -> }, { picks++ })
+                        TlsQualificationState(), {}, {}, { it.close() }, files.value, { _, _ -> }, { picks++ }, InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
                 }
             }
         }

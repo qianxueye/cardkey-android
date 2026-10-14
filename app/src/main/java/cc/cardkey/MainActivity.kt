@@ -49,6 +49,32 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var lastNfcTag: android.nfc.Tag? = null
     private val permissionAction get() = "$packageName.USB_PERMISSION"
 
+    private val inventoryExporters = mutableMapOf<String, ActivityResultLauncher<String>>()
+    private fun inventoryExporter(id: String): ActivityResultLauncher<String> {
+        inventoryExporters[id]?.let { return it }
+        val launcher = activityResultRegistry.register("inventory-blob-export:$id", ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+            model.receiveInventoryExport(id, uri)
+            inventoryExporters.remove(id)?.unregister()
+        }
+        inventoryExporters[id] = launcher
+        if (model.inventoryExportId != id) { inventoryExporters.remove(id); launcher.unregister() }
+        return launcher
+    }
+    private val inventoryFilePickers = mutableMapOf<String, ActivityResultLauncher<Array<String>>>()
+    private fun inventoryFilePicker(id: String): ActivityResultLauncher<Array<String>> {
+        inventoryFilePickers[id]?.let { return it }
+        val launcher = activityResultRegistry.register("inventory-blob-file:$id", ActivityResultContracts.OpenDocument()) { uri ->
+            model.receiveInventoryFile(id, uri)
+            inventoryFilePickers.remove(id)?.unregister()
+        }
+        inventoryFilePickers[id] = launcher
+        if (model.inventory.fileRequestId != id) { inventoryFilePickers.remove(id); launcher.unregister() }
+        return launcher
+    }
+    private fun chooseInventoryFile(generation: Long) {
+        model.requestInventoryFile(generation)?.let { inventoryFilePicker(it).launch(arrayOf("*/*")) }
+    }
+
     private val signingFilePickers = mutableMapOf<String, ActivityResultLauncher<Array<String>>>()
     private val signatureExporters = mutableMapOf<String, ActivityResultLauncher<String>>()
     private fun signingFilePicker(id: String): ActivityResultLauncher<Array<String>> {
@@ -151,6 +177,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         }
         registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
         model.refreshReaders()
+        model.inventoryExportId?.let(::inventoryExporter)
+        model.inventory.fileRequestId?.let(::inventoryFilePicker)
         model.signingFileRequestId?.let(::signingFilePicker)
         model.signatureSaveRequestId?.let(::signatureExporter)
         setContent {
@@ -158,6 +186,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             val enrollment by model.enrollment.state.collectAsState()
             val tls by model.tls.collectAsState()
             val signingFiles by model.signingFiles.state.collectAsState()
+            val inventory by model.inventory.state.collectAsState()
             LaunchedEffect(state.result) {
                 val failure = state.result as? OperationResult.Failed
                 if (state.nfc && failure?.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
@@ -171,6 +200,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     { report ->
                         if (report.fileName == "signature.bin") {
                             if (model.requestSignatureSave(report)) signatureExporter(requireNotNull(model.signatureSaveRequestId)).launch("signature.bin")
+                        } else if (report.inventoryGeneration != null) {
+                            model.requestInventoryExport(report)?.let { inventoryExporter(it).launch("credential-blob.bin") }
                         } else {
                             export = if (report.protectedExport) report.copy(export = report.export?.copyOf()) else report
                             exporter.launch(report.fileName ?: "cardkey.der")
@@ -182,7 +213,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     { model.requestEnrollmentRoot(); rootImporter.launch(arrayOf("*/*")) },
                     model::submitEnrollment, model::issueEnrollment, model::abandonEnrollment,
                     tls, model::tlsSettings, ::chooseTlsRoot, model::submitTls,
-                    signingFiles, model::fileSigningAction, ::chooseSigningFile)
+                    signingFiles, model::fileSigningAction, ::chooseSigningFile,
+                    inventory, model::selectInventoryRp, model::selectInventoryCredential, ::chooseInventoryFile, model::inventoryAction)
                 if (showProviderSettings) AlertDialog(
                     onDismissRequest = { showProviderSettings = false },
                     title = { Text("凭据提供者") },
@@ -230,9 +262,14 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     override fun onTagDiscovered(tag: android.nfc.Tag) {
-        runOnUiThread { lastNfcTag = tag; model.onTag(tag) }
+        val owner = model.pendingNfcOwner ?: return
+        runOnUiThread { if (model.onTag(tag, owner)) lastNfcTag = tag }
     }
     override fun onDestroy() {
+        inventoryExporters.values.toList().forEach { it.unregister() }
+        inventoryExporters.clear()
+        inventoryFilePickers.values.toList().forEach { it.unregister() }
+        inventoryFilePickers.clear()
         signingFilePickers.values.toList().forEach { it.unregister() }
         signingFilePickers.clear()
         signatureExporters.values.toList().forEach { it.unregister() }
