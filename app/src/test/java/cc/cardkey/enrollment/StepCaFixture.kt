@@ -38,10 +38,26 @@ internal class StepCaFixture : AutoCloseable {
                 {"subject":{"commonName":{{ toJson .Token.sub }}},"sans":[],"keyUsage":["digitalSignature"],"extKeyUsage":["clientAuth"],"basicConstraints":{"isCA":false}}
             """.trimIndent()) }
             val config = directory.resolve("config/ca.json")
+            run(cli, "ca", "provisioner", "add", "fixture-document", "--type", "JWK", "--create",
+                "--password-file", password.path, "--ca-config", config.path)
+            val documentTemplate = directory.resolve("document.tpl").apply { writeText("""
+                {{- if not .Token.sub }}{{ fail "subject required" }}{{ end -}}
+                {{- if not .Token.cnf }}{{ fail "binding required" }}{{ end -}}
+                {{- if not (index .Token.cnf "x5rt#S256") }}{{ fail "binding required" }}{{ end -}}
+                {{- if typeIs "*ecdsa.PublicKey" .Insecure.CR.PublicKey -}}
+                  {{- if not (or (eq .Insecure.CR.PublicKey.Curve.Params.Name "P-256") (eq .Insecure.CR.PublicKey.Curve.Params.Name "P-384")) }}{{ fail "unsupported curve" }}{{ end -}}
+                {{- else if typeIs "*rsa.PublicKey" .Insecure.CR.PublicKey -}}
+                  {{- if ne .Insecure.CR.PublicKey.N.BitLen 2048 }}{{ fail "RSA-2048 required" }}{{ end -}}
+                {{- else }}{{ fail "unsupported key" }}{{ end -}}
+                {"subject":{"commonName":{{ toJson .Token.sub }}},"sans":[],"keyUsage":["digitalSignature"],"unknownExtKeyUsage":["1.3.6.1.5.5.7.3.36"],"basicConstraints":{"isCA":false}}
+            """.trimIndent()) }
             val json = JsonParser.parseString(config.readText()).asJsonObject
             val provisioner = json["authority"].asJsonObject["provisioners"].asJsonArray[0].asJsonObject
             provisioner.add("claims", JsonParser.parseString("""{"minTLSCertDuration":"60s","defaultTLSCertDuration":"300s","maxTLSCertDuration":"300s","disableRenewal":true,"enableSSHCA":false}"""))
             provisioner.add("options", JsonObject().apply { add("x509", JsonObject().apply { addProperty("templateFile", template.path) }) })
+            val document = json["authority"].asJsonObject["provisioners"].asJsonArray[1].asJsonObject
+            document.add("claims", provisioner["claims"].deepCopy())
+            document.add("options", JsonObject().apply { add("x509", JsonObject().apply { addProperty("templateFile", documentTemplate.path) }) })
             json.add("logger", JsonParser.parseString("""{"format":"common"}"""))
             config.writeText(json.toString())
             server = builder(caBinary, config.path, "--password-file", password.path).redirectOutput(ProcessBuilder.Redirect.to(java.io.File("/dev/null"))).start()
@@ -73,10 +89,10 @@ internal class StepCaFixture : AutoCloseable {
             } finally { if (process.isAlive) { process.destroyForcibly(); process.waitFor(5, TimeUnit.SECONDS) } }
         } finally { output.delete() }
     }
-    fun token(csr: EnrollmentCsr): String {
+    fun token(csr: EnrollmentCsr, purpose: EnrollmentPurpose = csr.selection.purpose): String {
         val file = directory.resolve("request.csr").apply { writeText(csr.pem()) }
         return run(cli, "ca", "token", csr.cn, "--cnf-file", file.path, "--ca-url", address, "--root", directory.resolve("certs/root_ca.crt").path,
-            "--provisioner", "fixture", "--password-file", password.path, "--not-after", "5m").trim()
+            "--provisioner", if (purpose == EnrollmentPurpose.DOCUMENT) "fixture-document" else "fixture", "--password-file", password.path, "--not-after", "5m").trim()
     }
     override fun close() {
         server?.let { process ->

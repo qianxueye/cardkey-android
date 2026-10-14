@@ -52,7 +52,7 @@ class WorkspaceAcceptanceTest {
                                 onProviderSettings = {}, enrollment = EnrollmentState(),
                                 onEnrollmentSettings = { _, _ -> }, onEnrollmentRoot = {},
                                 onEnrollmentSubmit = { dispatches.incrementAndGet(); it.close() },
-                                onEnrollmentIssue = { dispatches.incrementAndGet(); it.fill('\u0000') },
+                                onEnrollmentIssue = { token, _ -> dispatches.incrementAndGet(); token.fill('\u0000') },
                                 onEnrollmentAbandon = {}, tls = TlsQualificationState(),
                                 onTlsSettings = {}, onTlsRoot = {},
                                 onTlsSubmit = { dispatches.incrementAndGet(); it.close() },

@@ -2,6 +2,7 @@ package cc.cardkey.tls
 
 import cc.cardkey.enrollment.EnrollmentImport
 import cc.cardkey.enrollment.EnrollmentProfile
+import cc.cardkey.enrollment.EnrollmentSelection
 import java.net.URI
 import java.security.cert.CertPathValidator
 import java.security.cert.CertificateFactory
@@ -19,6 +20,7 @@ class PivTlsIdentity(imported: EnrollmentImport) {
     val chain get() = bundle.chain
     val subject get() = csr.cn
     fun validate(now: Long = System.currentTimeMillis()) {
+        require(csr.selection == EnrollmentSelection())
         EnrollmentProfile.validate(bundle.chain, root, csr, now, bundle.verifiedAt)
     }
     init { validate() }

@@ -46,6 +46,8 @@ class OperationInput(
     val rpIds: List<String> = emptyList(), val enterpriseMode: Int? = null,
     val deleteBlob: Boolean = false, val displayName: String = "diagnostic",
     val enrollmentImport: EnrollmentImport? = null,
+    val enrollmentSelection: EnrollmentSelection = EnrollmentSelection(),
+    val enrollmentRevision: Long = 0,
     val signingFileGeneration: Long? = null,
     val signatureFormat: SignatureFormat = if (operation == ManagerOperation.PIV_CMS_SIGN) SignatureFormat.CMS else SignatureFormat.RAW,
     val inventoryGeneration: Long? = null,
@@ -241,13 +243,14 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
                 ManagerReport(listOf(ResultRow("CSR", input.text)), pem("CERTIFICATE REQUEST", it), "piv-${input.slot.toString(16)}.csr")
             }
             ManagerOperation.PIV_ENROLL_CSR -> {
-                val csr = EnrollmentCsr(piv.createCsr(0x9a, input.pin, EnrollmentProfile.name(input.text), KeyAlgorithm.P256), input.text)
+                val selection = input.enrollmentSelection
+                val csr = EnrollmentCsr(piv.createCsr(selection.slot, input.pin, EnrollmentProfile.name(input.text), selection.algorithm), input.text, selection)
                 ManagerReport(emptyList(), enrollmentCsr = csr)
             }
             ManagerOperation.PIV_ENROLL_IMPORT -> {
                 val request = requireNotNull(input.enrollmentImport)
                 request.validate()
-                piv.importCertificate(0x9a, request.bundle.leaf, input.managementAlgorithm, input.adminKey)
+                piv.importCertificate(request.csr.selection.slot, request.bundle.leaf, input.managementAlgorithm, input.adminKey)
                 ManagerReport(emptyList(), messages = listOf(R.string.enrollment_imported))
             }
             ManagerOperation.PIV_IMPORT -> piv.importCertificate(input.slot, input.bytes, input.managementAlgorithm, input.adminKey).let {

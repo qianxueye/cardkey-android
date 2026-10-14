@@ -267,6 +267,20 @@ Both APKs built. Lint reported zero errors and the same ten warning locations: o
 No device installation or launch occurred in this package. Instrumentation execution and physical-card, reader, identity and deployment acceptance remain separate root-owned steps.
 
 
+## Document certificate enrollment (2026-10-14)
+
+Source candidate `0ac9ae9` includes delivered CMS default `ec340c5`. The package adds 10 unit tests above the 768-test parent floor. The first enrollment/TLS gate passed 82 tests in 4m 42s (283s wall). After the queued-cancellation correction, the final targeted gate passed 83 tests with no failures, errors or skips in 3m 23s (204s wall; 81.974s summed test execution).
+
+The final `testDebugUnitTest assembleDebug lintDebug assembleDebugAndroidTest` gate passed in 4m 37s (278s wall). All 778 unit tests passed with zero failures, errors or skips and 87.254s summed execution. Both APKs built. Lint reported zero errors and 10 warnings; no suppression or baseline was added. The tests used JDK 17, Gradle 8.13, the pinned Android SDK and dependencies, Smallstep CLI 0.31.0 and step-ca 0.30.2, offline with one owned build and at most two Gradle workers.
+
+The real loopback CA gate uses distinct provisioners and fixed templates. It exercises the actual existing-key CSR, token, HTTPS, exact document profile, selected-slot import/readback and explicit CMS signing paths for P-256, P-384 and RSA-2048. It rejects wrong-role responses/tokens. Synthetic negatives cover signatures and algorithm OIDs, SPKI, CN, KU/EKU, SAN, CA constraints, validity and trust, selector/confirmation/issuance/export ABA, document-to-TLS entry, randomized-CSR bypass after an unknown outcome, and queued versus begun cancellation. Existing one-POST/no-retry and uncertain write/readback tests remain passing.
+
+`EnrollmentViewModelTest` and `TlsViewModelTest` disable Robolectric Conscrypt only for their desktop SunJSSE-hosted fixtures, following the existing scoped `PivTlsDnsTest` setting. This preserves host EC parameters during named-group initialization. [Robolectric ConscryptMode documentation](https://robolectric.org/configuring/#conscryptmode) explains that OFF retains BouncyCastle. Application providers, production TLS behavior, assertions and timeouts are unchanged.
+
+Local full logs are `/private/tmp/cardkey-android-document-targeted-1.log`, `/private/tmp/cardkey-android-document-targeted-2.log` and `/private/tmp/cardkey-android-document-full-1.log`. The final unit XML and lint XML are in the worktree's `app/build/test-results/testDebugUnitTest` and `app/build/reports/lint-results-debug.xml`. APKs are `app/build/outputs/apk/debug/app-debug.apk` and `app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`.
+
+This is application and synthetic protocol evidence. No device tests, installation, app launch, physical card mutation, deployment or external-system acceptance occurred. The separate UI workspace candidate was not included in this gate. Copy and activation scope are recorded in [the Chinese copy record](DOCUMENT-ENROLLMENT-COPY.zh-CN.md); [CardKey issue 35](https://github.com/qianxueye/cardkey/issues/35) remains open.
+
 ## Desktop TLS fixture provider boundary
 
 `TlsActivityTest` and `TlsViewModelTest` host their synthetic peer with desktop SunJSSE. These two Robolectric classes use `@ConscryptMode(ConscryptMode.Mode.OFF)`: Robolectric omits its preferred Conscrypt provider and retains BouncyCastle, as defined in [the official configuration documentation](https://robolectric.org/configuring/#conscryptmode). Other Robolectric classes keep their existing provider mode.
@@ -298,3 +312,21 @@ The test configuration adds Android-test scope for the existing Compose BOM and 
 These two native cases have not run on a device. Root owns installation and execution on the authorized Sony device. Foreground and IME acceptance require the Owner to unlock the device; the reported keyguard state remains a prerequisite, with no unlock or settings bypass. Compilation does not establish device, physical-card or deployment acceptance.
 
 Root reported successful installation of both matched APKs on the Sony device, followed immediately by force-stopping `cc.cardkey.android` and `cc.cardkey.android.test`. The stop/readback command exited 0 and `pidof` returned no process for either package. No foreground/IME test, security-setting change or card action occurred. This installation readback is separate from the pending native test execution.
+
+## Composed document enrollment and management workspace
+
+The signed integration candidate `92c3054e023ff28bcdb064115dbc7e30e5aa9720` combines document enrollment with UI candidate `dfb838aeb58c23e23de2584278aa09be87c501fd`. The certificate destination retains the workspace input/IME behavior, purpose/slot/algorithm selection, request revisions, queued-versus-begun cancellation, unknown-outcome receipts and TLS-only qualification. The native acceptance fixture adopts the revision-bearing issuance callback without changing its assertions. No new interface wording was introduced during integration.
+
+The single composed `testDebugUnitTest assembleDebug lintDebug assembleDebugAndroidTest` gate passed in 5m 32s in Gradle (334s wall). All 782 JVM tests in 72 suites passed with zero failures, errors or skips and 109.293s summed execution. This preserves the delivered UI's 772 tests plus the document package's 10 tests. The real role-separated step-ca test passed all three document algorithms, import/readback and CMS signing in 6.222s. Both APKs built; lint reported zero errors and the existing ten warnings (one `GetInstance`, nine `TrustAllX509TrustManager`). The pinned JDK 17, Gradle 8.13, Android SDK, Smallstep CLI 0.31.0 and step-ca 0.30.2 ran offline with at most two Gradle workers. No assertions, timeouts, suppression or baseline changed.
+
+After this gate, delivered default `c3e97155f1c1aad05e96bac41c6f78b9e36c1e73` was normally merged as `005ef6c2e6a39a711b585ba425646cfd4f87feb9`. `git diff 92c3054e023ff28bcdb064115dbc7e30e5aa9720 005ef6c2e6a39a711b585ba425646cfd4f87feb9 --exit-code` returned 0 with no differences. The full-gate evidence therefore applies to that merge without another run. This validation record is the only subsequent change.
+
+The full log is `/private/tmp/cardkey-android-document-composed-full.log`. Unit XML, lint XML and both APKs are under the publication worktree's standard `app/build` paths listed above. The earlier 778-test document gate remains separate evidence. No device installation, app launch, instrumentation execution, card action or deployment occurred in this integration. Native foreground/IME acceptance remains pending the Owner's Sony-device unlock and root-owned execution. [CardKey issue 35](https://github.com/qianxueye/cardkey/issues/35) remains open.
+
+## Preserve the selected enrollment purpose
+
+The purpose-chip correction in `0a40d8f` leaves a selected purpose unchanged. A new Compose test uses the actual `EnrollmentWorkflow` with a 9D/P-384 document request. It verifies that clicking the selected purpose makes no selection callback and preserves the CSR, verified bundle, revision and import availability. Switching to TLS still retires the request and selects the TLS defaults; switching back selects the document defaults.
+
+With the original handler restored temporarily, this new test failed at the no-callback assertion (one test, one failure, no errors or skips; Gradle 42s, wall 43s). Restoring the signed fix made all six enrollment-panel tests pass with zero failures, errors or skips (15.744s summed tests; Gradle and wall 49s). The final `testDebugUnitTest assembleDebug lintDebug assembleDebugAndroidTest` gate then passed: 783 tests in 72 suites, zero failures, errors or skips, 85.740s summed tests, Gradle 5m 34s and wall 334s. The purpose regression passed in 0.603s; real three-algorithm document CA issuance/import/CMS passed in 4.782s. Both APKs built and lint retained zero errors and the ten existing warnings. The source was clean at the full gate; only this validation record changed afterward.
+
+Logs are `/private/tmp/cardkey-android-document-purpose-red.log`, `/private/tmp/cardkey-android-document-purpose-green.log` and `/private/tmp/cardkey-android-document-purpose-full.log`; the red and green XML reports are preserved beside those logs. No interface wording, existing assertions, timeouts, dependencies or protocol behavior changed. No device or card action occurred; native acceptance and publication remain separate root-owned steps.

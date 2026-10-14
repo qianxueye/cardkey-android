@@ -65,7 +65,7 @@ fun ManagerScreen(
     onEnrollmentSettings: (String, String) -> Unit,
     onEnrollmentRoot: () -> Unit,
     onEnrollmentSubmit: (OperationInput) -> Unit,
-    onEnrollmentIssue: (CharArray) -> Unit,
+    onEnrollmentIssue: (CharArray, Long) -> Unit,
     onEnrollmentAbandon: () -> Unit,
     tls: TlsQualificationState,
     onTlsSettings: (String) -> Unit,
@@ -79,6 +79,7 @@ fun ManagerScreen(
     onInventoryCredential: (Long, InventoryCredential) -> Unit,
     onInventoryFile: (Long) -> Unit,
     onInventoryAction: (ManagerOperation?) -> Unit,
+    onEnrollmentSelection: (cc.cardkey.enrollment.EnrollmentSelection) -> Unit = {},
 ) {
     val displayName = stringResource(R.string.app_name)
     val feedbackRequester = remember { BringIntoViewRequester() }
@@ -530,11 +531,12 @@ fun ManagerScreen(
                         clearInputs, onEnrollmentSettings, onEnrollmentRoot, { input ->
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                             onEnrollmentSubmit(input)
-                        }, { token ->
+                        }, { token, revision ->
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
-                            onEnrollmentIssue(token)
-                        }, onExport, onCancel, onEnrollmentAbandon, viewportHeight) }
-                    if (tab == 3 && enrollment.stage == cc.cardkey.enrollment.EnrollmentStage.IMPORTED) {
+                            onEnrollmentIssue(token, revision)
+                        }, onExport, onCancel, onEnrollmentAbandon, onEnrollmentSelection, viewportHeight) }
+                    if (tab == 3 && enrollment.stage == cc.cardkey.enrollment.EnrollmentStage.IMPORTED &&
+                        enrollment.selection == cc.cardkey.enrollment.EnrollmentSelection()) {
                         key(state.selectedReader?.routeKey, enrollment.bundle) {
                             TlsQualificationPanel(tls, enrollment, state.busy,
                                 !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection,
@@ -560,7 +562,7 @@ private fun SecretField(label: String, value: String, enabled: Boolean, viewport
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun <T> Choice(label: String, value: T, values: List<T>, title: (T) -> String, enabled: Boolean, onChange: (T) -> Unit) {
+internal fun <T> Choice(label: String, value: T, values: List<T>, title: (T) -> String, enabled: Boolean, onChange: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded && enabled, onExpandedChange = { if (enabled) expanded = it }) {
         OutlinedTextField(title(value), {}, readOnly = true, label = { Text(label) }, enabled = enabled,
