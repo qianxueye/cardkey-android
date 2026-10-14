@@ -317,6 +317,33 @@ class ManagerScreenLayoutTest {
         }
     }
 
+    @Test fun certificateReadShowsDateEvidenceAndExportsOriginalSlotAfterFormSelectionChanges() {
+        val fixture = CertificateLifecycleFixture()
+        val result = fixture.read({ fixture.start + 1 }) as OperationResult.Completed
+        val report = result.value
+        var exported: ManagerReport? = null
+        render(360, 480, onExport = { exported = it }) { activity, update ->
+            compose.onNodeWithText("PIV").performClick()
+            compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
+            compose.onNodeWithText(ManagerOperation.PIV_SLOT.title).performClick()
+            update(ManagerState(operation = ManagerOperation.PIV_SLOT, result = result))
+            for (text in listOf("日期状态", "有效期内", "签发者", "CN=Lifecycle issuer",
+                    "证书序列号（十六进制）", "80FF", "生效时间（UTC）", "2026-01-01T00:00:00Z",
+                    "到期时间（UTC）", "2026-01-02T00:00:00Z", "检查时间（设备时钟，UTC）",
+                    "2026-01-01T00:00:00.001Z", activity.getString(R.string.certificate_dateScope))) {
+                compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
+            }
+            compose.onNode(hasText("槽位") and hasClickAction()).performScrollTo().performClick()
+            compose.onNodeWithText("9C").performClick()
+            compose.onNodeWithText("9D").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("2026-01-01T00:00:00.001Z").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("导出").performScrollTo().performClick()
+            assertSame(report, exported)
+            assertEquals("piv-9d.cer", exported?.fileName)
+            assertArrayEquals(fixture.der, exported?.export)
+        }
+    }
+
     @Test fun longReaderListRemainsReachableAndSelectionIsNotAuthentication() {
         render(360, 640) { activity, update ->
             val readers = (1..20).map { index ->

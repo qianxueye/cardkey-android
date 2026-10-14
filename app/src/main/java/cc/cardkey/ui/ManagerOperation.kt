@@ -7,7 +7,9 @@ import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
 import cc.cardkey.protocol.piv.*
 import java.security.SecureRandom
+import java.time.Instant
 import java.util.Base64
+import java.util.Locale
 
 enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     FIDO_INFO("FIDO2 · 读取"), FIDO_RESET("FIDO2 · 重置"), FIDO_RETRIES("PIN · 重试次数"),
@@ -79,7 +81,8 @@ data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = nul
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
-class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
+class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
+                        private val cancelled: () -> Boolean = { false }) {
     private var diagnosticCredential: AttestationDiagnostic? = null
     private var u2fCredential: U2fRegistration? = null
     private var u2fCounter: Long? = null
@@ -217,15 +220,36 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
                     ResultRow("PUK 剩余重试次数", "剩余 ${it.puk.remaining} 次（共 ${it.puk.total} 次）"),
                     ResultRow("管理密钥", it.managementAlgorithm.name)))
             }
-            ManagerOperation.PIV_SLOT -> piv.readSlot(input.slot).let {
-                ManagerReport(listOfNotNull(it.metadata?.algorithm?.let { algorithm -> ResultRow("算法", algorithm.name) },
-                    it.metadata?.let { metadata -> ResultRow("PIN 验证策略",
-                        listOf("无需 PIN", "会话内验证一次", "每次操作验证")[metadata.pinPolicy - 1]) },
-                    it.metadata?.let { metadata -> ResultRow("触摸确认策略",
-                        listOf("无需触摸", "每次操作触摸", "允许缓存触摸确认")[metadata.touchPolicy - 1]) },
-                    it.certificate?.let { cert -> ResultRow("证书", cert.subjectX500Principal.name) },
-                    it.metadata?.publicKey?.let { key -> ResultRow("公钥", Base64.getEncoder().encodeToString(key.encoded)) }),
-                    it.certificate?.encoded, "piv-${input.slot.toString(16)}.cer")
+            ManagerOperation.PIV_SLOT -> {
+                val assessedAt = now()
+                val slot = piv.readSlot(input.slot)
+                val cert = slot.certificate
+                val rows = mutableListOf(ResultRow("槽位", "%02X".format(slot.slot)),
+                    ResultRow("证书", cert?.subjectX500Principal?.name ?: "未存储证书"))
+                if (cert != null) {
+                    val start = cert.notBefore.time
+                    val end = cert.notAfter.time
+                    val status = when {
+                        start > end -> "有效期起止顺序异常"
+                        assessedAt < start -> "尚未生效"
+                        assessedAt > end -> "已过期"
+                        else -> "有效期内"
+                    }
+                    rows += listOf(ResultRow("日期状态", status),
+                        ResultRow("签发者", cert.issuerX500Principal.name),
+                        ResultRow("证书序列号（十六进制）", cert.serialNumber.toString(16).uppercase(Locale.ROOT)),
+                        ResultRow("生效时间（UTC）", Instant.ofEpochMilli(start).toString()),
+                        ResultRow("到期时间（UTC）", Instant.ofEpochMilli(end).toString()),
+                        ResultRow("检查时间（设备时钟，UTC）", Instant.ofEpochMilli(assessedAt).toString()))
+                }
+                rows += listOfNotNull(slot.metadata?.algorithm?.let { ResultRow("算法", it.name) },
+                    slot.metadata?.let { ResultRow("PIN 验证策略",
+                        listOf("无需 PIN", "会话内验证一次", "每次操作验证")[it.pinPolicy - 1]) },
+                    slot.metadata?.let { ResultRow("触摸确认策略",
+                        listOf("无需触摸", "每次操作触摸", "允许缓存触摸确认")[it.touchPolicy - 1]) },
+                    slot.metadata?.publicKey?.let { ResultRow("公钥", Base64.getEncoder().encodeToString(it.encoded)) })
+                ManagerReport(rows, cert?.encoded, "piv-${input.slot.toString(16)}.cer",
+                    messages = if (cert != null) listOf(R.string.certificate_dateScope) else emptyList())
             }
             ManagerOperation.PIV_SSH_EXPORT -> {
                 val metadata = piv.readPublicKeyMetadata(input.slot)
