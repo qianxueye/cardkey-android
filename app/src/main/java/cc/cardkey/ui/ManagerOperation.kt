@@ -1,6 +1,7 @@
 package cc.cardkey.ui
 
 import cc.cardkey.R
+import cc.cardkey.signing.SignatureFormat
 import cc.cardkey.enrollment.*
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
@@ -22,10 +23,12 @@ enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     PIV_CHANGE_PIN("PIN · 修改", true), PIV_CHANGE_PUK("PUK · 修改", true),
     PIV_UNBLOCK("PIN · 解锁", true), PIV_ADMIN("管理密钥 · 修改", true),
     PIV_GENERATE("生成密钥", true), PIV_CSR("导出 CSR", true),
-    PIV_IMPORT("导入证书", true), PIV_SIGN("文件签名", true),
+    PIV_IMPORT("导入证书", true), PIV_SIGN("文件签名", true), PIV_CMS_SIGN("CMS 文件签名", true),
     PIV_ECDH("ECDH · 验证", true), PIV_DECRYPT("RSA · 验证", true),
     PIV_ENROLL_CSR("生成 CSR", true), PIV_ENROLL_IMPORT("导入证书", true),
-    PIV_RESET("PIV · 重置", true)
+    PIV_RESET("PIV · 重置", true);
+
+    val isFileSigning get() = this == PIV_SIGN || this == PIV_CMS_SIGN
 }
 
 class OperationInput(
@@ -44,6 +47,7 @@ class OperationInput(
     val deleteBlob: Boolean = false, val displayName: String = "diagnostic",
     val enrollmentImport: EnrollmentImport? = null,
     val signingFileGeneration: Long? = null,
+    val signatureFormat: SignatureFormat = if (operation == ManagerOperation.PIV_CMS_SIGN) SignatureFormat.CMS else SignatureFormat.RAW,
     val inventoryGeneration: Long? = null,
     val inventorySelection: InventoryCredential? = null,
 ) : AutoCloseable {
@@ -57,7 +61,7 @@ class OperationInput(
         inventoryBytes?.fill(0)
         pin.fill('\u0000'); newPin.fill('\u0000'); adminKey.fill(0); newAdminKey.fill(0)
         makeExtensions.credentialBlob?.fill(0); assertionExtensions.hmacSalts?.fill(0)
-        if (operation in setOf(ManagerOperation.FIDO_BLOB_WRITE, ManagerOperation.PIV_SIGN)) bytes.fill(0)
+        if (operation == ManagerOperation.FIDO_BLOB_WRITE || operation.isFileSigning) bytes.fill(0)
     }
 }
 
@@ -68,7 +72,7 @@ class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob:
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
     val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null,
     val relyingParties: List<RelyingParty>? = null, val credentials: List<Credential>? = null,
-    val inventoryGeneration: Long? = null) {
+    val inventoryGeneration: Long? = null, val signatureFormat: SignatureFormat? = null) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
@@ -249,10 +253,16 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
             ManagerOperation.PIV_IMPORT -> piv.importCertificate(input.slot, input.bytes, input.managementAlgorithm, input.adminKey).let {
                 ManagerReport(listOf(ResultRow("证书", it.subjectX500Principal.name)))
             }
-            ManagerOperation.PIV_SIGN -> {
-                val signature = piv.signFile(input.slot, input.pin, input.bytes)
+            ManagerOperation.PIV_SIGN, ManagerOperation.PIV_CMS_SIGN -> {
+                val signature = when (input.signatureFormat) {
+                    SignatureFormat.RAW -> piv.signFile(input.slot, input.pin, input.bytes)
+                    SignatureFormat.CMS -> piv.signCmsFile(input.slot, input.pin, input.bytes)
+                }
                 if (cancelled()) { signature.fill(0); throw CardFailure(FailureCode.CANCELLED) }
-                ManagerReport(emptyList(), signature, "signature.bin", messages = listOf(R.string.signing_verified, R.string.signing_exportScope))
+                ManagerReport(emptyList(), signature, input.signatureFormat.fileName,
+                    messages = if (input.signatureFormat == SignatureFormat.RAW) listOf(R.string.signing_verified, R.string.signing_exportScope) else
+                        listOf(R.string.signing_cmsVerified, R.string.signing_cmsScope, R.string.signing_cmsTrust),
+                    signatureFormat = input.signatureFormat)
             }
             ManagerOperation.PIV_ECDH -> { piv.verifyKeyAgreement(input.slot, input.pin); empty() }
             ManagerOperation.PIV_DECRYPT -> { piv.verifyRsaDecryption(input.slot, input.pin); empty() }

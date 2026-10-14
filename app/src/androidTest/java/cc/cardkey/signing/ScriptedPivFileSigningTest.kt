@@ -47,6 +47,49 @@ class ScriptedPivFileSigningTest {
         }
     }
 
+    @Test fun detachedCmsVerifiesOnAndroidForAllThreeAlgorithms() {
+        for (algorithm in KeyAlgorithm.entries) {
+            val card = SyntheticPivCard(algorithm)
+            val now = System.currentTimeMillis()
+            val name = org.bouncycastle.asn1.x500.X500Name("CN=Synthetic Android document signer")
+            val provider = org.bouncycastle.jce.provider.BouncyCastleProvider()
+            val certificate = org.bouncycastle.cert.jcajce.JcaX509CertificateConverter().setProvider(provider).getCertificate(
+                org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(name, BigInteger.ONE,
+                    java.util.Date(now - 60_000), java.util.Date(now + 86_400_000), name, card.keyPair.public)
+                    .addExtension(org.bouncycastle.asn1.x509.Extension.basicConstraints, true, org.bouncycastle.asn1.x509.BasicConstraints(false))
+                    .addExtension(org.bouncycastle.asn1.x509.Extension.keyUsage, true, org.bouncycastle.asn1.x509.KeyUsage(org.bouncycastle.asn1.x509.KeyUsage.digitalSignature))
+                    .addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, false, org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                        org.bouncycastle.asn1.x509.KeyPurposeId.getInstance(org.bouncycastle.asn1.ASN1ObjectIdentifier(PivCms.DOCUMENT_SIGNING_EKU))))
+                    .build(org.bouncycastle.operator.jcajce.JcaContentSignerBuilder(algorithm.signature).setProvider(provider).build(card.keyPair.private)))
+            card.certificate = certificate.encoded
+            val bytes = byteArrayOf(0, 1, 2, 13, 10, 127, 0xff.toByte())
+            val input = OperationInput(ManagerOperation.PIV_CMS_SIGN, slot = 0x9c, pin = "123456".toCharArray(), bytes = bytes.copyOf())
+            val result = try { CardSession(card).run { ManagerOperations().execute(it, input) } } finally { input.close() }
+            assertTrue(result.toString(), result is OperationResult.Completed)
+            val report = (result as OperationResult.Completed).value
+            assertEquals(SignatureFormat.CMS, report.signatureFormat)
+            assertEquals("signature.p7s", report.fileName)
+            assertEquals(listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope,
+                cc.cardkey.R.string.signing_cmsTrust), report.messages)
+            val encoded = requireNotNull(report.export)
+            val cms = org.bouncycastle.cms.CMSSignedData(org.bouncycastle.cms.CMSProcessableByteArray(bytes), encoded)
+            assertTrue(org.bouncycastle.cms.CMSSignedData(encoded).isDetachedSignature)
+            assertArrayEquals(certificate.encoded, cms.certificates.getMatches(null).single().encoded)
+            assertTrue(cms.signerInfos.signers.single().verify(
+                org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder().setProvider(provider).build(certificate)))
+            PivCms.verify(encoded, bytes, certificate, algorithm)
+            try {
+                PivCms.verify(encoded, bytes.copyOf().apply { this[0] = 9 }, certificate, algorithm)
+                fail("Changed document must not verify")
+            } catch (expected: CardFailure) { assertEquals(FailureCode.MALFORMED_RESPONSE, expected.code) }
+            assertEquals(1, card.verifies)
+            assertEquals(1, card.signatures)
+            assertTrue(card.closed)
+            assertTrue(input.pin.all { it == '\u0000' })
+            assertTrue(input.bytes.all { it == 0.toByte() })
+        }
+    }
+
     private class SyntheticPivCard(private val algorithm: KeyAlgorithm) : CardChannel {
         override val medium = Medium.CONTACT
         override val maxCommandBytes = 261
@@ -55,6 +98,7 @@ class ScriptedPivFileSigningTest {
             else initialize(ECGenParameterSpec(this@SyntheticPivCard.algorithm.curve))
         }.generateKeyPair()
         private val fragments = ByteArrayOutputStream()
+        var certificate: ByteArray? = null
         var verifies = 0
         var signatures = 0
         var closed = false
@@ -69,6 +113,7 @@ class ScriptedPivFileSigningTest {
                 0xa4 -> byteArrayOf()
                 0xf7 -> PivTlv.encode(1, byteArrayOf(algorithm.code.toByte())) +
                     PivTlv.encode(2, byteArrayOf(2, 1)) + PivTlv.encode(3, byteArrayOf(0)) + PivTlv.encode(4, publicKey())
+                0xcb -> PivTlv.encode(0x53, PivTlv.encode(0x70, requireNotNull(certificate)) + PivTlv.encode(0x71, byteArrayOf(0)))
                 0x20 -> { verifies++; assertEquals(8, data.size); data.fill(0); byteArrayOf() }
                 0x87 -> {
                     signatures++
