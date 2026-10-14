@@ -15,6 +15,9 @@ import java.security.PublicKey
 import java.security.interfaces.ECPublicKey
 import java.security.spec.*
 import java.util.Base64
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
+import org.bouncycastle.crypto.params.ECPublicKeyParameters
+import org.bouncycastle.crypto.util.PublicKeyFactory
 
 class PivSshPublicKeyTest {
     @Test fun freshOperationExportsAllAlgorithmsWithoutCertificateOrPrivateApdu() {
@@ -75,7 +78,20 @@ class PivSshPublicKeyTest {
                 val output = process.inputStream.bufferedReader().use { it.readText() }
                 assertEquals(output, 0, process.waitFor())
                 val spki = Base64.getMimeDecoder().decode(output.lineSequence().filterNot { it.startsWith("-----") }.joinToString(""))
-                assertArrayEquals(card.keyPair.public.encoded, spki)
+                val expected = card.keyPair.public.encoded
+                if (algorithm == KeyAlgorithm.RSA2048) assertArrayEquals(expected, spki)
+                else {
+                    val imported = PublicKeyFactory.createKey(spki) as ECPublicKeyParameters
+                    val original = PublicKeyFactory.createKey(expected) as ECPublicKeyParameters
+                    assertEquals(original.parameters.curve, imported.parameters.curve)
+                    assertEquals(original.parameters.g, imported.parameters.g)
+                    assertEquals(original.parameters.n, imported.parameters.n)
+                    assertEquals(original.parameters.h, imported.parameters.h)
+                    assertEquals(original.q, imported.q)
+                    val canonical = SubjectPublicKeyInfo(SubjectPublicKeyInfo.getInstance(expected).algorithm,
+                        SubjectPublicKeyInfo.getInstance(spki).publicKeyData.bytes).encoded
+                    assertArrayEquals(expected, canonical)
+                }
             } finally { Files.list(directory).use { it.forEach(Files::delete) }; Files.delete(directory) }
         }
     }
