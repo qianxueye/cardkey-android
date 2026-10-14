@@ -2,6 +2,7 @@ package cc.cardkey.provider
 
 import android.content.BroadcastReceiver
 import android.content.Intent
+import android.hardware.usb.UsbConfiguration
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import cc.cardkey.protocol.CardChannel
@@ -53,6 +54,7 @@ class ProviderRecognitionActivityTest {
     private fun reader(): UsbReaderDescriptor {
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", "provider-recognition")
+        ReflectionHelpers.setField(device, "mConfigurations", emptyArray<UsbConfiguration>())
         shadowOf(RuntimeEnvironment.getApplication().getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(device, true)
         return UsbReaderDescriptor(device, 1, CardWire.CTAP)
     }
