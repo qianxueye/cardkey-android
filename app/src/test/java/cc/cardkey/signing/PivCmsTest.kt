@@ -21,14 +21,14 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.junit.Assert.*
 import org.junit.Test
 
-internal fun documentCertificate(card: EnrollmentCard, ca: Boolean = false, usage: Int = KeyUsage.digitalSignature,
+internal fun documentCertificate(card: EnrollmentCard, ca: Boolean = false, usage: Int? = KeyUsage.digitalSignature,
                                  eku: String? = PivCms.DOCUMENT_SIGNING_EKU,
                                  start: Long = System.currentTimeMillis() - 60_000,
                                  end: Long = System.currentTimeMillis() + 86_400_000): X509Certificate {
     val name = X500Name("CN=Synthetic document signer")
     val builder = JcaX509v3CertificateBuilder(name, BigInteger.ONE, Date(start), Date(end), name, card.keyPair.public)
         .addExtension(Extension.basicConstraints, true, BasicConstraints(ca))
-        .addExtension(Extension.keyUsage, true, KeyUsage(usage))
+    if (usage != null) builder.addExtension(Extension.keyUsage, true, KeyUsage(usage))
     if (eku != null) builder.addExtension(Extension.extendedKeyUsage, false,
         ExtendedKeyUsage(KeyPurposeId.getInstance(ASN1ObjectIdentifier(eku))))
     return JcaX509CertificateConverter().getCertificate(builder.build(JcaContentSignerBuilder(card.algorithm.signature).build(card.keyPair.private)))
@@ -92,7 +92,7 @@ class PivCmsTest {
     }
 
     @Test fun profileRejectionsNeverVerifyPinOrSign() {
-        for (failure in listOf("missing", "malformed", "wrong-key", "ca", "wrong-ku", "client-auth", "no-eku", "expired", "future", "no-metadata", "unsupported", "no-key")) {
+        for (failure in listOf("missing", "malformed", "wrong-key", "ca", "wrong-ku", "no-ku", "client-auth", "no-eku", "expired", "future", "no-metadata", "unsupported", "no-key")) {
             val card = EnrollmentCard()
             val now = System.currentTimeMillis()
             card.certificate = when (failure) {
@@ -101,6 +101,7 @@ class PivCmsTest {
                 "wrong-key" -> documentCertificate(EnrollmentCard()).encoded
                 "ca" -> documentCertificate(card, ca = true).encoded
                 "wrong-ku" -> documentCertificate(card, usage = KeyUsage.keyEncipherment).encoded
+                "no-ku" -> documentCertificate(card, usage = null).encoded
                 "client-auth" -> documentCertificate(card, eku = "1.3.6.1.5.5.7.3.2").encoded
                 "no-eku" -> documentCertificate(card, eku = null).encoded
                 "expired" -> documentCertificate(card, start = now - 120_000, end = now - 60_000).encoded
@@ -108,7 +109,7 @@ class PivCmsTest {
                 else -> documentCertificate(card).encoded
             }
             if (failure in listOf("no-metadata", "unsupported", "no-key")) card.slotMetadata =
-                PivTlv.encode(2, byteArrayOf(2, 1)) + PivTlv.encode(3, byteArrayOf(0)) +
+                PivTlv.encode(2, byteArrayOf(2, 1)) + PivTlv.encode(3, byteArrayOf(1)) +
                     when (failure) {
                         "no-metadata" -> byteArrayOf()
                         "unsupported" -> PivTlv.encode(1, byteArrayOf(0x22))
@@ -126,15 +127,30 @@ class PivCmsTest {
         card.certificate = cert.encoded
         val bytes = byteArrayOf(1, 2, 3)
         val encoded = (CardSession(card).run { PivClient(it).signCmsFile(0x9c, "123456".toCharArray(), bytes) } as OperationResult.Completed).value
-        for (failure in listOf("changed-file", "wrong-cert", "corrupt", "missing-cert", "missing-attrs")) {
+        for (failure in listOf("changed-file", "wrong-cert", "corrupt", "missing-cert", "missing-attrs", "wrong-content-type", "wrong-digest", "duplicate-digest")) {
             val cms = CMSSignedData(encoded)
             val altered = when (failure) {
                 "corrupt" -> encoded.copyOf().apply { this[lastIndex] = (last().toInt() xor 1).toByte() }
                 "missing-cert" -> CMSSignedData.replaceCertificatesAndCRLs(cms, org.bouncycastle.util.CollectionStore<org.bouncycastle.cert.X509CertificateHolder>(emptyList()), null, null).encoded
-                "missing-attrs" -> {
+                "missing-attrs", "wrong-content-type", "wrong-digest", "duplicate-digest" -> {
                     val content = org.bouncycastle.asn1.cms.SignedData.getInstance(cms.toASN1Structure().content)
                     val signer = org.bouncycastle.asn1.cms.SignerInfo.getInstance(content.signerInfos.getObjectAt(0))
-                    val changed = org.bouncycastle.asn1.cms.SignerInfo(signer.sid, signer.digestAlgorithm, null as org.bouncycastle.asn1.ASN1Set?, signer.digestEncryptionAlgorithm, signer.encryptedDigest, null as org.bouncycastle.asn1.ASN1Set?)
+                    val attributes = if (failure == "missing-attrs") null else {
+                        val vector = org.bouncycastle.asn1.ASN1EncodableVector()
+                        for (attribute in signer.authenticatedAttributes) {
+                            val parsed = org.bouncycastle.asn1.cms.Attribute.getInstance(attribute)
+                            vector.add(when {
+                                parsed.attrType == CMSAttributes.contentType && failure == "wrong-content-type" ->
+                                    org.bouncycastle.asn1.cms.Attribute(parsed.attrType, org.bouncycastle.asn1.DERSet(ASN1ObjectIdentifier("1.2.3")))
+                                parsed.attrType == CMSAttributes.messageDigest && failure == "wrong-digest" ->
+                                    org.bouncycastle.asn1.cms.Attribute(parsed.attrType, org.bouncycastle.asn1.DERSet(org.bouncycastle.asn1.DEROctetString(ByteArray(32))))
+                                else -> parsed
+                            })
+                            if (failure == "duplicate-digest" && parsed.attrType == CMSAttributes.messageDigest) vector.add(parsed)
+                        }
+                        org.bouncycastle.asn1.DERSet(vector)
+                    }
+                    val changed = org.bouncycastle.asn1.cms.SignerInfo(signer.sid, signer.digestAlgorithm, attributes, signer.digestEncryptionAlgorithm, signer.encryptedDigest, null as org.bouncycastle.asn1.ASN1Set?)
                     org.bouncycastle.asn1.cms.ContentInfo(cms.toASN1Structure().contentType,
                         org.bouncycastle.asn1.cms.SignedData(content.digestAlgorithms, content.encapContentInfo, content.certificates, content.crLs, org.bouncycastle.asn1.DERSet(changed))).encoded
                 }
@@ -145,6 +161,28 @@ class PivCmsTest {
                     if (failure == "wrong-cert") documentCertificate(EnrollmentCard()) else cert, card.algorithm)
                 fail(failure)
             } catch (expected: CardFailure) { assertEquals(FailureCode.MALFORMED_RESPONSE, expected.code) }
+        }
+    }
+
+    @Test fun incorrectPinAndLostVerificationPreserveFailureEvidenceWithoutSigning() {
+        for (lost in listOf(false, true)) {
+            val card = EnrollmentCard().apply {
+                certificate = documentCertificate(this).encoded
+                if (!lost) pinStatus = 0x63c2
+            }
+            val channel = object : CardChannel by card {
+                override fun transmit(command: ByteArray): ByteArray {
+                    val response = card.transmit(command)
+                    if (lost && command[1].toInt() and 255 == 0x20) throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
+                    return response
+                }
+            }
+            val result = CardSession(channel).run { PivClient(it).signCmsFile(0x9c, "123456".toCharArray(), byteArrayOf(1)) } as OperationResult.Failed
+            assertEquals(if (lost) FailureCode.TRANSPORT_FAILURE else FailureCode.PIN_INVALID, result.code)
+            assertEquals(if (lost) Effect.UNKNOWN else Effect.APPLIED, result.effect)
+            assertEquals(if (lost) Dispatch.RESPONSE_UNAVAILABLE else null, result.dispatch)
+            assertEquals(1, card.commands.count { it.ins == 0x20 })
+            assertEquals(0, card.commands.count { it.ins == 0x87 })
         }
     }
 
