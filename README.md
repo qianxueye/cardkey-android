@@ -23,6 +23,8 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. CI uses public Ubu
 - App-local PIV TLS qualification: one TLS 1.3 request using the imported P-256/9A identity, a fresh PIN and a separately selected server root. Qualification requires a bodyless HTTP 204 from the chosen endpoint; cancellation preserves card effects and uncertain APDU outcomes. [TLS scope and tests](docs/PIV-TLS-QUALIFICATION.md)
 - PIV reset only when the card already reports both PIN and PUK blocked. The app never consumes retries to reach that state. Blocking both has already erased keys in the supported CardKey profile.
 
+The CardKey PIV slot profile is 9A, 9C, 9D, 9E and 82–8C; 9B remains the management-key reference. Valid empty-slot metadata retains the returned PIN policy, touch policy and origin without inventing an algorithm or public key. Private-key operations reject empty slots before PIN verification or management authentication.
+
 Management actions use the approved Chinese confirmation and result messages. PIN/PUK-sensitive PIV operations read live retry counts before verification; a last attempt that could erase keys requires an additional confirmation and a second check of those facts in the same session. Unknown writes block further mutations. For HID, routine inspection cannot resolve an unknown write because a USB route does not establish card identity. These controls do not replace physical device acceptance. [Copy scope](docs/COPY-PROPOSAL.md)
 
 ## Card and session rules

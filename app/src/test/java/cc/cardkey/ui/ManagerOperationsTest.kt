@@ -1,11 +1,77 @@
 package cc.cardkey.ui
 
+import cc.cardkey.enrollment.EnrollmentCard
 import cc.cardkey.protocol.*
+import cc.cardkey.protocol.piv.*
 import cc.cardkey.protocol.fido.*
 import org.junit.Assert.*
 import org.junit.Test
 
 class ManagerOperationsTest {
+    @Test fun pivSlotReportsActualPoliciesForEmptyAndPopulatedMetadata() {
+        val pins = listOf("无需 PIN", "会话内验证一次", "每次操作验证")
+        val touches = listOf("无需触摸", "每次操作触摸", "允许缓存触摸确认")
+        for (empty in listOf(true, false)) for (pin in 1..3) for (touch in 1..3) {
+            val card = EnrollmentCard().apply {
+                val policy = PivTlv.encode(2, byteArrayOf(pin.toByte(), touch.toByte()))
+                slotMetadata = if (empty) policy + PivTlv.encode(3, byteArrayOf(0))
+                    else PivTlv.parse(metadata()).entries.fold(byteArrayOf()) { bytes, (tag, value) ->
+                        bytes + if (tag == 2) policy else PivTlv.encode(tag, value)
+                    }
+            }
+            val result = CardSession(card).run {
+                ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SLOT, slot = 0x9c))
+            } as OperationResult.Completed
+            val rows = result.value.rows.associate { it.label to it.value }
+            assertEquals(pins[pin - 1], rows["PIN 验证策略"])
+            assertEquals(touches[touch - 1], rows["触摸确认策略"])
+            assertEquals(if (empty) null else "P256", rows["算法"])
+            assertEquals(!empty, rows.containsKey("公钥"))
+            assertEquals(Effect.NONE, result.effect)
+            assertTrue(card.commands.all { it.ins in listOf(0xa4, 0xf7, 0xcb) })
+        }
+    }
+
+    @Test fun pivGenerationReportsReadbackPolicies() {
+        val card = EnrollmentCard()
+        val result = CardSession(card).run {
+            ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_GENERATE, slot = 0x9c,
+                algorithm = KeyAlgorithm.P256, pinPolicy = PinPolicy.ONCE,
+                managementAlgorithm = ManagementAlgorithm.TDES, adminKey = card.managementKey.copyOf()))
+        } as OperationResult.Completed
+        val rows = result.value.rows.associate { it.label to it.value }
+        assertEquals("P256", rows["算法"])
+        assertEquals("会话内验证一次", rows["PIN 验证策略"])
+        assertEquals("无需触摸", rows["触摸确认策略"])
+        assertTrue(rows.containsKey("公钥"))
+        assertEquals(Effect.APPLIED, result.effect)
+        assertEquals(1, card.commands.count { it.ins == 0x47 })
+    }
+
+    @Test fun pivAbsentMetadataDoesNotInventPolicies() {
+        val commands = mutableListOf<Int>()
+        val card = object : CardChannel {
+            override val medium = Medium.CONTACT
+            override val maxCommandBytes = 261
+            override fun close() = Unit
+            override fun transmit(command: ByteArray): ByteArray {
+                val ins = command[1].toInt() and 255
+                commands += ins
+                return when (ins) {
+                    0xa4 -> "9000".hexBytes()
+                    0xf7 -> "6a88".hexBytes()
+                    0xcb -> "6a82".hexBytes()
+                    else -> error("Unexpected APDU")
+                }
+            }
+        }
+        val result = CardSession(card).run {
+            ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SLOT))
+        } as OperationResult.Completed
+        assertTrue(result.value.rows.isEmpty())
+        assertEquals(listOf(0xa4, 0xf7, 0xcb), commands)
+    }
+
     @Test fun fidoInformationWorkflowSelectsBeforeReading() {
         val requests = mutableListOf<ByteArray>()
         val channel = object : CardChannel {
