@@ -17,7 +17,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. CI uses public Ubu
 ## Management workflows
 
 - FIDO2: authenticator information, retries, credential capacity, PIN set/change, resident RP and credential selection, PIN-authenticated signature proof using the enumerated public key, credential deletion/user updates, always-UV, minimum PIN length, and provisioned enterprise-attestation activation.
-- Selected-credential Large Blob: explicit proof, one-use private key, fresh same-session proof before each read/write, bounded file input and confirmed decrypted export. [Selected credential workflow](docs/manager-fido.md)
+- Selected-credential Large Blob: explicit proof, one-use blob key, fresh same-session proof before each read/write, bounded file input and confirmed decrypted export. [Selected credential workflow](docs/manager-fido.md)
 - Diagnostics: CTAP registration/assertion and U2F signature verification; `credProtect`, `credBlob`, `hmac-secret`, `minPinLength`, `largeBlobKey`, and bounded encrypted large-blob access.
 - PIV: information, slot metadata, public keys and certificates; PIN/PUK changes and unblock; 3DES/AES management authentication and key changes; RSA-2048/P-256/P-384 generation; verified card-signed CSR export; matching certificate import/readback; bounded raw-file signing with independent verification and `signature.bin` export; ECDH and RSA-decryption checks. [File-signing scope](docs/PIV-FILE-SIGNING.md)
 - PIV／PKI: CN-only P-256 slot 9A client-certificate enrollment with a selected step-ca root, CSR-bound administrator token, PKIX/profile checks and explicit certificate import/readback. [Enrollment scope](docs/PIV-ENROLLMENT.md)

@@ -196,6 +196,27 @@ class InventoryActivityTest {
             compose.waitForIdle(); assertEquals(0, opens); assertNull(model(fresh.get()).inventoryExportId)
         } finally { fresh.pause().stop().destroy() }
     }
+    @Test fun nativeTagCallbackCapturesOwnerBeforePostingToMainThread() {
+        org.robolectric.shadows.ShadowNfcAdapter.setNfcHardwareExists(true)
+        shadowOf(org.robolectric.RuntimeEnvironment.getApplication().packageManager)
+            .setSystemFeature(android.content.pm.PackageManager.FEATURE_NFC, true)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup().visible()
+        try {
+            val owner = model(controller.get()); val card = InventoryCard()
+            shadowOf(android.nfc.NfcAdapter.getDefaultAdapter(controller.get())).setEnabled(true)
+            fun submit() = owner.submit(OperationInput(ManagerOperation.FIDO_VERIFY_CREDENTIAL,
+                pin = "1234".toCharArray(), inventoryGeneration = owner.inventory.state.value.generation))
+            seedInventory(owner.inventory, card); compose.waitForIdle(); submit()
+            assertTrue(owner.state.value.awaitingNfc)
+            val tag = org.robolectric.shadow.api.Shadow.newInstanceOf(android.nfc.Tag::class.java)
+            Thread { controller.get().onTagDiscovered(tag) }.apply { start(); join() }
+            owner.cancel(); seedInventory(owner.inventory, card); submit()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue("A native callback posted for the cancelled owner must not dispatch the replacement", owner.state.value.awaitingNfc)
+            assertNull(ReflectionHelpers.getField<android.nfc.Tag?>(controller.get(), "lastNfcTag"))
+            assertEquals(0, card.assertions)
+        } finally { model(controller.get()).cancel(); controller.pause().stop().destroy() }
+    }
     @Test fun retiredExportCallbackCannotWriteOrConsumeNewerSnapshot() {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup().visible()
         try {

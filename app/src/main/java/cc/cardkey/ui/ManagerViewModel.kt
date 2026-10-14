@@ -89,6 +89,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val networkCall = AtomicReference<okhttp3.Call?>(null)
     private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
+    @Volatile var pendingNfcOwner: Long? = null
+        private set
     private var inProgress = false
     @Volatile private var cancelled = false
     private var presenceBlockedReader: String? = null
@@ -530,6 +532,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
         if (mutable.value.nfc) {
             pending = input
+            pendingNfcOwner = requireNotNull(input.inventoryRequest).generation
             mutable.value = mutable.value.copy(awaitingNfc = true)
             refreshNfc()
         } else {
@@ -556,18 +559,23 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             !adapter.isEnabled -> FailureCode.NFC_DISABLED
             else -> return
         }
+        pendingNfcOwner = null
         pending?.close()
         pending = null
         finish(OperationResult.Failed(failure, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED))
     }
 
-    fun onTag(tag: Tag) {
+    fun onTag(tag: Tag, owner: Long): Boolean {
+        if (owner != pendingNfcOwner) return false
+        val input = pending ?: return false
         viewModelScope.launch {
-            val input = pending ?: return@launch
+            if (owner != pendingNfcOwner || pending !== input) return@launch
+            pendingNfcOwner = null
             pending = null
             mutable.value = mutable.value.copy(awaitingNfc = false)
             run(input) { NfcCardChannel.connect(tag) }
         }
+        return true
     }
 
     private fun run(input: OperationInput, connect: () -> CardChannel) {
@@ -765,6 +773,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         mutable.value = mutable.value.copy(result = mutable.value.result.takeIf { preserveSignatureResult }, userPresenceRequired = false)
         retryApproval?.complete(false)
         presenceWatch?.cancel()
+        pendingNfcOwner = null
         pending?.close()
         pending = null
         currentChannel.get()?.let { channel -> viewModelScope.launch(Dispatchers.IO) {

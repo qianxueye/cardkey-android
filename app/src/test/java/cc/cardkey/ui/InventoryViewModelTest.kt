@@ -73,7 +73,7 @@ class InventoryViewModelTest {
         model.submit(input)
         assertTrue(model.state.value.awaitingNfc)
         InventoryIsoDepShadow.channel = card.channel(CardWire.APDU)
-        model.onTag(Shadow.newInstanceOf(Tag::class.java))
+        model.onTag(Shadow.newInstanceOf(Tag::class.java), requireNotNull(model.pendingNfcOwner))
         await { !model.state.value.busy }
         return input
     }
@@ -107,9 +107,10 @@ class InventoryViewModelTest {
         assertFalse(model.state.value.busy); assertTrue(stale.pin.all { it == '\u0000' })
         val current = input(ManagerOperation.FIDO_VERIFY_CREDENTIAL)
         model.submit(current); assertTrue(model.state.value.awaitingNfc)
+        val owner = requireNotNull(model.pendingNfcOwner)
         model.cancel(); assertTrue(current.pin.all { it == '\u0000' })
         InventoryIsoDepShadow.channel = card.channel(CardWire.APDU)
-        model.onTag(Shadow.newInstanceOf(Tag::class.java))
+        assertFalse(model.onTag(Shadow.newInstanceOf(Tag::class.java), owner))
         assertEquals(0, card.assertions); assertFalse(model.state.value.busy)
     }
     @Test fun pickerPauseRetiresKeyThenExplicitProofEnablesExactlyOneWriteOfBoundBytes() {
@@ -152,7 +153,7 @@ class InventoryViewModelTest {
         card.afterAssertion = { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
         model.submit(input(ManagerOperation.FIDO_VERIFY_CREDENTIAL))
         InventoryIsoDepShadow.channel = card.channel(CardWire.APDU)
-        model.onTag(Shadow.newInstanceOf(Tag::class.java))
+        model.onTag(Shadow.newInstanceOf(Tag::class.java), requireNotNull(model.pendingNfcOwner))
         assertTrue(entered.await(5, TimeUnit.SECONDS))
         model.cancel(); assertTrue(model.state.value.busy)
         release.countDown(); await { !model.state.value.busy }
@@ -220,6 +221,30 @@ class InventoryViewModelTest {
         assertTrue(closed.await(5, TimeUnit.SECONDS))
         await { temporary?.all { it == 0.toByte() } == true }
         assertNull(model.inventory.state.value.fileSize); assertNull(model.inventory.state.value.credential)
+    }
+    @Test fun queuedOldTagCannotConsumeReplacementPendingRequest() {
+        val card = InventoryCard(); seedInventory(model.inventory, card)
+        val scheduler = TestCoroutineScheduler()
+        Dispatchers.setMain(StandardTestDispatcher(scheduler))
+        try {
+            val old = input(ManagerOperation.FIDO_VERIFY_CREDENTIAL)
+            model.submit(old)
+            val oldOwner = requireNotNull(model.pendingNfcOwner)
+            model.onTag(Shadow.newInstanceOf(Tag::class.java), requireNotNull(model.pendingNfcOwner))
+            model.cancel()
+            assertTrue(old.pin.all { it == '\u0000' })
+            seedInventory(model.inventory, card)
+            model.submit(input(ManagerOperation.FIDO_VERIFY_CREDENTIAL))
+            InventoryIsoDepShadow.channel = card.channel(CardWire.APDU)
+            assertFalse(model.onTag(Shadow.newInstanceOf(Tag::class.java), oldOwner))
+            scheduler.runCurrent()
+            assertTrue("The old tag callback must leave the replacement waiting for its own tag", model.state.value.awaitingNfc)
+            assertEquals(0, card.assertions)
+            model.onTag(Shadow.newInstanceOf(Tag::class.java), requireNotNull(model.pendingNfcOwner))
+            await { scheduler.runCurrent(); !model.state.value.busy }
+            assertTrue(model.state.value.result is OperationResult.Completed)
+            assertEquals(1, card.assertions)
+        } finally { model.cancel(); await { scheduler.runCurrent(); !model.state.value.busy } }
     }
     @Test fun unrelatedActionRetiresPendingReadAndLoadedPlaintext() {
         val card = InventoryCard(); seedInventory(model.inventory, card)

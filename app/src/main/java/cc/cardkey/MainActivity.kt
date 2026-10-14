@@ -262,7 +262,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     override fun onTagDiscovered(tag: android.nfc.Tag) {
-        runOnUiThread { lastNfcTag = tag; model.onTag(tag) }
+        val owner = model.pendingNfcOwner ?: return
+        runOnUiThread { if (model.onTag(tag, owner)) lastNfcTag = tag }
     }
     override fun onDestroy() {
         inventoryExporters.values.toList().forEach { it.unregister() }
