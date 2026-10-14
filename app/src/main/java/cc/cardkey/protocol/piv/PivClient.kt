@@ -241,6 +241,21 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         signature
     }
 
+    fun signCmsFile(slot: Int, pin: CharArray, bytes: ByteArray): ByteArray = withPin(pin) { encodedPin ->
+        session.requireContact()
+        require(bytes.size in 1..MAX_SIGNING_FILE_BYTES)
+        requireSlot(slot)
+        select()
+        val metadata = slotMetadata(slot)
+        if (metadata.publicKey == null) throw CardFailure(FailureCode.UNSUPPORTED)
+        val certificate = certificate(slot) ?: throw CardFailure(FailureCode.INVALID_INPUT)
+        val algorithm = cc.cardkey.signing.PivCms.requireEligible(certificate, metadata)
+        cc.cardkey.signing.PivCms.generate(bytes, certificate, algorithm) { attributes ->
+            verifyEncoded(encodedPin)
+            sign(slot, algorithm, attributes)
+        }
+    }
+
     fun checkTlsIdentity(expectedLeaf: ByteArray, expectedSpki: ByteArray): PivInfo {
         session.requireContact()
         val info = readInfo()
