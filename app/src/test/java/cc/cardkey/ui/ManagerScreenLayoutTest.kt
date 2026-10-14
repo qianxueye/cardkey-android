@@ -306,7 +306,8 @@ class ManagerScreenLayoutTest {
             update(ManagerState(operation = ManagerOperation.PIV_CSR,
                 result = OperationResult.Completed(report, Effect.NONE)))
             compose.onNodeWithText("公钥").assertDoesNotExist()
-            compose.onNodeWithText("PIN 剩余重试次数 · 3 次").assertExists()
+            compose.onNodeWithText("PIN 剩余重试次数").assertExists()
+            compose.onNodeWithText("3 次").assertExists()
             compose.onNodeWithText("导出").performScrollTo().performClick()
             assertSame(report, exported)
             compose.onNodeWithTag("result-details").performScrollTo().performClick()

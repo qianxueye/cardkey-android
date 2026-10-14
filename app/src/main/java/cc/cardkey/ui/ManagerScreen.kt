@@ -345,8 +345,11 @@ fun ManagerScreen(
                                             "credProtect", "credBlob", "用户验证方法")
                                         val technicalRows = result.value.rows.filter { it.label in technicalLabels }
                                         result.value.rows.filterNot { it.label in technicalLabels }.forEach { row ->
-                                            SelectionContainer {
-                                                Text(if (row.label.isBlank()) row.value else "${row.label} · ${row.value}")
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                Text(row.label, modifier = Modifier.weight(0.35f), style = MaterialTheme.typography.labelLarge)
+                                                SelectionContainer(Modifier.weight(0.65f)) {
+                                                    Text(row.value, style = MaterialTheme.typography.bodyMedium)
+                                                }
                                             }
                                         }
                                         var detailsExpanded by remember(result.value) { mutableStateOf(false) }
