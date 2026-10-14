@@ -1,6 +1,7 @@
 package cc.cardkey.ui
 
 import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbConfiguration
 import android.hardware.usb.UsbManager
 import android.nfc.NfcAdapter
 import android.net.Uri
@@ -43,6 +44,7 @@ import java.util.concurrent.TimeUnit
 @Config(sdk = [34], manifest = Config.NONE)
 class ManagerRecognitionTest {
     private val app get() = RuntimeEnvironment.getApplication()
+    private var readerNumber = 0
 
     @Before fun setup() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -52,9 +54,10 @@ class ManagerRecognitionTest {
     }
     @After fun teardown() { Dispatchers.resetMain() }
 
-    private fun reader(name: String = "recognition-reader", wire: CardWire = CardWire.CTAP): UsbReaderDescriptor {
+    private fun reader(name: String = "recognition-reader-${++readerNumber}", wire: CardWire = CardWire.CTAP): UsbReaderDescriptor {
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", name)
+        ReflectionHelpers.setField(device, "mConfigurations", emptyArray<UsbConfiguration>())
         shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(device, true)
         return UsbReaderDescriptor(device, 1, wire)
     }
@@ -237,7 +240,11 @@ class ManagerRecognitionTest {
                 "permission" -> { model.permissionPending(true); model.permissionPending(false) }
                 "pause" -> model.pauseForActivity(changingConfigurations = true)
                 "cancel" -> model.cancel()
-                "detach" -> { UsbAuthenticatorReader.invalidate(selected); model.refreshReaders() }
+                "detach" -> {
+                    shadowOf(app.getSystemService(UsbManager::class.java)).removeUsbDevice(selected.device)
+                    UsbAuthenticatorReader.invalidate(selected)
+                    model.refreshReaders()
+                }
             }
             assertNull("Recognition survives $retirement", model.state.value.recognition)
             assertFalse(model.state.value.canEnterFidoSecrets)
@@ -266,7 +273,11 @@ class ManagerRecognitionTest {
                     "cancel" -> model.cancel()
                     "pause" -> model.pauseForActivity(changingConfigurations = false)
                     "detach" -> UsbAuthenticatorReader.invalidate(selected)
-                    "permissionLost" -> shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(selected.device, false)
+                    "permissionLost" -> {
+                        val usb = app.getSystemService(UsbManager::class.java)
+                        shadowOf(usb).addOrUpdateUsbDevice(selected.device, false)
+                        assertFalse(usb.hasPermission(selected.device))
+                    }
                 }
             } finally { release.countDown() }
             awaitResult(model)
@@ -453,7 +464,11 @@ class ManagerRecognitionTest {
             model.selectReader(selected)
             preparedSigningFile(model, ManagerOperation.PIV_SIGN, 0x9c)
             when (case) {
-                "permission" -> shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(selected.device, false)
+                "permission" -> {
+                    val usb = app.getSystemService(UsbManager::class.java)
+                    shadowOf(usb).addOrUpdateUsbDevice(selected.device, false)
+                    assertFalse(usb.hasPermission(selected.device))
+                }
                 "uncertainty" -> {
                     val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
                     state.value = state.value.copy(requiresInspection = true)
