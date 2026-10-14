@@ -8,7 +8,7 @@ This lane implements presentation for the authorized complete Android Plexo pack
 
 `PlexoSection(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit)` supplies an 8 dp Material surface, wrapping native heading semantics, 16 dp padding and a non-scrolling Column. Enrollment preparation/request/issuance/import, TLS identity/service/result, provider context and shell detail sections are confirmed consumers. Each caller retains its existing scroll, inputs, warnings, actions and callback ownership.
 
-`PlexoFactRow(label: String, value: String, modifier: Modifier = Modifier)` places the wrapping label above the wrapping value. Label/value semantics are grouped for TalkBack. The shell report, captured enrollment facts, TLS facts and verified provider RP/caller are confirmed consumers. It does not add text selection, reveal secret material, interpret the value, clip it or invent qualification. Secret reveal/copy/export remains controlled by the original caller.
+`PlexoFactRow(label: String, value: String, modifier: Modifier = Modifier)` places the wrapping label above the wrapping value. Label/value semantics are grouped for TalkBack. The shell report, captured enrollment facts, TLS facts and verified provider RP/caller are confirmed consumers. Only the value uses native `SelectionContainer`, preserving the original report rows’ full public/technical text copyability; labels remain outside selection. The component does not reveal secret material, interpret the value, clip it or invent qualification. The original caller still controls whether a value may be displayed and retains separate secret reveal/export conditions.
 
 ## Palette, typography and native targets
 
