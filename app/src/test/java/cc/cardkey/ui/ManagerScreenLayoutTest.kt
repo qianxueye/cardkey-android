@@ -69,6 +69,8 @@ class ManagerScreenLayoutTest {
         }
         try {
             compose.waitForIdle()
+            compose.onNodeWithTag("object-overview").performClick()
+            compose.waitForIdle()
             check(activity) { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
     }
@@ -151,6 +153,7 @@ class ManagerScreenLayoutTest {
 
     private fun submitInvalidManagementHex() {
         compose.onNodeWithText("PIV").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithTag("object-overview").performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(ManagerOperation.PIV_ADMIN.title).performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -277,7 +280,10 @@ class ManagerScreenLayoutTest {
         var submissions = 0
         render(360, 640, onSubmit = { submissions++; it.close() }) { activity, _ ->
             for (piv in listOf(false, true)) {
-                if (piv) compose.onNodeWithText("PIV").performClick()
+                if (piv) {
+                    compose.onNodeWithText("PIV").performClick()
+                    compose.onNodeWithTag("object-overview").performClick()
+                }
                 val actions = ManagerOperation.entries.filter {
                     it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET,
                         ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT)
@@ -293,6 +299,7 @@ class ManagerScreenLayoutTest {
             compose.onNodeWithText("P-256 · 9A").assertExists()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
             compose.onNodeWithText("FIDO2").performClick()
+            compose.onNodeWithTag("object-overview").performClick()
             compose.onNodeWithTag("manager-run").assertExists()
             assertEquals(0, submissions)
         }
@@ -324,6 +331,7 @@ class ManagerScreenLayoutTest {
         var exported: ManagerReport? = null
         render(360, 480, onExport = { exported = it }) { activity, update ->
             compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithTag("object-overview").performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithText(ManagerOperation.PIV_SLOT.title).performClick()
             update(ManagerState(operation = ManagerOperation.PIV_SLOT, result = result))

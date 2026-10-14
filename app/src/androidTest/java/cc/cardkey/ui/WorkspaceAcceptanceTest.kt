@@ -75,6 +75,9 @@ class WorkspaceAcceptanceTest {
             compose.onNodeWithText(activity.getString(R.string.workspace_unread)).assertIsDisplayed()
             for (piv in listOf(false, true)) {
                 if (piv) compose.onNodeWithText("PIV").performClick()
+                compose.onNodeWithTag("workspace-objects").assertExists()
+                compose.onNodeWithTag("manager-run").assertDoesNotExist()
+                compose.onNodeWithTag("object-overview").performClick()
                 val actions = ManagerOperation.entries.filter {
                     it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET,
                         ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT)

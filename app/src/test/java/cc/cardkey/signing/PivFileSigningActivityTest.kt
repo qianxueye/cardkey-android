@@ -67,6 +67,7 @@ class PivFileSigningActivityTest {
         model.selectReader(UsbAuthenticatorReader.discover(manager).single())
         compose.waitForIdle()
         compose.onNodeWithText("PIV").performClick()
+        compose.onNodeWithTag("object-overview").performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(if (format == SignatureFormat.CMS) "CMS 文件签名" else "文件签名").performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.waitForIdle()

@@ -49,7 +49,9 @@ class InventoryActivityTest {
     private fun prepare(activity: MainActivity): Pair<ManagerViewModel, InventoryCard> {
         val model = model(activity); val card = InventoryCard()
         seedInventory(model.inventory, card)
-        compose.waitForIdle(); choose("扩展数据 · 设置")
+        compose.waitForIdle()
+        compose.onNodeWithTag("object-overview").performClick()
+        choose("扩展数据 · 设置")
         return model to card
     }
     private fun waitFor(test: () -> Boolean) = compose.waitUntil(8000) { shadowOf(Looper.getMainLooper()).idle(); test() }

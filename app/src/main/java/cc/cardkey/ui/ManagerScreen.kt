@@ -80,7 +80,7 @@ fun ManagerScreen(
         signingFiles.restoreOperation?.piv == true || signingFiles.active -> 1
         else -> 0
     }) }
-    var objectDetail by remember { mutableStateOf(true) }
+    var objectDetail by remember { mutableStateOf(signingFiles.active || signingFiles.restoringSave || inventory.credential != null && inventory.action != null) }
     val objectListScroll = rememberScrollState()
     val detailScroll = rememberScrollState()
     var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) signingFiles.operation else inventory.action ?: ManagerOperation.FIDO_INFO) }
@@ -128,6 +128,9 @@ fun ManagerScreen(
         ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE,
         ManagerOperation.PIV_IMPORT, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE))
     SideEffect { onSecureChange(tab == 1 || tab == 3 || secretForm || secretResult || state.lastRetry != null) }
+    LaunchedEffect(state.busy, state.result) {
+        if (state.busy || state.result != null) objectDetail = true
+    }
     LaunchedEffect(state.result) { showSecrets = false; showSecretConfirmation = false; exportConfirmation = null }
     LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc, inventory.generation) {
         pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""; invalid = false
@@ -194,6 +197,7 @@ fun ManagerScreen(
                     if (!state.busy && (index !in listOf(1, 3) || state.supportsPiv)) {
                         confirmation?.close(); confirmation = null
                         tab = index
+                        if (index < 2) objectDetail = false
                         if (index < 2) operation = if (index == 0) ManagerOperation.FIDO_INFO else ManagerOperation.PIV_INFO
                     }
                 }, icon = { Icon(managerDestinationIcons[if (index == 3) 1 else index], contentDescription = null) }, label = { Text(title) })
