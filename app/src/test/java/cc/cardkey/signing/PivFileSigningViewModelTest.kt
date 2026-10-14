@@ -237,4 +237,30 @@ class PivFileSigningViewModelTest {
         }
     }
 
+    @Test fun acceptedOtherOperationRetiresPendingFileReadBeforeItsLateError() {
+        val model = model()
+        assertTrue(model.requestSigningFile())
+        val request = requireNotNull(model.signingFileRequestId)
+        val uri = Uri.parse("content://file-signing/other-action.raw")
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        shadowOf(app.contentResolver).registerInputStream(uri, object : ByteArrayInputStream(byteArrayOf(1)) {
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                entered.countDown(); check(release.await(5, TimeUnit.SECONDS))
+                throw java.io.IOException()
+            }
+        })
+        model.receiveSigningFile(request, uri)
+        var current: OperationResult<ManagerReport>? = null
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            model.submit(OperationInput(ManagerOperation.PIV_INFO))
+            await { !model.state.value.busy }
+            current = model.state.value.result
+            assertNotNull(current)
+        } finally { release.countDown() }
+        await { model.viewModelScope.coroutineContext[Job]!!.children.none { it.isActive } }
+        assertSame(current, model.state.value.result)
+        assertNull(model.signingFiles.state.value.selection)
+    }
+
 }

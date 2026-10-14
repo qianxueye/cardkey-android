@@ -249,6 +249,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
             return
         }
+        signingFiles.retireSelection()
         tlsAttempt.set(attempt)
         cancelled = false
         inProgress = true
@@ -311,6 +312,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             token.fill('\u0000')
             operations.clearSession()
             retireResult()
+            signingFiles.retireSelection()
             networkCall.set(call)
             mutable.update { it.copy(busy = true, result = null, operation = null) }
             viewModelScope.launch {
@@ -423,6 +425,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (mutable.value.requiresInspection && !ConfirmationPolicy.canInspect(input.operation)) {
             input.close(); return
         }
+        signingFiles.retireSelection()
         cancelled = false
         operationRoute = mutable.value.selectedReader?.routeKey ?: "nfc"
         operationWire = mutable.value.selectedReader?.wire ?: CardWire.APDU
