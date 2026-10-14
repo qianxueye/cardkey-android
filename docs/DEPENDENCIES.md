@@ -12,7 +12,7 @@ Original Kotlin protocol and reader implementations were written for this reposi
 | AndroidX Activity Compose | 1.11.0 | Apache-2.0 |
 | AndroidX Lifecycle | 2.9.4 | Apache-2.0 |
 | Kotlin Coroutines Android | 1.10.2 | Apache-2.0 |
-| Bouncy Castle PKIX/provider/util | 1.83 | Bouncy Castle MIT-style license; CSR/CICC ASN.1, JCA support and CS7 AES-CMAC |
+| Bouncy Castle PKIX/provider/TLS/util | 1.83 | Bouncy Castle MIT-style license; CSR/CICC ASN.1, JCA support, CS7 AES-CMAC and app-local external-signer TLS 1.3 |
 | AndroidX Credentials | 1.6.0 | Apache-2.0; Android 14+ provider APIs |
 | AndroidX Fragment constraint | 1.8.9 | Apache-2.0; compatible Activity Result dependency for Credentials |
 | Gson | 2.13.1 | Apache-2.0; strict bounded JSON parsing and response encoding |
@@ -23,7 +23,7 @@ Original Kotlin protocol and reader implementations were written for this reposi
 | JUnit | 4.13.2 | EPL-1.0; tests only |
 | Hamcrest Core | 1.3 (JUnit transitive) | BSD-3-Clause; tests only |
 
-AndroidX, Kotlin standard library, JetBrains annotations and JSpecify transitives use their published public Maven metadata. The build resolves only Google Maven, Maven Central and the public Gradle Plugin Portal. Pinned tool and library versions are visible in the Gradle scripts; network permission is used only for native-app Digital Asset Links HTTPS verification.
+AndroidX, Kotlin standard library, JetBrains annotations and JSpecify transitives use their published public Maven metadata. The build resolves only Google Maven, Maven Central and the public Gradle Plugin Portal. Pinned tool and library versions are visible in the Gradle scripts; network permission supports Digital Asset Links verification, explicit enrollment requests and app-local PIV TLS qualification.
 
 License texts shipped inside third-party JAR/AAR files remain attached to their respective artifacts. The Bouncy Castle notice is also retained under `licenses/BOUNCY-CASTLE.txt`.
 
@@ -50,3 +50,5 @@ Credentials brings Fragment transitively. Its version is constrained to 1.8.9 be
 The Credentials library brings biometric support transitively, but this hardware provider does not invoke it. The manifest removes its unused biometric permissions; it never substitutes a phone biometric result for on-card UV.
 
 Robolectric and Kotlin Coroutines Test are JVM-only dependencies for NFC and ViewModel lifecycle regressions. They are not packaged in the application.
+
+The public `bctls-jdk18on:1.83` dependency matches `bcpkix`, `bcprov` and `bcutil` 1.83. Qualification uses the lightweight TLS API with an instance-local crypto object. It never registers a JCA provider or implements an exportable private key. The resolved 1.83 source for `TlsUtils.generate13CertificateVerify` hashes the TLS 1.3 context and transcript before calling `TlsCredentialedSigner.generateRawSignature` when `getStreamSigner()` returns null. The PIV callback therefore sends that 32-byte digest directly to GENERAL AUTHENTICATE. [Pinned upstream source](https://github.com/bcgit/bc-java/blob/r1rv83/tls/src/main/java/org/bouncycastle/tls/TlsUtils.java).

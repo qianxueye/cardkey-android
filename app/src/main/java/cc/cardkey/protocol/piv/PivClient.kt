@@ -221,6 +221,43 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         }
     }
 
+    fun checkTlsIdentity(expectedLeaf: ByteArray, expectedSpki: ByteArray): PivInfo {
+        session.requireContact()
+        val info = readInfo()
+        val slot = readSlot(0x9a)
+        if (slot.metadata?.algorithm != KeyAlgorithm.P256 || slot.metadata.publicKey == null)
+            throw CardFailure(FailureCode.UNSUPPORTED)
+        if (slot.certificate?.encoded?.contentEquals(expectedLeaf) != true ||
+            !slot.metadata.publicKey.encoded.contentEquals(expectedSpki) ||
+            !slot.certificate.publicKey.encoded.contentEquals(expectedSpki))
+            throw CardFailure(FailureCode.CERTIFICATE_KEY_MISMATCH)
+        return info
+    }
+
+    fun signTlsDigest(pin: CharArray, digest: ByteArray, expectedLeaf: ByteArray,
+                      expectedSpki: ByteArray, expectedInfo: PivInfo, lastRetryApproved: Boolean): ByteArray =
+        withPin(pin) { encodedPin ->
+            require(digest.size == 32)
+            val current = checkTlsIdentity(expectedLeaf, expectedSpki)
+            if (current != expectedInfo) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+            if (current.pin.remaining == 0) throw CardFailure(FailureCode.PIN_BLOCKED)
+            if (current.pin.remaining == 1 && current.puk.remaining == 0 && !lastRetryApproved)
+                throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+            verifyEncoded(encodedPin)
+            // TLS has already hashed CertificateVerify; GA takes that digest unchanged.
+            val signature = privateOperation(0x9a, KeyAlgorithm.P256, 0x81, digest)
+            val verifier = org.bouncycastle.crypto.signers.ECDSASigner()
+            verifier.init(false, org.bouncycastle.crypto.util.PublicKeyFactory.createKey(expectedSpki))
+            try {
+                val values = org.bouncycastle.crypto.signers.StandardDSAEncoding.INSTANCE.decode(
+                    (org.bouncycastle.crypto.util.PublicKeyFactory.createKey(expectedSpki) as
+                        org.bouncycastle.crypto.params.ECPublicKeyParameters).parameters.n, signature)
+                if (!verifier.verifySignature(digest, values[0], values[1])) malformed()
+            } catch (_: java.io.IOException) { malformed() }
+            catch (_: IllegalArgumentException) { malformed() }
+            signature
+        }
+
     fun verifyKeyAgreement(slot: Int, pin: CharArray): Boolean {
         return withPin(pin) { encodedPin ->
             requireSlot(slot)
