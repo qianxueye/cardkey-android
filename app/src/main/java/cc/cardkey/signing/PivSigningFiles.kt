@@ -51,6 +51,7 @@ class PivSigningFiles {
     internal val fileRequestId get() = picker?.id
     internal val saveRequestId get() = save?.id
     internal val saveFormat get() = save?.source?.signatureFormat
+    internal val saveMimeType get() = if (save?.source?.sshPublicKey == true) "text/plain" else saveFormat?.mimeType
     internal fun current(request: SigningFileRequest, currentRoute: String?) =
         request.generation == generation && request.route == route && request.route == currentRoute
 
@@ -93,7 +94,9 @@ class PivSigningFiles {
     internal fun requestSave(report: ManagerReport, operation: ManagerOperation? = null): Boolean {
         if (save != null || writing) return false
         val signature = requireNotNull(report.export)
-        require(report.signatureFormat != null && report.fileName == report.signatureFormat.fileName && signature.isNotEmpty())
+        require(signature.isNotEmpty() && ((report.sshPublicKey && operation == ManagerOperation.PIV_SSH_EXPORT &&
+            report.fileName == "piv-${mutable.value.slot.toString(16)}-ssh.pub") ||
+            (report.signatureFormat != null && report.fileName == report.signatureFormat.fileName)))
         save = SignatureSave(report, signature.copyOf())
         mutable.value = mutable.value.copy(exportOwner = report, exportStatus = null, restoreOperation = operation)
         return true

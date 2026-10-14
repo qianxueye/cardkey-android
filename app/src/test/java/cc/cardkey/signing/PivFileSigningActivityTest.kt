@@ -86,6 +86,38 @@ class PivFileSigningActivityTest {
         return (result as OperationResult.Completed).value
     }
 
+    @Test fun sshPublicKeyMenuExportsAllAlgorithmsThroughOwnedDocumentPicker() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup().visible()
+        try {
+            val activity = controller.get()
+            val model = model(activity)
+            compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText("导出 SSH 公钥").performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.waitForIdle()
+            compose.onNodeWithText("PIN", substring = false).assertDoesNotExist()
+            for (algorithm in cc.cardkey.protocol.piv.KeyAlgorithm.entries) {
+                val card = EnrollmentCard(algorithm = algorithm)
+                val result = CardSession(card).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SSH_EXPORT)) }
+                state(model).value = model.state.value.copy(operation = ManagerOperation.PIV_SSH_EXPORT, result = result)
+                val report = (result as OperationResult.Completed).value
+                compose.waitForIdle()
+                compose.onNodeWithText("导出", substring = false).performScrollTo().performClick()
+                val launch = shadowOf(activity).nextStartedActivityForResult
+                assertEquals(Intent.ACTION_CREATE_DOCUMENT, launch.intent.action)
+                assertEquals("text/plain", launch.intent.type)
+                assertEquals("piv-9a-ssh.pub", launch.intent.getStringExtra(Intent.EXTRA_TITLE))
+                val uri = Uri.parse("content://ssh-activity/${algorithm.name}.pub")
+                val output = ByteArrayOutputStream()
+                shadowOf(activity.contentResolver).registerOutputStream(uri, output)
+                activity.activityResultRegistry.dispatchResult(launch.requestCode, Activity.RESULT_OK, Intent().setData(uri))
+                waitFor { model.signingFiles.state.value.exportStatus == SignatureExportStatus.SAVED }
+                assertArrayEquals(report.export, output.toByteArray())
+                compose.onNodeWithText("已导出 SSH 公钥。").assertExists()
+                assertTrue(card.commands.all { it.ins in setOf(0xa4, 0xf7, 0xc0) })
+            }
+        } finally { controller.pause().stop().destroy() }
+    }
+
     @Test fun rawPickerRecreationKeepsOwnerSlotAndExactBytesThenNormalPauseWipesSelection() = pickerRecreation(SignatureFormat.RAW)
     @Test fun cmsMenuPickerRecreationKeepsActionSlotAndBytesThenNormalPauseWipesSelection() = pickerRecreation(SignatureFormat.CMS)
     private fun pickerRecreation(format: SignatureFormat) {

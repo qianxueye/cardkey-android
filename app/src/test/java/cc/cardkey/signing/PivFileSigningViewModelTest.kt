@@ -63,6 +63,50 @@ class PivFileSigningViewModelTest {
         method.invoke(model, input, { channel })
     }
 
+    @Test fun sshSaveOwnershipRejectsStaleActionSlotReaderAndCancelCallbacks() {
+        for (retirement in listOf("action", "slot", "reader", "cancel")) {
+            val model = model()
+            model.fileSigningAction(ManagerOperation.PIV_SSH_EXPORT, 0x9c)
+            val card = EnrollmentCard()
+            val result = CardSession(card).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SSH_EXPORT, slot = 0x9c)) }
+            state(model).value = model.state.value.copy(operation = ManagerOperation.PIV_SSH_EXPORT, result = result)
+            val report = (result as OperationResult.Completed).value
+            assertTrue(model.requestSignatureSave(report))
+            val id = requireNotNull(model.signatureSaveRequestId)
+            when (retirement) {
+                "action" -> model.fileSigningAction(ManagerOperation.PIV_INFO)
+                "slot" -> model.fileSigningAction(ManagerOperation.PIV_SSH_EXPORT, 0x9a)
+                "reader" -> model.selectReader(null)
+                else -> model.cancel()
+            }
+            val uri = Uri.parse("content://ssh/stale-$retirement.pub")
+            val output = ByteArrayOutputStream()
+            shadowOf(app.contentResolver).registerOutputStream(uri, output)
+            model.receiveSignatureSave(id, uri)
+            assertEquals(0, output.size())
+            assertFalse(model.requestSignatureSave(report))
+            assertNull(model.signingFiles.state.value.exportOwner)
+            model.cancel()
+        }
+    }
+
+    @Test fun sshPickerPauseKeepsFreshResultAndCancellationReceipt() {
+        val model = model()
+        model.fileSigningAction(ManagerOperation.PIV_SSH_EXPORT)
+        val result = CardSession(EnrollmentCard()).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SSH_EXPORT)) }
+        state(model).value = model.state.value.copy(operation = ManagerOperation.PIV_SSH_EXPORT, result = result)
+        val report = (result as OperationResult.Completed).value
+        assertTrue(model.requestSignatureSave(report))
+        val id = requireNotNull(model.signatureSaveRequestId)
+        assertEquals("text/plain", model.signatureSaveMimeType)
+        model.pauseForActivity(false)
+        assertSame(report, (model.state.value.result as OperationResult.Completed).value)
+        model.receiveSignatureSave(id, null)
+        assertEquals(SignatureExportStatus.CANCELLED, model.signingFiles.state.value.exportStatus)
+        assertSame(report, model.signingFiles.state.value.exportOwner)
+        model.cancel()
+    }
+
     @Test fun selectedInputSurvivesOnlyIntentionalPickerPauseAndRejectsActionAba() {
         val model = model()
         assertTrue(model.requestSigningFile())

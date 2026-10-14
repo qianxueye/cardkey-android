@@ -127,4 +127,6 @@
     <string name="signing_cmsVerified">CMS 签名验证：通过</string>
     <string name="signing_cmsScope">导出 .p7s 独立签名，包含签名证书；验证时还需原文件。原文件保持不变。</string>
     <string name="signing_cmsTrust">未验证证书信任链、吊销状态或可信时间。</string>
+    <string name="ssh_publicKeyScope">已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。本操作不验证 SSH 登录。</string>
+    <string name="ssh_publicKeyExported">已导出 SSH 公钥。</string>
 </resources>

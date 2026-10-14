@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
     private fun signatureExporter(id: String): ActivityResultLauncher<String> {
         signatureExporters[id]?.let { return it }
-        val launcher = activityResultRegistry.register("piv-signature-save:$id", ActivityResultContracts.CreateDocument(requireNotNull(model.signatureSaveFormat).mimeType)) { uri ->
+        val launcher = activityResultRegistry.register("piv-signature-save:$id", ActivityResultContracts.CreateDocument(requireNotNull(model.signatureSaveMimeType))) { uri ->
             model.receiveSignatureSave(id, uri)
             signatureExporters.remove(id)?.unregister()
         }
@@ -198,8 +198,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 ManagerScreen(state, clearInputs, ::selectReader, model::refreshReaders, model::submit, model::cancel,
                     { importer.launch(arrayOf("*/*")) }, imported,
                     { report ->
-                        if (report.signatureFormat != null) {
-                            if (model.requestSignatureSave(report)) signatureExporter(requireNotNull(model.signatureSaveRequestId)).launch(report.signatureFormat.fileName)
+                        if (report.signatureFormat != null || report.sshPublicKey) {
+                            if (model.requestSignatureSave(report)) signatureExporter(requireNotNull(model.signatureSaveRequestId)).launch(requireNotNull(report.fileName))
                         } else if (report.inventoryGeneration != null) {
                             model.requestInventoryExport(report)?.let { inventoryExporter(it).launch("credential-blob.bin") }
                         } else if (model.currentEnrollmentExport(report)) {

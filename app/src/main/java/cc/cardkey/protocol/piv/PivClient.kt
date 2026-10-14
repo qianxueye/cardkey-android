@@ -63,6 +63,12 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         PivSlot(slot, slotMetadataOrNull(slot), certificate(slot))
     }
 
+    fun readPublicKeyMetadata(slot: Int): SlotMetadata = validateResponse {
+        requireSlot(slot)
+        select()
+        slotMetadata(slot)
+    }
+
     fun verifyPin(pin: CharArray) {
         return withPin(pin) { encoded ->
             select()

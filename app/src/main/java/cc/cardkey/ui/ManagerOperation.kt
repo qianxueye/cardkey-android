@@ -19,7 +19,7 @@ enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     FIDO_REGISTER("注册 · 验证"), FIDO_ASSERT("签名 · 验证"), FIDO_VERIFY_CREDENTIAL("验证签名"),
     U2F_INFO("U2F · 读取"), U2F_REGISTER("U2F · 注册"), U2F_ASSERT("U2F · 验证"),
     FIDO_BLOB_READ("扩展数据 · 读取"), FIDO_BLOB_WRITE("扩展数据 · 设置"),
-    PIV_INFO("PIV · 读取", true), PIV_SLOT("证书 · 读取", true),
+    PIV_INFO("PIV · 读取", true), PIV_SLOT("证书 · 读取", true), PIV_SSH_EXPORT("导出 SSH 公钥", true),
     PIV_CHANGE_PIN("PIN · 修改", true), PIV_CHANGE_PUK("PUK · 修改", true),
     PIV_UNBLOCK("PIN · 解锁", true), PIV_ADMIN("管理密钥 · 修改", true),
     PIV_GENERATE("生成密钥", true), PIV_CSR("导出 CSR", true),
@@ -28,6 +28,7 @@ enum class ManagerOperation(val title: String, val piv: Boolean = false) {
     PIV_ENROLL_CSR("生成 CSR", true), PIV_ENROLL_IMPORT("导入证书", true),
     PIV_RESET("PIV · 重置", true);
 
+    val isOwnedExport get() = isFileSigning || this == PIV_SSH_EXPORT
     val isFileSigning get() = this == PIV_SIGN || this == PIV_CMS_SIGN
 }
 
@@ -74,7 +75,7 @@ class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob:
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
     val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null,
     val relyingParties: List<RelyingParty>? = null, val credentials: List<Credential>? = null,
-    val inventoryGeneration: Long? = null, val signatureFormat: SignatureFormat? = null) {
+    val inventoryGeneration: Long? = null, val signatureFormat: SignatureFormat? = null, val sshPublicKey: Boolean = false) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
@@ -225,6 +226,13 @@ class ManagerOperations(private val cancelled: () -> Boolean = { false }) {
                     it.certificate?.let { cert -> ResultRow("证书", cert.subjectX500Principal.name) },
                     it.metadata?.publicKey?.let { key -> ResultRow("公钥", Base64.getEncoder().encodeToString(key.encoded)) }),
                     it.certificate?.encoded, "piv-${input.slot.toString(16)}.cer")
+            }
+            ManagerOperation.PIV_SSH_EXPORT -> {
+                val metadata = piv.readPublicKeyMetadata(input.slot)
+                val publicKey = cc.cardkey.ssh.PivSshPublicKey.export(metadata)
+                if (cancelled()) throw CardFailure(FailureCode.CANCELLED)
+                ManagerReport(emptyList(), publicKey, "piv-${input.slot.toString(16)}-ssh.pub",
+                    messages = listOf(R.string.ssh_publicKeyScope), sshPublicKey = true)
             }
             ManagerOperation.PIV_CHANGE_PIN -> { piv.changePin(input.pin, input.newPin); empty() }
             ManagerOperation.PIV_CHANGE_PUK -> { piv.changePuk(input.pin, input.newPin); empty() }

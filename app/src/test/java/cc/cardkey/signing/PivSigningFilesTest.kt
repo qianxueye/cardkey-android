@@ -64,6 +64,32 @@ class PivSigningFilesTest {
         assertNull(PivSigningFiles().takeRequest("orphan"))
     }
 
+    @Test fun sshPublicSaveValidatesSlotAndDoesNotClaimSuccessAfterWriteFailure() {
+        for (mode in listOf("ok", "null", "write", "close", "retire")) {
+            val files = PivSigningFiles()
+            files.action(true, 0x9c, cc.cardkey.ui.ManagerOperation.PIV_SSH_EXPORT)
+            val source = ManagerReport(emptyList(), "ssh-rsa synthetic\n".toByteArray(), "piv-9c-ssh.pub", sshPublicKey = true)
+            assertTrue(files.requestSave(source, cc.cardkey.ui.ManagerOperation.PIV_SSH_EXPORT))
+            val snapshot = files.takeSave(requireNotNull(files.saveRequestId))!!
+            if (mode == "retire") files.retire()
+            var opens = 0
+            val output = object : ByteArrayOutputStream() {
+                override fun write(bytes: ByteArray, offset: Int, length: Int) { if (mode == "write") throw IOException(); super.write(bytes, offset, length) }
+                override fun close() { if (mode == "close") throw IOException() }
+            }
+            val status = PivSigningFiles.writeSignature(snapshot) { opens++; if (mode == "null") null else output }
+            files.finishSave(snapshot, status)
+            assertEquals(if (mode == "ok") SignatureExportStatus.SAVED else SignatureExportStatus.UNKNOWN, status)
+            assertEquals(if (mode == "retire") 0 else 1, opens)
+            if (mode == "ok") assertArrayEquals(source.export, output.toByteArray())
+            if (mode == "retire") assertNull(files.state.value.exportOwner)
+        }
+        val files = PivSigningFiles()
+        files.action(true, 0x9a, cc.cardkey.ui.ManagerOperation.PIV_SSH_EXPORT)
+        try { files.requestSave(ManagerReport(emptyList(), byteArrayOf(1), "piv-9c-ssh.pub", sshPublicKey = true), cc.cardkey.ui.ManagerOperation.PIV_SSH_EXPORT); fail("wrong slot") }
+        catch (_: IllegalArgumentException) { }
+    }
+
     @Test fun saveCapturesOneVerifiedOutputAndWritesOnceWithCloseAcknowledgement() {
         val files = PivSigningFiles()
         val source = ManagerReport(emptyList(), byteArrayOf(1, 2, 3), "signature.bin", signatureFormat = SignatureFormat.RAW)
