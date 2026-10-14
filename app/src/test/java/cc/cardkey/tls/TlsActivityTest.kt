@@ -31,6 +31,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
+@ConscryptMode(ConscryptMode.Mode.OFF)
 @Config(sdk = [34], shadows = [TlsDnsShadow::class], qualifiers = "w400dp-h800dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -152,7 +153,10 @@ class TlsActivityTest {
                 }
                 val method = ManagerViewModel::class.java.getDeclaredMethod("startTls", CharArray::class.java, Function0::class.java).apply { isAccessible = true }
                 method.invoke(model, "123456".toCharArray(), { channel })
-                waitFor { entered.count == 0L }
+                try { waitFor { entered.count == 0L } }
+                catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
+                    throw AssertionError("TLS before VERIFY: ${model.tls.value.result}; server: ${server.failure?.stackTraceToString()}", error)
+                }
                 controller.pause()
                 assertTrue(model.state.value.busy)
                 assertTrue(cancels > 0)

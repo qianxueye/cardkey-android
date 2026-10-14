@@ -265,3 +265,25 @@ The full `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --o
 Both APKs built. Lint reported zero errors and the same ten warning locations: one `GetInstance` and nine `TrustAllX509TrustManager`. No baseline, suppression, dependency change or test-floor reduction was added. The CMS protocol code is unchanged, so the three-algorithm independent OpenSSL evidence from the controller checkpoint remains applicable.
 
 No device installation or launch occurred in this package. Instrumentation execution and physical-card, reader, identity and deployment acceptance remain separate root-owned steps.
+
+
+## Desktop TLS fixture provider boundary
+
+`TlsActivityTest` and `TlsViewModelTest` host their synthetic peer with desktop SunJSSE. These two Robolectric classes use `@ConscryptMode(ConscryptMode.Mode.OFF)`: Robolectric omits its preferred Conscrypt provider and retains BouncyCastle, as defined in [the official configuration documentation](https://robolectric.org/configuring/#conscryptmode). Other Robolectric classes keep their existing provider mode.
+
+The reproduced failure occurred before PIN or signing dispatch. JDK 17 `SSLSessionImpl` initialized `NamedGroup`, which requested EC algorithm parameters for a binary field (`ECFieldF2m`). The preferred Conscrypt provider threw `InvalidParameterException: unhandled field class java.security.spec.ECFieldF2m`, leaving the JDK TLS classes uninitialized. Subsequent handshakes failed with `NoClassDefFoundError`. The original initializer stack is retained in `/private/tmp/android-workspace-tls-initializer-diagnostic.log`; the integrated red run is retained in `/private/tmp/android-workspace-integrated-full-gate.log`.
+
+This configuration applies only to these two host JVM test classes. The application still uses its existing Bouncy Castle lightweight TLS client. No production provider, cipher, trust check, PIN/card policy, acceptance assertion, timeout, dependency or test count changes. The activity's existing 8-second VERIFY wait reports the synthetic server cause if it times out.
+
+
+## Android Material management workspace
+
+The workspace keeps the selected reader and actual operation status together, groups common work before advanced diagnostics, and presents successful results, required next steps and export state before expandable protocol fields. Credential and slot selectors precede their task controls. Certificate application is a separate Material navigation destination; the existing TLS-only 9A/P-256 CSR → CA issuance → validation → explicit import/readback flow and App-local TLS qualification retain their original guards. RAW and CMS signing remain reachable, with the merged CMS file, PIN, confirmation, cancellation and export ownership semantics intact. Applied wording and scope are recorded in [the workspace copy record](WORKSPACE-COPY-RECORD.zh-CN.md), linked to [CardKey #35](https://github.com/qianxueye/cardkey/issues/35).
+
+The package adds four Compose tests and preserves the 768-test CMS floor. Checks cover browsing every available task without submission, a 20-reader list, busy certificate navigation/cancellation, original-report export ownership, primary retry facts and technical expansion. Existing compact, system-navigation, IME, presence, unknown-result and late-callback checks remain. The original focused New PIN regression exposed a layout transition with retained results; focused editable fields now remain visible as the available viewport changes.
+
+The 27 targeted manager/enrollment/TLS/signing Compose tests passed with zero failures, errors or skips in 41.795 seconds of summed execution (3 minutes 54 seconds in Gradle). After the scoped desktop-provider correction above, all 31 tests in the four affected TLS suites passed in 37.712 seconds (3 minutes 2 seconds in Gradle).
+
+The final CMS-integrated `assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --offline --no-daemon --no-watch-fs -Pkotlin.incremental=false` gate passed in 5 minutes 2 seconds in Gradle. All 772 JVM tests in 71 suites passed, with zero failures, errors or skips and 112.625 seconds of summed execution. Both required Smallstep tools were configured; the real CA CSR/token/PKIX/fresh-import contract passed in 4.524 seconds. Both APKs built. Lint reported zero errors and the existing ten warning locations: one `GetInstance` and nine `TrustAllX509TrustManager`. No baseline, suppression or test-floor reduction was added.
+
+These checks use actual Compose screens, synthetic activity/document providers and synthetic cards/identities. No device installation, device app launch, physical card operation, external account/system-consumer qualification or production deployment occurred in this package. Screenshots and device acceptance remain separate root-owned work. Final full-gate output is retained in `/private/tmp/android-workspace-final-full-gate.log`; the original initializer failure and the 13-failure integrated run remain retained at the paths above.
