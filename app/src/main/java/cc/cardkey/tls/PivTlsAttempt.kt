@@ -8,8 +8,9 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-enum class PivTlsOutcome { QUALIFIED, FAILED, CANCELLED }
-data class PivTlsResult(val outcome: PivTlsOutcome, val card: OperationResult<Unit>)
+enum class PivTlsOutcome { QUALIFIED, FAILED, CANCELLED, TIMED_OUT }
+data class PivTlsResult(val outcome: PivTlsOutcome, val card: OperationResult<Unit>,
+                        val authenticationMayHaveBeenSubmitted: Boolean = false)
 
 class PivTlsAttempt(
     private val identity: PivTlsIdentity,
@@ -21,6 +22,8 @@ class PivTlsAttempt(
     private val lock = Any()
     private var secret: CharArray? = pin.copyOf().also { pin.fill('\u0000') }
     private val retired = AtomicBoolean()
+    private val timedOut = AtomicBoolean()
+    private var signatureReturned = false
     private val used = AtomicBoolean()
     private val channel = AtomicReference<CancellableCardChannel?>()
     private val connection = PivTlsConnection()
@@ -71,14 +74,23 @@ class PivTlsAttempt(
                     is OperationResult.Failed -> result
                 }
                 when (result) {
-                    is OperationResult.Completed -> result.value
+                    is OperationResult.Completed -> result.value.also { signatureReturned = true }
                     is OperationResult.Failed -> throw IOException("card signature failed")
                 }
-            }, ::close)
-            return PivTlsResult(if (cancelled()) PivTlsOutcome.CANCELLED else PivTlsOutcome.QUALIFIED, cardResult)
+            }, { timedOut.set(true); close() })
+            return result(PivTlsOutcome.QUALIFIED)
         } catch (_: Exception) {
-            return PivTlsResult(if (cancelled()) PivTlsOutcome.CANCELLED else PivTlsOutcome.FAILED, cardResult)
+            return result(PivTlsOutcome.FAILED)
         } finally { close() }
+    }
+
+    private fun result(otherwise: PivTlsOutcome): PivTlsResult {
+        val cancelled = cancelled()
+        return PivTlsResult(when {
+            timedOut.get() -> PivTlsOutcome.TIMED_OUT
+            cancelled -> PivTlsOutcome.CANCELLED
+            else -> otherwise
+        }, cardResult, signatureReturned)
     }
 
     private fun <T> card(operation: (PivClient) -> T): OperationResult<T> {

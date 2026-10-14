@@ -58,7 +58,7 @@ class ManagerScreenLayoutTest {
                 MaterialTheme {
                     Box(Modifier.requiredSize(width.dp, height.dp).testTag("manager-scene")) {
                         ManagerScreen(state.value, 0, {}, {}, {}, {}, {}, null, {}, {}, {}, {},
-                            EnrollmentState(), { _, _ -> }, {}, { it.close() }, { it.fill('\u0000') }, {})
+                            EnrollmentState(), { _, _ -> }, {}, { it.close() }, { it.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() })
                     }
                 }
             }

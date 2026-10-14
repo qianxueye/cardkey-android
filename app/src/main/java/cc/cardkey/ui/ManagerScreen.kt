@@ -60,6 +60,10 @@ fun ManagerScreen(
     onEnrollmentSubmit: (OperationInput) -> Unit,
     onEnrollmentIssue: (CharArray) -> Unit,
     onEnrollmentAbandon: () -> Unit,
+    tls: TlsQualificationState,
+    onTlsSettings: (String) -> Unit,
+    onTlsRoot: () -> Unit,
+    onTlsSubmit: (TlsQualificationInput) -> Unit,
 ) {
     val displayName = stringResource(R.string.app_name)
     val feedbackRequester = remember { BringIntoViewRequester() }
@@ -356,6 +360,16 @@ fun ManagerScreen(
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                             onEnrollmentIssue(token)
                         }, onExport, onCancel, onEnrollmentAbandon) }
+                    if (tab == 1 && enrollment.stage == cc.cardkey.enrollment.EnrollmentStage.IMPORTED) {
+                        key(state.selectedReader?.routeKey, enrollment.bundle) {
+                            TlsQualificationPanel(tls, enrollment, state.busy,
+                                !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection,
+                                clearInputs, onTlsSettings, onTlsRoot, { input ->
+                                    pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+                                    onTlsSubmit(input)
+                                }, onCancel)
+                        }
+                    }
                     if (state.busy || state.result != null || state.presenceMessage != null) {
                         Surface(Modifier.fillMaxWidth().bringIntoViewRequester(feedbackRequester), shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceContainer) {

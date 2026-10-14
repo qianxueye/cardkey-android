@@ -48,7 +48,7 @@ internal class TlsServer(
         addExtension(Extension.extendedKeyUsage, false, ExtendedKeyUsage(KeyPurposeId.id_kp_serverAuth))
         addExtension(Extension.subjectAlternativeName, false, GeneralNames(GeneralName(GeneralName.dNSName, name)))
     }.build(JcaContentSignerBuilder("SHA256withECDSA").build(issuer.rootKey.private)).encoded
-    private val context = SSLContext.getInstance("TLSv1.3").apply {
+    private val context = SSLContext.getInstance("TLSv1.3", "SunJSSE").apply {
         val keys = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
             load(null)
             setKeyEntry("server", key.private, "test".toCharArray(), arrayOf(EnrollmentProfile.certificate(leaf)))

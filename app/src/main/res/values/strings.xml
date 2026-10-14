@@ -84,4 +84,23 @@
     <string name="enrollment_invalid">证书未通过验证，未写入卡片。</string>
     <string name="enrollment_confirmImport">将已验证的证书写入所选 PIV 槽位，替换该槽位的现有证书。私钥不变。确认导入？</string>
     <string name="enrollment_imported">证书已写入所选槽位，并完成回读。</string>
+    <string name="tls_title">验证 TLS 连接</string>
+    <string name="tls_scope">在本 App 内验证所选证书到指定服务器的连接。</string>
+    <string name="tls_endpoint">服务器地址</string>
+    <string name="tls_endpointHelp">填写 HTTPS 域名地址，不带查询参数或片段。服务器须支持 TLS 1.3，证书包含完整域名，测试接口返回无正文的 HTTP 204。</string>
+    <string name="tls_serverRoot">服务器根证书</string>
+    <string name="tls_chooseServerRoot">选择服务器根证书</string>
+    <string name="tls_serverRootReady">已选择服务器根证书。</string>
+    <string name="tls_serverRootHelp">用所选根证书验证服务器，仅用于本次测试。</string>
+    <string name="tls_identity">使用证书</string>
+    <string name="tls_validUntil">有效期至</string>
+    <string name="tls_start">验证连接</string>
+    <string name="tls_confirm">将向 %1$s 发送所选证书，并使用卡内私钥进行一次认证签名。PIN 输入错误会减少剩余重试次数。确认继续？</string>
+    <string name="tls_running">正在验证连接…</string>
+    <string name="tls_success">已完成 TLS 握手，服务器返回 HTTP 204。请在服务器记录中核对证书与账户。</string>
+    <string name="tls_failed">连接验证未完成。</string>
+    <string name="tls_cancelled">已取消连接验证。</string>
+    <string name="tls_timeout">连接验证已超时。</string>
+    <string name="tls_mayHaveSubmitted">认证可能已提交，请核对服务器记录。</string>
+    <string name="tls_unknown">未确认认证结果。请先核对服务器记录，勿重复提交。</string>
 </resources>

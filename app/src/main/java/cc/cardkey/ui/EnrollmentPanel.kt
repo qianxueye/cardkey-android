@@ -27,6 +27,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
     LaunchedEffect(clearInputs, state.cn, state.address, state.hasRoot, canUseCard, state.csr) {
         pin = ""; admin = ""; token = ""; pending?.close(); pending = null; invalid = false
     }
+    LaunchedEffect(busy) { if (busy) { pin = ""; admin = ""; token = ""; pending?.close(); pending = null } }
     DisposableEffect(Unit) { onDispose { pending?.close() } }
     pending?.let { operation ->
         AlertDialog(onDismissRequest = { operation.close(); pending = null },

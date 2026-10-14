@@ -2,6 +2,8 @@
 
 The Android client can use the currently imported enrollment identity for one TLS 1.3 mutual-authentication request. The identity remains bound to its original CSR, explicitly selected client root, issuance verification time and current certificate validity. Only PIV slot 9A with P-256 and SHA-256 is supported.
 
+After certificate import/readback, the PIV screen shows the TLS qualification panel. The user enters a separate server address, selects its root certificate and supplies a fresh PIN. Confirmation displays the fixed endpoint, certificate name and selected server root. Leaving the activity, changing the reader or cancelling retires the attempt; conflicting manager actions stay disabled until its cleanup completes. Opening the server-root document picker preserves the imported identity, while a later change of endpoint, identity or reader invalidates a pending file result.
+
 The user selects an HTTPS endpoint and a separate server root. The endpoint requires an ASCII DNS name; the leaf must have an exact DNS SAN, serverAuth usage, digitalSignature key usage and a valid PKIX path to that root. Path validation uses only the supplied chain and anchor. There is no AIA fetching, common-name or wildcard fallback. The client sends SNI and offers HTTP/1.1.
 
 A public card preflight checks the current certificate, SPKI and retry facts, then releases the reader before the network handshake. After validating the server, one external-signature callback acquires the operation gate, reconnects the currently selected USB route and checks those facts again before using the PIN. A changed route, certificate, public key or retry state stops the attempt. The existing last-retry confirmation is required when one PIN attempt remains and the PUK is blocked.

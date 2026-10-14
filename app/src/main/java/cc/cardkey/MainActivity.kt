@@ -48,6 +48,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var lastNfcTag: android.nfc.Tag? = null
     private val permissionAction get() = "$packageName.USB_PERMISSION"
 
+    private val tlsRootImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> model.receiveTlsRoot(uri) }
+    private fun chooseTlsRoot() { model.requestTlsRoot(); tlsRootImporter.launch(arrayOf("*/*")) }
     private val rootImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> model.receiveEnrollmentRoot(uri) }
     private val importer = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) lifecycleScope.launch {
@@ -126,6 +128,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         setContent {
             val state by model.state.collectAsState()
             val enrollment by model.enrollment.state.collectAsState()
+            val tls by model.tls.collectAsState()
             LaunchedEffect(state.result) {
                 val failure = state.result as? OperationResult.Failed
                 if (state.nfc && failure?.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
@@ -141,7 +144,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) },
                     { showProviderSettings = true }, enrollment, model::enrollmentSettings,
                     { model.requestEnrollmentRoot(); rootImporter.launch(arrayOf("*/*")) },
-                    model::submitEnrollment, model::issueEnrollment, model::abandonEnrollment)
+                    model::submitEnrollment, model::issueEnrollment, model::abandonEnrollment,
+                    tls, model::tlsSettings, ::chooseTlsRoot, model::submitTls)
                 if (showProviderSettings) AlertDialog(
                     onDismissRequest = { showProviderSettings = false },
                     title = { Text("凭据提供者") },
