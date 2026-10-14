@@ -54,7 +54,7 @@ class EnrollmentPanelTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNodeWithText("PIV").performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText("证书申请").performSemanticsAction(SemanticsActions.OnClick) { it() }
             check { compose.runOnIdle { clear.intValue++ }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
     }

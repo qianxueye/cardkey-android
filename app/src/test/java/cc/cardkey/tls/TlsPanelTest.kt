@@ -67,7 +67,7 @@ class TlsPanelTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNodeWithText("PIV").performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText("证书申请").performSemanticsAction(SemanticsActions.OnClick) { it() }
             check(activity)
         } finally { submitted?.close(); controller.pause().stop().destroy() }
     }
