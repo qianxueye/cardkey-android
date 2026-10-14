@@ -72,6 +72,10 @@ class EnrollmentWorkflow {
         require(mutable.value.stage == EnrollmentStage.VERIFIED)
         return EnrollmentImport(requireNotNull(mutable.value.csr), ca(), requireNotNull(mutable.value.bundle)).also { it.validate() }
     }
+    fun importedIdentity(): EnrollmentImport {
+        require(mutable.value.stage == EnrollmentStage.IMPORTED)
+        return EnrollmentImport(requireNotNull(mutable.value.csr), ca(), requireNotNull(mutable.value.bundle)).also { it.validate() }
+    }
     fun imported(owner: Long) {
         if (owner == generation) mutable.value = mutable.value.copy(stage = EnrollmentStage.IMPORTED)
     }

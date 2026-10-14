@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cc.cardkey.protocol.*
 import cc.cardkey.enrollment.*
+import cc.cardkey.tls.*
 import cc.cardkey.transport.*
 import cc.cardkey.protocol.piv.PivClient
 import kotlinx.coroutines.CompletableDeferred
@@ -43,12 +44,29 @@ data class ManagerState(
     val presenceMessage get() = ConfirmationPolicy.presenceMessage(userPresenceRequired, busy, resultWire)
 }
 
+data class TlsQualificationState(
+    val address: String = "", val serverRootSubject: String? = null, val result: PivTlsResult? = null,
+    val revision: Long = 0, val running: Boolean = false,
+)
+class TlsQualificationInput(val revision: Long, val bundle: EnrollmentBundle, val address: String,
+                            val pin: CharArray) : java.io.Closeable {
+    override fun close() { pin.fill('\u0000') }
+}
+
 class ManagerViewModel(application: Application) : AndroidViewModel(application) {
     private val usb = application.getSystemService(UsbManager::class.java)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
     val enrollment = EnrollmentWorkflow()
     private var pendingEnrollmentRoot: Pair<Long, Long>? = null
+    private val tlsMutable = MutableStateFlow(TlsQualificationState())
+    val tls = tlsMutable.asStateFlow()
+    private var tlsRoot: ByteArray? = null
+    @Volatile private var tlsRevision = 0L
+    private var tlsRootRequestId = 0L
+    private data class TlsRootRequest(val request: Long, val revision: Long, val bundle: EnrollmentBundle, val route: String)
+    private var pendingTlsRoot: TlsRootRequest? = null
+    private val tlsAttempt = AtomicReference<PivTlsAttempt?>()
     private val networkCall = AtomicReference<okhttp3.Call?>(null)
     private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
@@ -70,7 +88,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val selected = mutable.value.selectedReader?.let { prior -> readers.firstOrNull {
             it.routeKey == prior.routeKey
         } }
-        if (mutable.value.selectedReader != null && selected == null) { cancel(); enrollment.retire() }
+        if (mutable.value.selectedReader != null && selected == null) { cancel(); retireTls(); enrollment.retire() }
         if (presenceBlockedReader != null && readers.none { it.routeKey == presenceBlockedReader }) {
             CardOperationGate.observedRemoval(requireNotNull(presenceBlockedReader))
             presenceBlockedReader = null
@@ -86,6 +104,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
         retireResult()
+        retireTls()
         enrollment.retire()
         operations.clearSession()
         presenceGeneration++
@@ -93,7 +112,10 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun enrollmentSettings(address: String, cn: String) {
-        if (!mutable.value.busy) enrollment.settings(address, cn)
+        if (!mutable.value.busy) {
+            if (address != enrollment.state.value.address || cn != enrollment.state.value.cn) retireTls()
+            enrollment.settings(address, cn)
+        }
     }
     fun requestEnrollmentRoot() { pendingEnrollmentRoot = enrollment.rootRequest() }
     fun receiveEnrollmentRoot(uri: Uri?) {
@@ -109,7 +131,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     fun enrollmentRoot(request: Pair<Long, Long>, bytes: ByteArray) {
-        if (!mutable.value.busy) runCatching { enrollment.acceptRoot(request, bytes) }.onFailure {
+        if (!mutable.value.busy) runCatching { if (enrollment.acceptRoot(request, bytes)) retireTls() }.onFailure {
             mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
         }
     }
@@ -120,6 +142,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             when (input.operation) {
                 ManagerOperation.PIV_ENROLL_CSR -> {
                     require(input.text == enrollment.state.value.cn)
+                    retireTls()
                     enrollment.startCsr()
                 }
                 ManagerOperation.PIV_ENROLL_IMPORT -> {
@@ -138,7 +161,138 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
         }
     }
-    fun abandonEnrollment() { if (!mutable.value.busy) enrollment.retire() }
+    fun abandonEnrollment() { if (!mutable.value.busy) { retireTls(); enrollment.retire() } }
+
+    private fun retireTls() {
+        tlsRevision++
+        pendingTlsRoot = null
+        tlsAttempt.get()?.close()
+        tlsRoot = null
+        tlsMutable.value = TlsQualificationState(revision = tlsRevision)
+    }
+
+    fun tlsSettings(address: String) {
+        if (mutable.value.busy || address == tlsMutable.value.address) return
+        tlsRevision++
+        pendingTlsRoot = null
+        tlsMutable.value = tlsMutable.value.copy(address = address, result = null, revision = tlsRevision)
+    }
+
+    fun requestTlsRoot() {
+        val source = enrollment.state.value
+        val reader = mutable.value.selectedReader
+        if (mutable.value.busy || source.stage != EnrollmentStage.IMPORTED || reader?.wire != CardWire.APDU) return
+        pendingTlsRoot = TlsRootRequest(++tlsRootRequestId, tlsRevision, requireNotNull(source.bundle), reader.routeKey)
+    }
+
+    fun receiveTlsRoot(uri: Uri?) {
+        val request = pendingTlsRoot
+        pendingTlsRoot = null
+        if (uri != null && request != null) viewModelScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching { getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readNBytes(32769) } }.getOrNull()
+            }
+            if (bytes != null) acceptTlsRoot(request, bytes)
+        }
+    }
+
+    private fun acceptTlsRoot(request: TlsRootRequest, bytes: ByteArray) {
+        if (request.request != tlsRootRequestId || request.revision != tlsRevision || mutable.value.busy ||
+            enrollment.state.value.stage != EnrollmentStage.IMPORTED || enrollment.state.value.bundle !== request.bundle ||
+            mutable.value.selectedReader?.routeKey != request.route ||
+            mutable.value.selectedReader?.let { UsbAuthenticatorReader.isCurrent(usb, it) } != true) return
+        runCatching {
+            val root = EnrollmentProfile.root(bytes)
+            tlsRoot = root
+            tlsRevision++
+            tlsMutable.value = tlsMutable.value.copy(serverRootSubject = EnrollmentProfile.certificate(root).subjectX500Principal.name, result = null, revision = tlsRevision)
+        }.onFailure { mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) } }
+    }
+
+    fun submitTls(input: TlsQualificationInput) {
+        try {
+            val reader = mutable.value.selectedReader ?: return
+            if (input.revision != tlsRevision || input.address != tlsMutable.value.address ||
+                input.bundle !== enrollment.state.value.bundle) return
+            startTls(input.pin) { UsbAuthenticatorReader.connect(usb, reader, allowInitialPowerOn = true) }
+        } finally { input.close() }
+    }
+
+    private fun startTls(pin: CharArray, connect: () -> CardChannel) {
+        val reader = mutable.value.selectedReader
+        if (mutable.value.busy || mutable.value.requiresInspection || mutable.value.nfc || reader?.wire != CardWire.APDU ||
+            !UsbAuthenticatorReader.isCurrent(usb, reader) || !usb.hasPermission(reader.device)) { pin.fill('\u0000'); return }
+        if (CardOperationGate.isRemovalRequired(reader.routeKey)) {
+            pin.fill('\u0000')
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.PHYSICAL_ACTION_REQUIRED, Effect.NONE)) }
+            return
+        }
+        val source = enrollment.state.value
+        val revision = tlsRevision
+        val attempt = try {
+            require(pin.size in 6..8 && pin.all { it in '0'..'9' })
+            val identity = PivTlsIdentity(enrollment.importedIdentity())
+            val endpoint = PivTlsEndpoint(tlsMutable.value.address, requireNotNull(tlsRoot))
+            PivTlsAttempt(identity, endpoint, pin, {
+                mutable.value.selectedReader?.routeKey == reader.routeKey && UsbAuthenticatorReader.isCurrent(usb, reader) &&
+                    enrollment.state.value.stage == EnrollmentStage.IMPORTED && enrollment.state.value.bundle === source.bundle &&
+                    tlsRevision == revision
+            }, connect)
+        } catch (_: Exception) {
+            pin.fill('\u0000')
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+            return
+        }
+        tlsAttempt.set(attempt)
+        cancelled = false
+        inProgress = true
+        operationRoute = reader.routeKey
+        operationWire = CardWire.APDU
+        operations.clearSession()
+        retireResult()
+        tlsMutable.value = tlsMutable.value.copy(result = null, running = true)
+        mutable.update { it.copy(busy = true, operation = null, result = null, resultWire = CardWire.APDU) }
+        viewModelScope.launch {
+            val before = withContext(Dispatchers.IO) { attempt.preflight() }
+            val result = if (before is OperationResult.Failed) PivTlsResult(PivTlsOutcome.FAILED, before)
+            else {
+                val facts = (before as OperationResult.Completed).value
+                var approved = false
+                if (facts.pin.remaining == 1 && facts.puk.remaining == 0 && !cancelled) {
+                    val approval = CompletableDeferred<Boolean>()
+                    retryApproval = approval
+                    mutable.update { it.copy(lastRetry = "PIN" to "PUK") }
+                    approved = withTimeoutOrNull(120000) { approval.await() } == true
+                    retryApproval = null
+                    mutable.update { it.copy(lastRetry = null) }
+                    if (!approved) attempt.close()
+                }
+                withContext(Dispatchers.IO) { attempt.execute(approved) }
+            }
+            attempt.close()
+            if (tlsAttempt.compareAndSet(attempt, null)) {
+                inProgress = false
+                val current = tlsRevision == revision && enrollment.state.value.bundle === source.bundle &&
+                    mutable.value.selectedReader?.routeKey == reader.routeKey && UsbAuthenticatorReader.isCurrent(usb, reader)
+                val settled = if ((!current || cancelled) && result.outcome != PivTlsOutcome.TIMED_OUT)
+                    result.copy(outcome = PivTlsOutcome.CANCELLED) else result
+                tlsMutable.value = tlsMutable.value.copy(result = settled.takeIf { current }, running = false)
+                val report: OperationResult<ManagerReport> = when (val card = settled.card) {
+                    is OperationResult.Failed -> card
+                    is OperationResult.Completed -> if (settled.outcome == PivTlsOutcome.QUALIFIED)
+                        OperationResult.Completed(ManagerReport(emptyList()), card.effect)
+                    else OperationResult.Failed(if (settled.outcome in setOf(PivTlsOutcome.CANCELLED, PivTlsOutcome.TIMED_OUT))
+                        FailureCode.CANCELLED else FailureCode.TRANSPORT_FAILURE, card.effect)
+                }
+                if (report is OperationResult.Failed && report.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
+                    presenceBlockedReader = reader.routeKey
+                    CardOperationGate.requireRemoval(reader.routeKey)
+                    observeCardRemoval(reader)
+                }
+                finish(report)
+            }
+        }
+    }
 
     fun issueEnrollment(token: CharArray) {
         val reader = mutable.value.selectedReader
@@ -391,6 +545,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun cancel() {
+        tlsAttempt.get()?.close()
         enrollment.pause()
         networkCall.getAndSet(null)?.let { call ->
             call.cancel()
