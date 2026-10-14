@@ -1,6 +1,10 @@
 package cc.cardkey.ui
 
 import android.graphics.Insets
+import android.hardware.usb.UsbDevice
+import cc.cardkey.transport.UsbReaderDescriptor
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.util.ReflectionHelpers
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -48,7 +52,7 @@ class ManagerScreenLayoutTest {
             (0 until group.childCount).firstNotNullOfOrNull { composeRoot(group.getChildAt(it)) }
         }
 
-    private fun render(width: Int, height: Int, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
+    private fun render(width: Int, height: Int, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         activity.enableEdgeToEdge()
@@ -57,8 +61,8 @@ class ManagerScreenLayoutTest {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
                     Box(Modifier.requiredSize(width.dp, height.dp).testTag("manager-scene")) {
-                        ManagerScreen(state.value, 0, {}, {}, {}, {}, {}, null, {}, {}, {}, {},
-                            EnrollmentState(), { _, _ -> }, {}, { it.close() }, { it.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
+                        ManagerScreen(state.value, 0, {}, {}, onSubmit, {}, {}, null, onExport, {}, {}, {},
+                            EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
                     }
                 }
             }
@@ -268,4 +272,76 @@ class ManagerScreenLayoutTest {
             compose.onNodeWithText(ManagerOperation.PIV_GENERATE.title).assertIsDisplayed()
         }
     }
+
+    @Test fun browsingEveryTaskAndCertificateDestinationDoesNotDispatch() {
+        var submissions = 0
+        render(360, 640, onSubmit = { submissions++; it.close() }) { activity, _ ->
+            for (piv in listOf(false, true)) {
+                if (piv) compose.onNodeWithText("PIV").performClick()
+                val actions = ManagerOperation.entries.filter {
+                    it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET,
+                        ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT)
+                }
+                for (action in actions) {
+                    compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
+                    compose.onNodeWithTag("task-${action.name}").performScrollTo().performClick()
+                    compose.onNodeWithTag("manager-run").assertExists()
+                }
+            }
+            compose.onNodeWithText("证书申请").performClick()
+            compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("P-256 · 9A").assertExists()
+            compose.onNodeWithTag("manager-run").assertDoesNotExist()
+            compose.onNodeWithText("FIDO2").performClick()
+            compose.onNodeWithTag("manager-run").assertExists()
+            assertEquals(0, submissions)
+        }
+    }
+
+    @Test fun reportExportPrecedesExpandableDetailsAndKeepsOriginalOwner() {
+        var exported: ManagerReport? = null
+        render(360, 480, onExport = { exported = it }) { _, update ->
+            val report = ManagerReport(listOf(ResultRow("公钥", "synthetic-value"), ResultRow("PIN 剩余重试次数", "3 次")),
+                export = byteArrayOf(1, 2, 3), fileName = "synthetic.csr")
+            update(ManagerState(operation = ManagerOperation.PIV_CSR,
+                result = OperationResult.Completed(report, Effect.NONE)))
+            compose.onNodeWithText("公钥").assertDoesNotExist()
+            compose.onNodeWithText("PIN 剩余重试次数").assertExists()
+            compose.onNodeWithText("3 次").assertExists()
+            compose.onNodeWithText("导出").performScrollTo().performClick()
+            assertSame(report, exported)
+            compose.onNodeWithTag("result-details").performScrollTo().performClick()
+            compose.onNodeWithText("synthetic-value").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("result-details").performScrollTo().performClick()
+            compose.onNodeWithText("synthetic-value").assertDoesNotExist()
+        }
+    }
+
+    @Test fun longReaderListRemainsReachableAndSelectionIsNotAuthentication() {
+        render(360, 640) { activity, update ->
+            val readers = (1..20).map { index ->
+                val device = Shadow.newInstanceOf(UsbDevice::class.java)
+                ReflectionHelpers.setField(device, "mName", "workspace-reader-$index")
+                ReflectionHelpers.setField(device, "mProductName", "Reader $index with a very long synthetic product name")
+                UsbReaderDescriptor(device, index, CardWire.APDU)
+            }
+            update(ManagerState(readers = readers, selectedReader = readers.first(), nfc = false))
+            compose.onNodeWithText(activity.getString(R.string.workspace_unread)).assertIsDisplayed()
+            compose.onAllNodesWithText("读卡器").onLast().performClick()
+            compose.onNodeWithText("Reader 20 with a very long synthetic product name").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("读取").performScrollTo().assertIsDisplayed()
+        }
+    }
+
+    @Test fun busyCertificateTaskKeepsCancelReachableAndDisablesNavigation() {
+        render(360, 640) { _, update ->
+            compose.onNodeWithText("证书申请").performClick()
+            update(ManagerState(busy = true, operation = ManagerOperation.PIV_ENROLL_CSR))
+            compose.onNode(hasText("取消") and !hasAnyAncestor(hasScrollAction())).assertIsDisplayed().assertHasClickAction()
+            compose.onNodeWithText("FIDO2").assertIsNotEnabled()
+            compose.onNodeWithText("PIV").assertIsNotEnabled()
+            compose.onNodeWithTag("manager-run").assertDoesNotExist()
+        }
+    }
+
 }

@@ -86,7 +86,21 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private data class TlsRootRequest(val request: Long, val revision: Long, val bundle: EnrollmentBundle, val route: String)
     private var pendingTlsRoot: TlsRootRequest? = null
     private val tlsAttempt = AtomicReference<PivTlsAttempt?>()
-    private val networkCall = AtomicReference<okhttp3.Call?>(null)
+    private class EnrollmentCall(val owner: Long, val call: okhttp3.Call) {
+        private var begun = false
+        private var cancelled = false
+        @Synchronized fun begin(): Boolean {
+            if (cancelled) return false
+            begun = true
+            return true
+        }
+        @Synchronized fun cancel(): Boolean {
+            cancelled = true
+            call.cancel()
+            return begun
+        }
+    }
+    private val networkCall = AtomicReference<EnrollmentCall?>(null)
     private val operations = ManagerOperations { cancelled }
     private var pending: OperationInput? = null
     @Volatile var pendingNfcOwner: Long? = null
@@ -141,6 +155,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             enrollment.settings(address, cn)
         }
     }
+    fun enrollmentSelection(selection: EnrollmentSelection) {
+        if (!mutable.value.busy && selection != enrollment.state.value.selection) {
+            retireTls()
+            enrollment.selection(selection)
+        }
+    }
     fun requestEnrollmentRoot() { pendingEnrollmentRoot = enrollment.rootRequest() }
     fun receiveEnrollmentRoot(uri: Uri?) {
         val request = pendingEnrollmentRoot
@@ -163,6 +183,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (mutable.value.busy || mutable.value.requiresInspection || mutable.value.nfc ||
             mutable.value.selectedReader?.wire != CardWire.APDU) { input.close(); return }
         try {
+            require(input.enrollmentRevision == enrollment.state.value.revision)
+            require(input.enrollmentSelection == enrollment.state.value.selection)
             when (input.operation) {
                 ManagerOperation.PIV_ENROLL_CSR -> {
                     require(input.text == enrollment.state.value.cn)
@@ -173,7 +195,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     require(input.enrollmentImport === null)
                     val request = enrollment.importRequest()
                     submit(OperationInput(input.operation, adminKey = input.adminKey.copyOf(),
-                        managementAlgorithm = input.managementAlgorithm, enrollmentImport = request))
+                        managementAlgorithm = input.managementAlgorithm, enrollmentImport = request,
+                        enrollmentSelection = request.csr.selection, enrollmentRevision = input.enrollmentRevision))
                     input.close()
                     return
                 }
@@ -205,7 +228,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun requestTlsRoot() {
         val source = enrollment.state.value
         val reader = mutable.value.selectedReader
-        if (mutable.value.busy || source.stage != EnrollmentStage.IMPORTED || reader?.wire != CardWire.APDU) return
+        if (mutable.value.busy || source.stage != EnrollmentStage.IMPORTED || source.selection != EnrollmentSelection() || reader?.wire != CardWire.APDU) return
         pendingTlsRoot = TlsRootRequest(++tlsRootRequestId, tlsRevision, requireNotNull(source.bundle), reader.routeKey)
     }
 
@@ -222,7 +245,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     private fun acceptTlsRoot(request: TlsRootRequest, bytes: ByteArray) {
         if (request.request != tlsRootRequestId || request.revision != tlsRevision || mutable.value.busy ||
-            enrollment.state.value.stage != EnrollmentStage.IMPORTED || enrollment.state.value.bundle !== request.bundle ||
+            enrollment.state.value.stage != EnrollmentStage.IMPORTED || enrollment.state.value.selection != EnrollmentSelection() || enrollment.state.value.bundle !== request.bundle ||
             mutable.value.selectedReader?.routeKey != request.route ||
             mutable.value.selectedReader?.let { UsbAuthenticatorReader.isCurrent(usb, it) } != true) return
         runCatching {
@@ -321,13 +344,19 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun issueEnrollment(token: CharArray) {
+    fun currentEnrollmentExport(report: ManagerReport): Boolean =
+        report.enrollmentCsr == null || report.enrollmentCsr === enrollment.state.value.csr
+
+    fun issueEnrollment(token: CharArray, revision: Long = enrollment.state.value.revision) {
         val reader = mutable.value.selectedReader
         if (mutable.value.busy || mutable.value.requiresInspection || mutable.value.nfc ||
             reader?.wire != CardWire.APDU || !UsbAuthenticatorReader.isCurrent(usb, reader)) { token.fill('\u0000'); return }
+        var preparedOwner: Long? = null
         try {
+            require(revision == enrollment.state.value.revision)
             val ca = enrollment.ca()
             val (owner, csr) = enrollment.startIssuance(String(token))
+            preparedOwner = owner
             val call = ca.call(csr, String(token))
             token.fill('\u0000')
             operations.clearSession()
@@ -335,11 +364,14 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             retireInventoryExport()
             retireResult()
             signingFiles.retireSelection()
-            networkCall.set(call)
+            val attempt = EnrollmentCall(owner, call)
+            networkCall.set(attempt)
             mutable.update { it.copy(busy = true, result = null, operation = null) }
             viewModelScope.launch {
-                val outcome = withContext(Dispatchers.IO) { runCatching { ca.execute(call, csr) } }
-                if (networkCall.compareAndSet(call, null) && owner == enrollment.generation) {
+                val outcome = withContext(Dispatchers.IO) {
+                    if (attempt.begin()) runCatching { ca.execute(call, csr) } else null
+                }
+                if (outcome != null && networkCall.compareAndSet(attempt, null) && owner == enrollment.generation) {
                     val stage = outcome.fold({ EnrollmentStage.VERIFIED }, { error ->
                         when ((error as? EnrollmentException)?.failure) {
                             IssuanceFailure.REJECTED -> EnrollmentStage.REJECTED
@@ -352,7 +384,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         } catch (_: Exception) {
-            if (enrollment.state.value.stage == EnrollmentStage.ISSUING) enrollment.pause()
+            preparedOwner?.let { enrollment.unsubmitted(it) }
             mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
         } finally { token.fill('\u0000') }
     }
@@ -766,11 +798,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val preserveSignatureResult = preserveSigningDocuments && mutable.value.operation?.isOwnedExport == true &&
             (mutable.value.result as? OperationResult.Completed)?.value?.let { it.signatureFormat != null || it.sshPublicKey } == true
         tlsAttempt.get()?.close()
-        enrollment.pause()
-        networkCall.getAndSet(null)?.let { call ->
-            call.cancel()
+        networkCall.getAndSet(null)?.let { attempt ->
+            if (!attempt.cancel()) enrollment.unsubmitted(attempt.owner)
             mutable.update { it.copy(busy = false) }
         }
+        enrollment.pause()
         cancelled = true
         presenceGeneration++
         operations.clearSession()

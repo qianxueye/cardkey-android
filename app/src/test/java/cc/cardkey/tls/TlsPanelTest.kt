@@ -59,7 +59,7 @@ class TlsPanelTest {
             MaterialTheme {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
                     ManagerScreen(manager.value, clear.intValue, {}, {}, { it.close() }, { cancelled++ }, {}, null,
-                        {}, {}, {}, {}, enrollment, { _, _ -> }, {}, { it.close() }, { it.fill('\u0000') }, {},
+                        {}, {}, {}, {}, enrollment, { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
                         tls.value, { tls.value = tls.value.copy(address = it, revision = tls.value.revision + 1) }, {},
                         { submitted = it }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
                 }
@@ -67,7 +67,7 @@ class TlsPanelTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNodeWithText("PIV").performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText("证书申请").performSemanticsAction(SemanticsActions.OnClick) { it() }
             check(activity)
         } finally { submitted?.close(); controller.pause().stop().destroy() }
     }

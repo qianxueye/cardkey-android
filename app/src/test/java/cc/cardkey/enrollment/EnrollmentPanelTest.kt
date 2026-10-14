@@ -48,15 +48,25 @@ class EnrollmentPanelTest {
                     ManagerScreen(ManagerState(selectedReader = reader, nfc = false), clear.intValue,
                         {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, state.value,
                         { address, cn -> state.value = state.value.copy(address = address, cn = cn) }, {},
-                        { error("A cancelled confirmation must not submit") }, { it.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
+                        { error("A cancelled confirmation must not submit") }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, { selection -> state.value = state.value.copy(selection = selection, revision = state.value.revision + 1, csr = null) })
                 }
             }
         }
         try {
             compose.waitForIdle()
-            compose.onNodeWithText("PIV").performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText("证书申请").performSemanticsAction(SemanticsActions.OnClick) { it() }
             check { compose.runOnIdle { clear.intValue++ }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
+    }
+    @Test fun documentSelectionDefaultsTo9cAndClearsOldCsrAndSecrets() {
+        render(360, 640) {
+            compose.onNodeWithText("PIN").performScrollTo().performTextInput("123456")
+            compose.onNodeWithText("文档签名").performScrollTo().performClick()
+            compose.onNodeWithText("9C").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("使用所选槽位的现有密钥申请文档签名证书。不会生成或替换密钥。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("导出 CSR").assertDoesNotExist()
+            compose.onNodeWithText("123456").assertDoesNotExist()
+        }
     }
     @Test fun portraitEnrollmentCanReachFieldsAndExportAndPauseClearsPendingPinConfirmation() {
         render(360, 640) { pause ->
