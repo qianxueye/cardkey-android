@@ -6,8 +6,9 @@ This record separates software verification from installation, native UI, card a
 
 - Checkout: `.cardkey-worktrees/android-plexo-native-20261014`; branch `feat/plexo-native-workspace`.
 - Fresh default base: `1d5f46ab7ca6ae77d5c89769dd6d73c946510354`, including delivered SSH and lifecycle packages.
-- Frozen software candidate: `7babf2942a584211355d42cc856a76369cb57023`.
-- Runtime revision: `5a876028df201288d176ed55b331e58dad405e85`. Application source is identical through the final test-only corrections. This documentation increment does not change runtime or tests.
+- Verified software candidate: `248fea85ad6516cdae78a7872ffbc09f9170107d`.
+- Runtime revision: `c0c9cd75b34cbc355b8b95aaf57d2093101ba648`; the review fix changes only provider recognition policy. Test-only successors retain that runtime. This evidence update changes no runtime or tests.
+- Instrumentation expectation alignment: `8f65236f0aa587b78b479bb8f8f5a609aa5d8e82`; its package/lint gate passed in 291 s without device execution. Root supplied official build success for that candidate, run `38659600989`.
 
 The package provides object-first FIDO/PIV navigation, compact detail/back and wide list/detail, explicit task selection, captured receipts and exports, technical disclosure, native light/dark presentation, and provider/CA/TLS reflow. Object and task browsing does not dispatch. An explicit recognition action dispatches a public INFO read while preserving the prospective task and slot.
 
@@ -32,9 +33,28 @@ Local evidence retained by the coordinator:
 - Final XML and lint report: `/private/tmp/cardkey-android-plexo-recognition-final-xml`; log: `/private/tmp/cardkey-android-plexo-recognition-final.log`.
 - Recognition repair XML: `/private/tmp/cardkey-android-plexo-recognition-repair-xml`; log: `/private/tmp/cardkey-android-plexo-recognition-repair.log`.
 
+## Provider review-fix verification
+
+Two posted P2 findings affected optional user verification and optional largeBlob writes. The policy now offers PIN only when client PIN, PIN/UV auth token support, protocol 1 or 2, and force-change state permit it. Optional blob PIN follows that usable capability. Required verification, always-UV, PRF and protected-create fences retain their existing rejection behavior. The held request/session, final confirmation, zero-authentication recognition probe and no-replay behavior remain unchanged.
+
+At `f695d1f0c12ac0f681a407bd9c984e3a0f53c4f3`, the focused gate executed 185 tests across 19 suites: 184 passed, one new preferred/no-UV diagnostic assertion failed, zero errors/skips. Wall time was 658 s; summed suite time 61.178 s. The runtime login succeeded; the test then called a signature diagnostic whose default requires UV. Signed test-only correction `248fea8` passes `requireUv=false` for that explicit preferred fallback, preserves RP/hash/key/signature/user-presence/allow-list checks, and adds rejection of the same assertion under the default mandatory-UV diagnostic.
+
+The affected `cc.cardkey.provider.CardCredentialOperationTest` then passed 21/21, zero failures/errors/skips, 3.994 suite seconds; remaining application APK, lint and instrumentation APK tasks passed in the same 361 s gate. Root authorized reuse of the other 164 focused passes. This establishes the 185-test focused coverage through the initial execution and its test-only repair; there was no single final 185/185-green invocation. The prior full 838-test execution and 39-test affected repair remain separate, retained evidence for untouched behavior.
+
+Exact selected classes:
+
+| Package | Classes |
+| --- | --- |
+| `cc.cardkey.provider` | `PlexoProviderTest`, `ResponseEncoderTest`, `CallerVerifierTest`, `ProviderExtractionLifecycleTest`, `ProviderRecognitionActivityTest`, `HttpsAssetLinksFetcherTest`, `CardCredentialOperationTest`, `ProviderPrfSelectionTest`, `ProviderRecognitionTest`, `ProviderLifecycleTest`, `TypedProviderWorkflowTest`, `ProviderPresenceActivityTest`, `ProviderInputLifecycleTest`, `ProviderExtensionsTest`, `RequestParserTest`, `ProviderPresenceProgressTest` |
+| `cc.cardkey.protocol.fido` | `FidoClientTest`, `FidoExtensionsTest`, `LargeBlobsTest` |
+
+New cases exercise the actual held runner/get path with unusable optional PIN-token capabilities under protocols 1 and 2, signed allow-list login, supported optional blob write returning `written:false` after authorization denial, mandatory policy rejection, real PIN token MACs, and no authentication before final confirmation or request replay. No additional full unit run, device execution or physical action occurred.
+
+Focused red XML: `/private/tmp/cardkey-android-plexo-provider-policy-red-xml`; log: `/private/tmp/cardkey-android-plexo-provider-policy.log`. Repair XML and final lint: `/private/tmp/cardkey-android-plexo-provider-policy-final-xml`; log: `/private/tmp/cardkey-android-plexo-provider-policy-final.log`. Final lint retains zero Error/Fatal, the ten established crypto warnings and zero unused resources.
+
 ## Matching build pair
 
-Both artifacts were built from the frozen software candidate:
+Both artifacts were assembled from the reviewed runtime and verified at `248fea8`; the final repair changes only a unit-test diagnostic expectation:
 
 | Artifact | Size |
 | --- | ---: |
@@ -56,6 +76,6 @@ Root owns device availability readback, installation of one matching pair and na
 | Provider create/get | Actual invoking caller/RP, verified request, public recognition, held session, final confirmation and cancellation remain bound to the same request; no presentation replay. |
 | CA/TLS and SSH | Public preparation and captured results remain available; secrets require the approved recognition prerequisites. Actual enrollment/import, signing, TLS and SSH login require their own authorization and evidence. |
 
-The existing focused instrumentation class is `cc.cardkey.ui.WorkspaceAcceptanceTest`. It exercises a 360dp synthetic `ManagerScreen` host, no-card navigation and a real keyboard/secure-window case. It does not establish real recognition, transport, provider system invocation, card mutation or login acceptance. Its no-card navigation test now requires absent password inputs and CSR/import controls before recognition, disabled secure tasks with an available explicit public-read action, and reachable public CA preparation. The current TLS preparation label remains asserted. The keyboard test supplies an explicit synthetic FIDO recognition snapshot. This instrumentation-only alignment leaves runtime and unit evidence unchanged; its successor test APK requires the coordinator’s package/lint gate. It has not been executed on a device.
+The existing focused instrumentation class is `cc.cardkey.ui.WorkspaceAcceptanceTest`. It exercises a 360dp synthetic `ManagerScreen` host, no-card navigation and a real keyboard/secure-window case. It does not establish real recognition, transport, provider system invocation, card mutation or login acceptance. Its no-card navigation test now requires absent password inputs and CSR/import controls before recognition, disabled secure tasks with an available explicit public-read action, and reachable public CA preparation. The current TLS preparation label remains asserted. The keyboard test supplies an explicit synthetic FIDO recognition snapshot. This instrumentation-only alignment leaves runtime and unit evidence unchanged; its successor test APK passed the coordinator’s package/lint gate and the later provider review-fix package gate. It has not been executed on a device.
 
 After authorized device testing, close the tested apps and read back their exit. Keep failed or unavailable conditions pending with their evidence. Physical-card writes, iOS provisioning, account/system acceptance and production deployment remain outside this software checkpoint.
