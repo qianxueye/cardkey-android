@@ -314,7 +314,11 @@ class CardCredentialOperationTest {
                 val provided = (completed.value as ProviderOutput.Assertions).values.single()
                 assertArrayEquals(original.authData, provided.assertion.authData)
                 assertArrayEquals(original.signature, provided.assertion.signature)
-                assertTrue(FidoDiagnostics.verifyAssertion(provided.assertion, key, rp, data.hash).signatureValid)
+                assertTrue(FidoDiagnostics.verifyAssertion(provided.assertion, key, rp, data.hash, requireUv = false).signatureValid)
+                val mandatoryUv = assertThrows(CardFailure::class.java) {
+                    FidoDiagnostics.verifyAssertion(provided.assertion, key, rp, data.hash)
+                }
+                assertEquals(FailureCode.AUTHORIZATION_DENIED, mandatoryUv.code)
                 assertEquals(listOf(4, 2), channel.commands.map { it.first })
                 assertEquals(1, connects)
                 assertEquals(1, channel.selectCount)
