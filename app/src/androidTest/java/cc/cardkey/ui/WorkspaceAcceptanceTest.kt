@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.dp
@@ -88,12 +89,24 @@ class WorkspaceAcceptanceTest {
                     compose.onNodeWithText(activity.getString(R.string.workspace_advanced)).assertExists()
                     compose.onNodeWithTag("task-${action.name}").performScrollTo().assertIsDisplayed().performClick()
                     compose.onNodeWithTag("manager-run").assertExists()
+                    compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password)).assertCountEquals(0)
+                    if (action in setOf(ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_ADMIN)) {
+                        compose.onNodeWithTag("manager-run").assertIsNotEnabled()
+                        compose.onNodeWithTag("recognition-task").performScrollTo().assertIsEnabled()
+                    }
                 }
             }
             compose.onNodeWithText("证书申请").performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()
-            compose.onNodeWithText(activity.getString(R.string.enrollment_createCsr)).performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("enrollment-cn").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("enrollment-pin").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-create-csr").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-admin").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-import").assertDoesNotExist()
+            compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password)).assertCountEquals(0)
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
             compose.onAllNodesWithText("读卡器").onLast().performClick()
             compose.onNodeWithText(activity.getString(R.string.reader_empty)).performScrollTo().assertIsDisplayed()
