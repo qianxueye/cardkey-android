@@ -24,16 +24,15 @@ internal data class ProviderRecognition(val pinRequired: Boolean) {
             }
             val protectedCreate = create != null && info.options["clientPin"] == true &&
                 (resident || info.options["makeCredUvNotRqd"] != true)
-            val blobPin = get?.extensions?.largeBlobWrite != null && info.supportsLargeBlob() &&
-                listOf("clientPin", "uv", "alwaysUv").any { info.options[it] == true }
             val verificationRequired = requirement == UserVerificationRequirement.REQUIRED || prf ||
                 info.options["alwaysUv"] == true || protectedCreate
-            val pinAvailable = info.options["clientPin"] == true && info.pinProtocols.any { it == 1 || it == 2 }
+            val pinAvailable = info.options["clientPin"] == true && info.options["pinUvAuthToken"] == true &&
+                info.pinProtocols.any { it == 1 || it == 2 } && info.forcePinChange != true
+            val blobPin = get?.extensions?.largeBlobWrite != null && info.supportsLargeBlob() && pinAvailable
             val builtInUv = info.options["uv"] == true
             val pinRequired = blobPin || (!builtInUv && (verificationRequired ||
                 (requirement == UserVerificationRequirement.PREFERRED && pinAvailable)))
-            if ((pinRequired && (!pinAvailable || info.forcePinChange == true)) ||
-                (verificationRequired && !builtInUv && !pinAvailable))
+            if (pinRequired && !pinAvailable)
                 throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
             return ProviderRecognition(pinRequired)
         }
