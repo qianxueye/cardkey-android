@@ -129,7 +129,7 @@ class ProviderPrfSelectionTest {
                 override fun close() { closeCalls++ }
             }
             val pin = "1234".toCharArray()
-            val result = runner.execute(null, request(), data, pin) { advisoryCloseChannel }
+            val result = runner.executeAndConfirm(null, request(), data, pin) { advisoryCloseChannel }
             assertTrue(result is OperationResult.Failed)
             val failure = result as OperationResult.Failed
             assertEquals(FailureCode.CANCELLED, failure.code)
@@ -162,7 +162,7 @@ class ProviderPrfSelectionTest {
             }
             else -> error("Unexpected command $code")
         } }
-        val result = runner.execute(null, request(), data, null) { channel }
+        val result = runner.executeAndConfirm(null, request(), data, null) { channel }
         assertTrue(result is OperationResult.Failed)
         val failure = result as OperationResult.Failed
         assertEquals(FailureCode.TRANSPORT_FAILURE, failure.code)

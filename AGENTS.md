@@ -1,6 +1,6 @@
 # Repository instructions
 
-Implementation status: the Owner approved the Android manager package and public repository. The Owner also approved the initial Chinese confirmation/status batch and activation. Subsequent nontrivial copy changes still follow the workspace approval rule. The Android Credential Provider is an independent, stacked package. The Owner approved its seven-message batch and single display-name resource on 2026-10-10.
+Implementation status: the Owner approved the Android manager package and public repository. The Owner also approved the initial Chinese confirmation/status batch and activation. Subsequent interface copy changes follow the current workspace review-and-record workflow; reviewed copy needs no separate Owner approval. The Android Credential Provider is an independent, stacked package. The Owner approved its seven-message batch and single display-name resource on 2026-10-10.
 
 Use English for subagent briefs and internal handoffs, and Chinese for Owner-facing explanations. Follow the parent workspace Git, signing, attribution, review, verification and copy rules. Preserve unrelated work. After bootstrap, use a fresh task branch from the current remote default branch, commit coherent steps, and publish one consolidated tested candidate per package or review round.
 
@@ -10,6 +10,6 @@ Preserve the Owner-confirmed J3R180 / Java Card 3.0.5 / GP 2.3 baseline. Keep FI
 
 Keep management keys, PINs, attestation private keys, signing keys, real credentials and raw private logs outside Git and CI output. Use synthetic fixtures. Never change repository visibility without the Owner-authorized publication scope. No routine checksum manifests or repeated reassurance tests.
 
-Before adopting upstream source, pin the revision and preserve its license/notices. Frontend wording approval remains separate from functional approval.
+Before adopting upstream source, pin the revision and preserve its license/notices.
 
 Repository scope: Self-contained Kotlin/Compose application managing both FIDO2 and PIV through NFC/USB paths. Record physical qualification separately. Android 14+ credential-provider integration remains an independently reviewed package from the manager.

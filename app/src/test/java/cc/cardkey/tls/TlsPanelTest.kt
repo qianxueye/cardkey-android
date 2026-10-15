@@ -53,7 +53,9 @@ class TlsPanelTest {
         activity.enableEdgeToEdge()
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", "tls-panel-device")
-        manager.value = ManagerState(selectedReader = UsbReaderDescriptor(device, 1, CardWire.APDU), nfc = false)
+        val reader = UsbReaderDescriptor(device, 1, CardWire.APDU)
+        manager.value = ManagerState(selectedReader = reader, nfc = false,
+            recognition = CardRecognition(reader.routeKey, 1, CardFamily.PIV))
         val enrollment = EnrollmentState("https://localhost", f.csr.cn, true, f.csr, f.bundle, EnrollmentStage.IMPORTED)
         activity.setContent {
             MaterialTheme {
@@ -137,8 +139,10 @@ class TlsPanelTest {
             compose.waitForIdle()
             compose.onNodeWithText("已取消连接验证。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("认证可能已提交，请核对服务器记录。").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithTag("tls-start").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithTag("tls-start").assertDoesNotExist()
+            compose.onNodeWithTag("tls-pin").assertDoesNotExist()
             compose.onNodeWithTag("tls-root").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("tls-endpoint").performScrollTo().assertIsEnabled()
         }
     }
 }

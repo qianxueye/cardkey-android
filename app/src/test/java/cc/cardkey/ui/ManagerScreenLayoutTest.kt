@@ -52,11 +52,12 @@ class ManagerScreenLayoutTest {
             (0 until group.childCount).firstNotNullOfOrNull { composeRoot(group.getChildAt(it)) }
         }
 
-    private fun render(width: Int, height: Int, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
+    private fun render(width: Int, height: Int, recognizedFamily: CardFamily? = null, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         activity.enableEdgeToEdge()
-        val state = mutableStateOf(ManagerState())
+        val recognized = recognizedFamily?.let { CardRecognition("nfc", 1, it) }
+        val state = mutableStateOf(ManagerState(recognition = recognized))
         activity.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
@@ -69,7 +70,9 @@ class ManagerScreenLayoutTest {
         }
         try {
             compose.waitForIdle()
-            check(activity) { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }
+            compose.onNodeWithTag("object-overview").performClick()
+            compose.waitForIdle()
+            check(activity) { next -> compose.runOnIdle { state.value = next.copy(recognition = next.recognition ?: recognized) }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
     }
 
@@ -107,9 +110,11 @@ class ManagerScreenLayoutTest {
             for (label in listOf("读取", "取消")) {
                 val action = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
                 assertTrue("$label overlaps system area: $action, safe bottom $safeBottom", action.bottom <= safeBottom)
-                assertTrue("$label reserves duplicate IME/navigation space: $action, safe bottom $safeBottom",
-                    safeBottom - action.bottom <= 16f)
             }
+            val destination = compose.onNode(hasText("FIDO2") and hasClickAction()).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("Destination overlaps system area: $destination, safe bottom $safeBottom", destination.bottom <= safeBottom)
+            assertTrue("Dock reserves duplicate IME/navigation space: $destination, safe bottom $safeBottom",
+                safeBottom - destination.bottom <= 16f)
             assertInputSpace()
         }
     }
@@ -127,7 +132,7 @@ class ManagerScreenLayoutTest {
     }
 
     @Test fun imeOpeningDoesNotScrollRetainedResultOverNewPinInput() {
-        render(360, 640) { activity, update ->
+        render(360, 640, recognizedFamily = CardFamily.FIDO2) { activity, update ->
             update(ManagerState(operation = ManagerOperation.FIDO_INFO,
                 result = OperationResult.Completed(ManagerReport((1..20).map {
                     ResultRow("field $it", "completed value")
@@ -151,6 +156,7 @@ class ManagerScreenLayoutTest {
 
     private fun submitInvalidManagementHex() {
         compose.onNodeWithText("PIV").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithTag("object-overview").performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(ManagerOperation.PIV_ADMIN.title).performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -170,7 +176,7 @@ class ManagerScreenLayoutTest {
     }
 
     @Test fun correctingInvalidHexRemainsVisibleWhenImeOpens() {
-        render(360, 480) { activity, _ ->
+        render(360, 480, recognizedFamily = CardFamily.PIV) { activity, _ ->
             submitInvalidManagementHex()
             assertFeedbackVisible(activity.getString(R.string.error_invalidInput))
             focusManagementHexAwayFromError("01")
@@ -189,7 +195,7 @@ class ManagerScreenLayoutTest {
     }
 
     @Test fun anotherInvalidSubmitBringsExistingValidationBackIntoView() {
-        render(360, 480) { activity, _ ->
+        render(360, 480, recognizedFamily = CardFamily.PIV) { activity, _ ->
             submitInvalidManagementHex()
             val error = activity.getString(R.string.error_invalidInput)
             assertFeedbackVisible(error)
@@ -277,7 +283,10 @@ class ManagerScreenLayoutTest {
         var submissions = 0
         render(360, 640, onSubmit = { submissions++; it.close() }) { activity, _ ->
             for (piv in listOf(false, true)) {
-                if (piv) compose.onNodeWithText("PIV").performClick()
+                if (piv) {
+                    compose.onNodeWithText("PIV").performClick()
+                    compose.onNodeWithTag("object-overview").performClick()
+                }
                 val actions = ManagerOperation.entries.filter {
                     it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET,
                         ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT)
@@ -293,6 +302,7 @@ class ManagerScreenLayoutTest {
             compose.onNodeWithText("P-256 · 9A").assertExists()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
             compose.onNodeWithText("FIDO2").performClick()
+            compose.onNodeWithTag("object-overview").performClick()
             compose.onNodeWithTag("manager-run").assertExists()
             assertEquals(0, submissions)
         }
@@ -324,6 +334,7 @@ class ManagerScreenLayoutTest {
         var exported: ManagerReport? = null
         render(360, 480, onExport = { exported = it }) { activity, update ->
             compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithTag("object-overview").performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithText(ManagerOperation.PIV_SLOT.title).performClick()
             update(ManagerState(operation = ManagerOperation.PIV_SLOT, result = result))

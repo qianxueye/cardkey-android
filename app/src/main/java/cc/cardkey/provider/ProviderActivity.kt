@@ -41,6 +41,8 @@ import cc.cardkey.transport.UsbAuthenticatorReader
 import cc.cardkey.transport.UsbReaderDescriptor
 import cc.cardkey.ui.CardKeyTheme
 import cc.cardkey.ui.ConfirmationPolicy
+import cc.cardkey.ui.PlexoSection
+import cc.cardkey.ui.PlexoFactRow
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -70,8 +72,10 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private var selected by mutableStateOf<UsbReaderDescriptor?>(null)
     private var permissionPending by mutableStateOf(false)
     private var pendingReader: UsbReaderDescriptor? = null
+    private var activeReader: UsbReaderDescriptor? = null
     private var pin by mutableStateOf("")
-    private var pendingPin: CharArray? = null
+    private var credentialOperationStarted by mutableStateOf(false)
+    private var recognition by mutableStateOf<ProviderRecognition?>(null)
     private var requestCancelled = false
     private var retryableCancellation = false
     private var presenceWatch: Job? = null
@@ -146,51 +150,128 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable private fun ProviderContent() {
-        Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) }) { padding ->
-            Column(Modifier.padding(padding).padding(20.dp).fillMaxSize().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("凭据提供者", style = MaterialTheme.typography.headlineSmall)
-                if (loading) CircularProgressIndicator()
-                else if (rejected) {
-                    Text(stringResource(R.string.provider_request_rejected))
-                    Button(onClick = { finishException(false) }) { Text("关闭") }
+        Scaffold(topBar = {
+            TopAppBar(title = {
+                Column {
+                    Text(stringResource(R.string.plexo_provider_title))
+                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.labelMedium)
+                }
+            })
+        }) { padding ->
+            Column(
+                Modifier.fillMaxSize().padding(padding).imePadding()
+                    .verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (!loading && !rejected && clientData != null) {
+                    PlexoSection(stringResource(if (create != null)
+                        R.string.plexo_provider_create_title else R.string.plexo_provider_get_title)) {
+                        Text(stringResource(R.string.plexo_provider_verified), style = MaterialTheme.typography.bodyMedium)
+                        PlexoFactRow(stringResource(R.string.plexo_provider_rp), create?.rpId ?: requireNotNull(get).rpId)
+                        PlexoFactRow(stringResource(R.string.plexo_provider_caller), requireNotNull(extracted).caller.packageName)
+                        create?.let {
+                            PlexoFactRow(stringResource(R.string.plexo_provider_account), it.user.displayName ?: it.user.name ?: "")
+                        }
+                    }
+                }
+                if (loading) {
+                    PlexoSection(stringResource(R.string.plexo_provider_verifying)) {
+                        CircularProgressIndicator()
+                    }
+                } else if (rejected) {
+                    PlexoSection(stringResource(R.string.plexo_provider_rejected)) {
+                        Text(stringResource(R.string.provider_request_rejected))
+                    }
+                    Button(onClick = { finishException(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.plexo_provider_close))
+                    }
                 } else if (failure != null) {
-                    ConfirmationPolicy.resultMessages(requireNotNull(failure), failureWire).forEach { Text(stringResource(it)) }
-                    Button(onClick = { finishException(requestCancelled || failure?.code == FailureCode.CANCELLED) }) { Text("关闭") }
+                    PlexoSection(stringResource(R.string.plexo_provider_result)) {
+                        ConfirmationPolicy.resultMessages(requireNotNull(failure), failureWire).forEach {
+                            Text(stringResource(it))
+                        }
+                    }
+                    Button(onClick = { finishException(requestCancelled || failure?.code == FailureCode.CANCELLED) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.plexo_provider_close))
+                    }
                 } else if (assertions.isNotEmpty()) {
-                    Text(stringResource(R.string.provider_choose_account, requireNotNull(get).rpId))
-                    assertions.forEachIndexed { index, assertion ->
-                        OutlinedButton(onClick = { completeAssertion(assertion) }, modifier = Modifier.fillMaxWidth()) {
-                            Text(assertion.assertion.user?.displayName ?: assertion.assertion.user?.name ?: "${index + 1}")
+                    PlexoSection(stringResource(R.string.plexo_provider_accounts)) {
+                        Text(stringResource(R.string.provider_choose_account, requireNotNull(get).rpId))
+                        assertions.forEachIndexed { index, assertion ->
+                            OutlinedButton(onClick = { completeAssertion(assertion) },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Text(assertion.assertion.user?.displayName ?: assertion.assertion.user?.name ?: "${index + 1}")
+                            }
                         }
                     }
                 } else {
-                    val rp = create?.rpId ?: requireNotNull(get).rpId
-                    val caller = requireNotNull(extracted).caller.packageName
-                    Text(stringResource(if (create != null) R.string.provider_create_confirmation else R.string.provider_get_confirmation, rp, caller))
-                    if (get?.extensions?.largeBlobWrite != null) Text(stringResource(R.string.confirm_blobWrite))
-                    create?.let {
-                        Text(stringResource(if (it.attestation == AttestationPreference.DIRECT)
-                            R.string.provider_attestation_direct else R.string.provider_attestation_none))
-                        Text(it.user.displayName ?: it.user.name ?: "")
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected == null, { if (!busy) selected = null }, label = { Text("NFC") }, enabled = !busy)
+                    PlexoSection(stringResource(R.string.plexo_provider_reader)) {
+                        FilterChip(selected == null, { if (!busy && !permissionPending) selected = null },
+                            label = { Text("NFC") }, enabled = !busy && !permissionPending,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
                         readers.forEach { reader ->
                             FilterChip(selected === reader, { selectReader(reader) },
-                                label = { Text(reader.device.productName ?: "USB") }, enabled = !busy && !permissionPending)
+                                label = { Text(reader.device.productName ?: "USB") }, enabled = !busy && !permissionPending,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                        }
+                        if (selected == null && !permissionPending) Text(stringResource(R.string.reader_nfc))
+                    }
+                    if (permissionPending) {
+                        PlexoSection(stringResource(R.string.plexo_provider_permission)) {
+                            pendingReader?.let {
+                                PlexoFactRow(stringResource(R.string.plexo_provider_reader), it.device.productName ?: "USB")
+                            }
+                            Text(stringResource(R.string.plexo_provider_permission_prompt, stringResource(R.string.app_name)))
                         }
                     }
-                    if (permissionPending) Text(stringResource(R.string.reader_usbPermission, stringResource(R.string.app_name)))
-                    if (selected == null) Text(stringResource(R.string.reader_nfc))
-                    OutlinedTextField(pin, { pin = it }, label = { Text("PIN") }, singleLine = true,
-                        enabled = !busy, visualTransformation = PasswordVisualTransformation())
-                    if (pin.isNotEmpty()) Text(stringResource(R.string.confirm_authenticate))
-                    if (busy) CircularProgressIndicator()
-                    presenceMessage?.let { Text(stringResource(it)) }
-                    Button(onClick = ::confirm, enabled = !busy && !permissionPending) { Text("确认") }
+                    if (credentialOperationStarted && busy) {
+                        PlexoSection(stringResource(R.string.plexo_provider_executing)) {
+                            CircularProgressIndicator()
+                            presenceMessage?.let { Text(stringResource(it)) }
+                        }
+                    } else if (recognition == null) {
+                        PlexoSection(stringResource(R.string.plexo_provider_recognition)) {
+                            Text(stringResource(R.string.plexo_provider_recognition_explanation))
+                            if (busy) {
+                                CircularProgressIndicator()
+                                Text(stringResource(if (awaitingNfc) R.string.plexo_provider_recognition_nfc
+                                    else R.string.plexo_provider_recognizing))
+                            }
+                            Button(onClick = ::recognize,
+                                enabled = !busy && !permissionPending && clientData != null,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.plexo_provider_recognize))
+                            }
+                        }
+                    } else {
+                        PlexoSection(stringResource(R.string.plexo_provider_confirmation)) {
+                            Text(stringResource(R.string.plexo_provider_recognized))
+                            if (selected == null) Text(stringResource(R.string.plexo_provider_keep_nfc))
+                            if (get?.extensions?.largeBlobWrite != null) Text(stringResource(R.string.confirm_blobWrite))
+                            if (create == null) Text(stringResource(R.string.plexo_provider_get_consequence))
+                            create?.let {
+                                Text(stringResource(R.string.plexo_provider_create_consequence))
+                                Text(stringResource(if (it.attestation == AttestationPreference.DIRECT)
+                                    R.string.provider_attestation_direct else R.string.provider_attestation_none))
+                            }
+                            if (recognition?.pinRequired == true) {
+                                OutlinedTextField(pin, { pin = it }, label = { Text("PIN") }, singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation())
+                                Text(stringResource(R.string.confirm_authenticate))
+                            }
+                            Button(onClick = ::confirm,
+                                enabled = !permissionPending && clientData != null &&
+                                    (recognition?.pinRequired != true || pin.isNotEmpty()),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.plexo_provider_confirm))
+                            }
+                        }
+                    }
                 }
-                OutlinedButton(onClick = ::cancelRequest) { Text("取消") }
+                OutlinedButton(onClick = ::cancelRequest, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.plexo_provider_cancel))
+                }
             }
         }
     }
@@ -217,15 +298,30 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun confirm() {
-        if (busy || loading || rejected || failure != null || clientData == null) return
-        busy = true
-        pendingPin = pin.takeIf { it.isNotEmpty() }?.toCharArray()
+        val observed = recognition ?: return
+        if (!active || completed || requestCancelled || permissionPending || loading || rejected || clientData == null) return
+        activeReader?.let { reader ->
+            if (selected?.routeKey != reader.routeKey || !UsbAuthenticatorReader.isCurrent(usb, reader) || !usb.hasPermission(reader.device)) {
+                cancelRequest()
+                return
+            }
+        }
+        val secret = if (observed.pinRequired) pin.takeIf { it.isNotEmpty() }?.toCharArray() else null
         pin = ""
+        if (runner.confirm(secret)) {
+            recognition = null
+            credentialOperationStarted = true
+        }
+    }
+
+    private fun recognize() {
+        if (!active || completed || requestCancelled || busy || permissionPending || loading || rejected || failure != null || clientData == null) return
+        busy = true
+        pin = ""
+        recognition = null
         val reader = selected
         if (reader == null) {
             if (nfc?.isEnabled != true) {
-                pendingPin?.fill('\u0000')
-                pendingPin = null
                 busy = false
                 failure = OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                 return
@@ -254,17 +350,17 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         val generation = ++presenceGeneration
         userPresenceRequired = false
         val reader = selected
+        activeReader = reader
         failureWire = reader?.wire ?: CardWire.APDU
-        val secret = pendingPin
-        pendingPin = null
         lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
             operationOwnsInputs = true
             var pendingOutput: OperationResult<ProviderOutput>? = null
             var retained = false
             try {
                 val cardResult = withContext(Dispatchers.IO) {
-                    runner.execute(create, get, requireNotNull(clientData), secret, reader?.routeKey, requireNotNull(extracted).claim,
+                    runner.recognizeAndExecute(create, get, requireNotNull(clientData), reader?.routeKey, requireNotNull(extracted).claim,
                         onUserPresenceRequired = { required -> runOnUiThread { updateUserPresence(generation, reader, required) } },
+                        onRecognized = { observed -> runOnUiThread { updateRecognition(generation, reader, observed) } },
                         connect = connect).also { pendingOutput = it }
                 }
                 val result = if (requestCancelled && cardResult is OperationResult.Completed)
@@ -273,6 +369,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                         is ProviderOutput.Assertions -> output.values.any { it.extensions.largeBlobWritten == true }
                     }) else cardResult
                 userPresenceRequired = false
+                recognition = null
+                pin = ""
                 busy = false
                 if (completed || requestCancelled) {
                     if (cardResult is OperationResult.Completed && cardResult.value is ProviderOutput.Assertions)
@@ -296,6 +394,9 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     }
                 }
             } finally {
+                recognition = null
+                activeReader = null
+                pin = ""
                 if (generation == presenceGeneration) { presenceGeneration++; userPresenceRequired = false }
                 operationOwnsInputs = false
                 closeIdleInputs()
@@ -307,6 +408,15 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 }
             }
         }
+    }
+
+    private fun updateRecognition(generation: Long, reader: UsbReaderDescriptor?, observed: ProviderRecognition) {
+        if (generation != presenceGeneration || !runner.isActive || !active || !busy || completed || requestCancelled ||
+            permissionPending || loading || rejected || clientData == null ||
+            selected?.routeKey != reader?.routeKey ||
+            (reader != null && (!UsbAuthenticatorReader.isCurrent(usb, reader) || !usb.hasPermission(reader.device)))) return
+        pin = ""
+        recognition = observed
     }
 
     private val presenceMessage get() = ConfirmationPolicy.presenceMessage(
@@ -355,8 +465,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         presenceGeneration++
         userPresenceRequired = false
         pin = ""
-        pendingPin?.fill('\u0000')
-        pendingPin = null
+        recognition = null
         awaitingNfc = false
         assertions.forEach { it.close() }
         assertions = emptyList()
@@ -416,6 +525,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
 
     override fun onPause() {
         active = false
+        recognition = null
         presenceWatch?.cancel()
         nfc?.disableReaderMode(this)
         pin = ""
@@ -433,7 +543,8 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         presenceGeneration++
         userPresenceRequired = false
         assertions.forEach { it.close() }
-        pendingPin?.fill('\u0000')
+        pin = ""
+        recognition = null
         runner.cancel()
         extracted?.claim?.finish(cancelled = true)
         closeIdleInputs()

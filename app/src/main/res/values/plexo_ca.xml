@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plexo_ca_currentRequest">本次申请</string>
+    <string name="plexo_ca_unknownRequest">CA 签发结果待核实</string>
+    <string name="plexo_ca_identity">申请身份</string>
+    <string name="plexo_ca_purpose">用途</string>
+    <string name="plexo_ca_documentIdentity">文档签名证书</string>
+    <string name="plexo_ca_tlsIdentity">TLS 客户端证书</string>
+    <string name="plexo_ca_slotAlgorithm">槽位与算法</string>
+    <string name="plexo_ca_service">签发服务</string>
+    <string name="plexo_ca_root">签发根证书</string>
+    <string name="plexo_ca_prepare">申请准备</string>
+    <string name="plexo_ca_csr">卡内密钥与 CSR</string>
+    <string name="plexo_ca_issue">向 CA 申请</string>
+    <string name="plexo_ca_importExport">证书导入与导出</string>
+    <string name="plexo_ca_rootReady">已选择 CA 根证书</string>
+    <string name="plexo_ca_importReview">检查导入确认</string>
+    <string name="plexo_ca_exportChain">导出已验证的证书链</string>
+    <string name="plexo_tls_result">本次连接结果</string>
+    <string name="plexo_tls_certificate">连接所用证书</string>
+    <string name="plexo_tls_service">服务与认证</string>
+</resources>

@@ -50,7 +50,9 @@ class PivFileSigningPanelTest {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", "signing-panel-device")
-        manager.value = ManagerState(selectedReader = UsbReaderDescriptor(device, 1, CardWire.APDU), nfc = false)
+        val reader = UsbReaderDescriptor(device, 1, CardWire.APDU)
+        manager.value = ManagerState(selectedReader = reader, nfc = false,
+            recognition = CardRecognition(reader.routeKey, 1, CardFamily.PIV))
         val activity = controller.get()
         activity.enableEdgeToEdge()
         activity.setContent {

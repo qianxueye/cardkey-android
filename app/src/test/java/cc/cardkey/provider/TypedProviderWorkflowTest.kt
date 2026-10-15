@@ -69,7 +69,7 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
         }
         val registry = RequestRegistry()
         val claim = claim(registry)
-        val created = ProviderOperationRunner().execute(creation(), null, data, null, claim = claim) {
+        val created = ProviderOperationRunner().executeAndConfirm(creation(), null, data, null, claim = claim) {
             assertFalse(claim.finish(cancelled = true))
             assertThrows(IllegalArgumentException::class.java) { registry.claim(claim.id) }
             registration.connect()
@@ -92,7 +92,7 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
                 else -> error("Unexpected command $code")
             }
         }
-        val result = ProviderOperationRunner().execute(null, request(), data, null) { authentication.connect() }
+        val result = ProviderOperationRunner().executeAndConfirm(null, request(), data, null) { authentication.connect() }
             as OperationResult.Completed
         val provided = (result.value as ProviderOutput.Assertions).values.single()
         assertTrue(Signature.getInstance("SHA256withECDSA").run {
@@ -149,7 +149,7 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
             }
         }
         val pin = "1234".toCharArray()
-        val result = ProviderOperationRunner().execute(null, request(inputs), data, pin) { peer.connect() }
+        val result = ProviderOperationRunner().executeAndConfirm(null, request(inputs), data, pin) { peer.connect() }
             as OperationResult.Completed
         val provided = (result.value as ProviderOutput.Assertions).values.single()
         assertEquals(true, provided.extensions.largeBlobWritten)
@@ -174,11 +174,11 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
             else -> error("Incorrect PIN must not dispatch an assertion")
         } }
         val pin = "9999".toCharArray()
-        val result = ProviderOperationRunner().execute(null, request(), data, pin) { peer.connect() } as OperationResult.Failed
+        val result = ProviderOperationRunner().executeAndConfirm(null, request(), data, pin) { peer.connect() } as OperationResult.Failed
         assertEquals(FailureCode.PIN_INVALID, result.code)
         assertEquals(Effect.APPLIED, result.effect)
         assertEquals(1, peer.initializationCount)
-        assertEquals(listOf(4, 4, 6, 6), peer.commands)
+        assertEquals(listOf(4, 6, 6), peer.commands)
         assertTrue(peer.closed)
         assertArrayEquals(CharArray(4), pin)
     }
@@ -197,10 +197,10 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
             } }
             val runner = ProviderOperationRunner()
             var connections = 0
-            val result = runner.execute(null, request(), data, null) { connections++; peer.connect() }
+            val result = runner.executeAndConfirm(null, request(), data, null) { connections++; peer.connect() }
                 as OperationResult.Failed
             assertEquals(Effect.UNKNOWN, result.effect)
-            assertEquals(FailureCode.CANCELLED, (runner.execute(null, request(), data, null) {
+            assertEquals(FailureCode.CANCELLED, (runner.executeAndConfirm(null, request(), data, null) {
                 connections++; error("Uncertain assertion replayed")
             } as OperationResult.Failed).code)
             assertEquals(1, connections)
@@ -213,7 +213,7 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
         for (kind in listOf("missing", "ambiguous", "hash", "json")) {
             val registry = RequestRegistry()
             val claim = claim(registry)
-            val result = ProviderOperationRunner().execute(
+            val result = ProviderOperationRunner().executeAndConfirm(
                 if (kind == "ambiguous") creation() else null,
                 if (kind == "missing") null else request(),
                 when (kind) { "hash" -> data.copy(hash = ByteArray(31)); "json" -> data.copy(json = byteArrayOf(9)); else -> data },
@@ -252,16 +252,16 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
             override fun cancel() { cancelled = true }
             override fun close() { closing.countDown(); check(releaseClose.await(5, TimeUnit.SECONDS)) }
         }
-        val worker = Thread { result.set(runner.execute(null, request, data, pin) { channel }) }
+        val worker = Thread { result.set(runner.executeAndConfirm(null, request, data, pin) { channel }) }
         worker.start()
         try {
             assertTrue(entered.await(5, TimeUnit.SECONDS))
-            val duplicate = runner.execute(null, request, data, pin) { error("Duplicate connect") }
+            val duplicate = runner.executeAndConfirm(null, request, data, null) { error("Duplicate connect") }
             assertEquals(FailureCode.CANCELLED, (duplicate as OperationResult.Failed).code)
             assertArrayEquals("1234".toCharArray(), pin)
             val duplicatePin = "9876".toCharArray()
             val duplicateInputs = GetExtensionInputs(largeBlobWrite = byteArrayOf(7))
-            runner.execute(null, request(duplicateInputs), data, duplicatePin) { error("Duplicate connect") }
+            runner.executeAndConfirm(null, request(duplicateInputs), data, duplicatePin) { error("Duplicate connect") }
             assertArrayEquals(CharArray(4), duplicatePin)
             assertArrayEquals(byteArrayOf(0), duplicateInputs.largeBlobWrite)
             assertArrayEquals(byteArrayOf(9), inputs.largeBlobWrite)
@@ -287,7 +287,7 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
             2 -> success(assertion())
             else -> error("Unexpected command $code")
         } }
-        val result = runner.execute(null, request(), data, null) {
+        val result = runner.executeAndConfirm(null, request(), data, null) {
             val connected = peer.connect()
             object : CardChannel by connected {
                 override fun close() { runner.cancel(); connected.close() }
@@ -306,7 +306,7 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
             2 -> byteArrayOf(0x2f)
             else -> error("Unexpected command $code")
         } }
-        val result = ProviderOperationRunner().execute(null, request(), data, null, readerId) { peer.connect() }
+        val result = ProviderOperationRunner().executeAndConfirm(null, request(), data, null, readerId) { peer.connect() }
             as OperationResult.Failed
         assertEquals(FailureCode.PHYSICAL_ACTION_REQUIRED, result.code)
         assertFalse(CardOperationGate.isRemovalRequired(readerId))

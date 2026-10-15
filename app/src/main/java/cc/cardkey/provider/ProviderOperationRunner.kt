@@ -1,6 +1,8 @@
 package cc.cardkey.provider
 
 import cc.cardkey.protocol.*
+import cc.cardkey.protocol.fido.FidoClient
+import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -14,6 +16,8 @@ internal class ProviderOperationRunner {
     private val cancelled = AtomicBoolean(false)
     private val inputLock = Any()
     private var ownedPin: CharArray? = null
+    private var confirmation: CompletableDeferred<Unit>? = null
+    private var recognition: ProviderRecognition? = null
     private var ownedCreateInputs: CreateExtensionInputs? = null
     private var ownedGetInputs: GetExtensionInputs? = null
     private val channel = AtomicReference<CardChannel?>(null)
@@ -21,24 +25,34 @@ internal class ProviderOperationRunner {
     private var presenceCallback: ((Boolean) -> Unit)? = null
     val isActive get() = channel.get() != null && !cancelled.get()
 
-    fun execute(
+    fun confirm(pin: CharArray?): Boolean = synchronized(inputLock) {
+        val waiting = confirmation
+        val observed = recognition
+        if (cancelled.get() || waiting == null || waiting.isCompleted || observed == null ||
+            observed.pinRequired != (pin != null && pin.isNotEmpty())) {
+            if (pin !== ownedPin) pin?.fill('\u0000')
+            return@synchronized false
+        }
+        ownedPin = pin
+        waiting.complete(Unit)
+    }
+
+    suspend fun recognizeAndExecute(
         create: ParsedCreate?,
         get: ParsedGet?,
         clientData: ClientData,
-        pin: CharArray?,
         readerId: String? = null,
-        claim: RequestRegistry.Claim? = null,
+        claim: RequestRegistry.Claim,
         onUserPresenceRequired: ((Boolean) -> Unit)? = null,
+        onRecognized: (ProviderRecognition) -> Unit,
         connect: () -> CardChannel,
     ): OperationResult<ProviderOutput> {
         synchronized(inputLock) {
             if (!started.compareAndSet(false, true)) {
-                if (pin !== ownedPin) pin?.fill('\u0000')
                 if (create?.extensions !== ownedCreateInputs) create?.extensions?.close()
                 if (get?.extensions !== ownedGetInputs) get?.extensions?.close()
                 return OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
             }
-            ownedPin = pin
             ownedCreateInputs = create?.extensions
             ownedGetInputs = get?.extensions
         }
@@ -55,7 +69,7 @@ internal class ProviderOperationRunner {
                         return@use OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                     }
                     // Connection can power or initialize the card, so reserve before entering transport code.
-                    if (claim != null && !claim.reserveTransport())
+                    if (!claim.reserveTransport())
                         return@use OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
                     val connected = connect()
                     channel.set(connected)
@@ -82,10 +96,27 @@ internal class ProviderOperationRunner {
                         }
                     }
                     val result = CardSession(guarded).use { session ->
-                        session.run {
+                        session.runSuspending {
                             if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
-                            val result = if (create != null) ProviderOutput.Created(CardCredentialOperation.create(it, create, clientData, pin))
-                                else ProviderOutput.Assertions(CardCredentialOperation.get(it, requireNotNull(get), clientData, pin))
+                            val client = FidoClient(it)
+                            client.select()
+                            val info = client.getInfo()
+                            run {
+                                val observed = ProviderRecognition.from(info, create, get)
+                                val waiting = CompletableDeferred<Unit>()
+                                synchronized(inputLock) {
+                                    if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
+                                    recognition = observed
+                                    confirmation = waiting
+                                }
+                                onRecognized(observed)
+                                waiting.await()
+                                synchronized(inputLock) { confirmation = null; recognition = null }
+                            }
+                            if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
+                            val secret = synchronized(inputLock) { ownedPin }
+                            val result = if (create != null) ProviderOutput.Created(CardCredentialOperation.create(client, info, create, clientData, secret))
+                                else ProviderOutput.Assertions(CardCredentialOperation.get(client, info, requireNotNull(get), clientData, secret))
                             if (cancelled.get()) {
                                 when (result) {
                                     is ProviderOutput.Created -> result.credential.extensions.close()
@@ -127,7 +158,10 @@ internal class ProviderOperationRunner {
             return OperationResult.Failed(FailureCode.AUTHORIZATION_DENIED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
         } finally {
             synchronized(inputLock) {
-                pin?.fill('\u0000')
+                ownedPin?.fill('\u0000')
+                confirmation?.cancel()
+                confirmation = null
+                recognition = null
                 create?.extensions?.close()
                 get?.extensions?.close()
                 ownedPin = null
@@ -138,6 +172,12 @@ internal class ProviderOperationRunner {
     }
 
     fun cancel() {
+        synchronized(inputLock) {
+            cancelled.set(true)
+            if (confirmation != null) { ownedPin?.fill('\u0000'); ownedPin = null }
+            recognition = null
+            confirmation?.complete(Unit)
+        }
         synchronized(presenceLock) {
             cancelled.set(true)
             presenceCallback?.invoke(false)

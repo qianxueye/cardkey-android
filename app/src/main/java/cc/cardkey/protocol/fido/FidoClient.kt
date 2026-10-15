@@ -280,7 +280,12 @@ class FidoClient(private val session: CardSession) {
     fun makeCredential(request: MakeCredentialRequest, pin: CharArray? = null): MakeCredentialResult = try {
         require(request.rpId.isNotBlank() && request.clientDataHash.size == 32 && request.algorithms.isNotEmpty())
         require(request.enterpriseAttestation == null || request.enterpriseAttestation in 1..2)
-        val info = getInfo()
+        makeCredential(request, pin, getInfo())
+    } finally { pin?.fill('\u0000') }
+
+    internal fun makeCredential(request: MakeCredentialRequest, pin: CharArray?, info: FidoInfo): MakeCredentialResult = try {
+        require(request.rpId.isNotBlank() && request.clientDataHash.size == 32 && request.algorithms.isNotEmpty())
+        require(request.enterpriseAttestation == null || request.enterpriseAttestation in 1..2)
         if (request.residentKey) info.requireOption("rk")
         require(!request.extensions.largeBlobKey || request.residentKey)
         if (request.enterpriseAttestation != null) info.requireOption("ep")
@@ -313,7 +318,11 @@ class FidoClient(private val session: CardSession) {
 
     fun getAssertion(request: GetAssertionRequest, pin: CharArray? = null): List<Assertion> = try {
         require(request.rpId.isNotBlank() && request.clientDataHash.size == 32)
-        val info = getInfo()
+        getAssertion(request, pin, getInfo())
+    } finally { pin?.fill('\u0000') }
+
+    internal fun getAssertion(request: GetAssertionRequest, pin: CharArray?, info: FidoInfo): List<Assertion> = try {
+        require(request.rpId.isNotBlank() && request.clientDataHash.size == 32)
         val extensionPairs = linkedMapOf<Cbor, Cbor>()
         fun addExtension(name: String, value: Cbor) {
             if (name !in info.extensions) throw CardFailure(FailureCode.UNSUPPORTED)

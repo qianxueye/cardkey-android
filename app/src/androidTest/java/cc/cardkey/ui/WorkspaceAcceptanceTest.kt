@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,9 @@ class WorkspaceAcceptanceTest {
             compose.onNodeWithText(activity.getString(R.string.workspace_unread)).assertIsDisplayed()
             for (piv in listOf(false, true)) {
                 if (piv) compose.onNodeWithText("PIV").performClick()
+                compose.onNodeWithTag("workspace-objects").assertExists()
+                compose.onNodeWithTag("manager-run").assertDoesNotExist()
+                compose.onNodeWithTag("object-overview").performClick()
                 val actions = ManagerOperation.entries.filter {
                     it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET,
                         ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT)
@@ -85,12 +89,24 @@ class WorkspaceAcceptanceTest {
                     compose.onNodeWithText(activity.getString(R.string.workspace_advanced)).assertExists()
                     compose.onNodeWithTag("task-${action.name}").performScrollTo().assertIsDisplayed().performClick()
                     compose.onNodeWithTag("manager-run").assertExists()
+                    compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password)).assertCountEquals(0)
+                    if (action in setOf(ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_ADMIN)) {
+                        compose.onNodeWithTag("manager-run").assertIsNotEnabled()
+                        compose.onNodeWithTag("recognition-task").performScrollTo().assertIsEnabled()
+                    }
                 }
             }
             compose.onNodeWithText("证书申请").performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()
-            compose.onNodeWithText(activity.getString(R.string.enrollment_createCsr)).performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("enrollment-cn").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("enrollment-pin").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-create-csr").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-admin").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-import").assertDoesNotExist()
+            compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password)).assertCountEquals(0)
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
             compose.onAllNodesWithText("读卡器").onLast().performClick()
             compose.onNodeWithText(activity.getString(R.string.reader_empty)).performScrollTo().assertIsDisplayed()
@@ -103,7 +119,7 @@ class WorkspaceAcceptanceTest {
             val report = ManagerReport(listOf(ResultRow("PIN 剩余重试次数", "3 次"),
                 ResultRow("公钥", "synthetic-public-key")) + (1..20).map { ResultRow("field $it", "synthetic value") },
                 export = byteArrayOf(1, 2, 3), fileName = "synthetic.csr")
-            update(ManagerState(operation = ManagerOperation.PIV_CSR,
+            update(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2), operation = ManagerOperation.PIV_CSR,
                 result = OperationResult.Completed(report, Effect.NONE)))
             compose.onNodeWithText("导出").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("PIN 剩余重试次数").assertExists()

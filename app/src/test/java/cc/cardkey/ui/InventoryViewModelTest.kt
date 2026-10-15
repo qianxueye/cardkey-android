@@ -1,11 +1,17 @@
 package cc.cardkey.ui
 
 import android.nfc.NfcAdapter
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.nfc.Tag
 import android.nfc.tech.IsoDep
 import android.net.Uri
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
+import cc.cardkey.signing.SignatureFormat
+import cc.cardkey.transport.UsbAuthenticatorReader
+import cc.cardkey.transport.UsbReaderDescriptor
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
@@ -139,6 +145,179 @@ class InventoryViewModelTest {
         model.submit(input(ManagerOperation.FIDO_BLOB_WRITE)); assertFalse(model.state.value.busy)
         assertEquals(1, card.blobWrites)
     }
+    @Test fun explicitRecognitionAfterPickerPreservesFileButRequiresFreshProofBeforeOneWrite() {
+        val card = InventoryCard()
+        seedInventory(model.inventory, card)
+        model.inventoryAction(ManagerOperation.FIDO_BLOB_WRITE)
+        dispatch(card)
+        val initialKey = ReflectionHelpers.getField<ByteArray>(model.inventory, "key")
+        val id = requireNotNull(model.requestInventoryFile(model.inventory.state.value.generation))
+        model.pauseForActivity(false)
+        assertNull(model.state.value.recognition)
+        assertArrayEquals(ByteArray(initialKey.size), initialKey)
+        val raw = byteArrayOf(7, 8, 9)
+        val uri = Uri.parse("content://inventory-file/recognition.raw")
+        shadowOf(app.contentResolver).registerInputStream(uri, ByteArrayInputStream(raw))
+        model.receiveInventoryFile(id, uri)
+        await { model.inventory.state.value.fileSize != null }
+        val file = ReflectionHelpers.getField<ByteArray>(model.inventory, "file")
+        val credential = requireNotNull(model.inventory.state.value.credential)
+
+        repeat(2) {
+            val retainedKey = ReflectionHelpers.getField<ByteArray?>(model.inventory, "key")
+            val generation = model.inventory.state.value.generation
+            val assertions = card.assertions
+            val tokens = card.server.tokenRequests
+            val channel = card.channel(CardWire.APDU)
+            model.submit(OperationInput(ManagerOperation.FIDO_INFO,
+                inventoryGeneration = generation, inventorySelection = credential))
+            assertEquals(generation + 1, model.inventory.state.value.generation)
+            assertSame(credential, model.inventory.state.value.credential)
+            assertEquals(ManagerOperation.FIDO_BLOB_WRITE, model.inventory.state.value.action)
+            assertSame(file, ReflectionHelpers.getField<ByteArray>(model.inventory, "file"))
+            retainedKey?.let { assertArrayEquals(ByteArray(it.size), it) }
+            assertFalse(model.inventory.state.value.blobReady)
+            InventoryIsoDepShadow.channel = channel
+            model.onTag(Shadow.newInstanceOf(Tag::class.java), requireNotNull(model.pendingNfcOwner))
+            await { !model.state.value.busy }
+            assertTrue(model.state.value.canEnterFidoSecrets)
+            assertEquals(listOf(4), channel.commands.map { it.first })
+            assertEquals(assertions, card.assertions)
+            assertEquals(tokens, card.server.tokenRequests)
+            assertEquals(0, card.blobWrites)
+            assertArrayEquals(raw, file)
+
+            val withoutProof = input(ManagerOperation.FIDO_BLOB_WRITE)
+            model.submit(withoutProof)
+            assertFalse(model.state.value.busy)
+            assertEquals(FailureCode.INVALID_INPUT, (model.state.value.result as OperationResult.Failed).code)
+            assertEquals(0, card.blobWrites)
+            assertArrayEquals(raw, file)
+            dispatch(card)
+            assertTrue(model.inventory.state.value.blobReady)
+            assertArrayEquals(raw, file)
+        }
+        val written = dispatch(card, ManagerOperation.FIDO_BLOB_WRITE)
+        assertTrue(model.state.value.result is OperationResult.Completed)
+        assertEquals(1, card.blobWrites)
+        assertArrayEquals(raw, LargeBlobs.decrypt(ByteArray(32) { 9 }, LargeBlobs.decode(card.blobData).single()))
+        assertArrayEquals(ByteArray(file.size), file)
+        assertArrayEquals(CharArray(4), written.pin)
+        assertNull(model.inventory.state.value.fileSize)
+        assertFalse(model.inventory.state.value.blobReady)
+        model.submit(input(ManagerOperation.FIDO_BLOB_WRITE))
+        assertFalse(model.state.value.busy)
+        assertEquals(1, card.blobWrites)
+    }
+
+    @Test fun recognitionFileExceptionRejectsOtherOwnersSecretsAndRuntimeBlockers() {
+        for (case in listOf("command", "action", "missingCredential", "credential", "secret", "extension",
+                "permission", "permissionLost", "reader", "uncertainty", "save", "inventoryExport")) {
+            model = ManagerViewModel(app)
+            val card = InventoryCard()
+            val usbReader = if (case in listOf("permissionLost", "reader")) {
+                val device = Shadow.newInstanceOf(UsbDevice::class.java)
+                ReflectionHelpers.setField(device, "mName", "blob-recognition-$case")
+                shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(device, true)
+                UsbReaderDescriptor(device, 1, CardWire.APDU).also(model::selectReader)
+            } else null
+            seedInventory(model.inventory, card)
+            model.inventoryAction(ManagerOperation.FIDO_BLOB_WRITE)
+            val id = requireNotNull(model.requestInventoryFile(model.inventory.state.value.generation))
+            val generation = requireNotNull(model.inventory.receiveFile(id))
+            val file = byteArrayOf(4, 5, 6)
+            assertTrue(model.inventory.finishFile(id, generation, file))
+            when (case) {
+                "action" -> model.inventoryAction(ManagerOperation.FIDO_BLOB_READ)
+                "permission" -> model.permissionPending(true)
+                "permissionLost" -> shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(requireNotNull(usbReader).device, false)
+                "reader" -> UsbAuthenticatorReader.invalidate(requireNotNull(usbReader))
+                "uncertainty" -> {
+                    val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+                    state.value = state.value.copy(requiresInspection = true)
+                }
+                "save" -> assertTrue(model.signingFiles.requestSave(ManagerReport(emptyList(), export = byteArrayOf(9),
+                    fileName = SignatureFormat.RAW.fileName, signatureFormat = SignatureFormat.RAW), ManagerOperation.PIV_SIGN))
+                "inventoryExport" -> {
+                    val report = ManagerReport(emptyList(), export = byteArrayOf(9), protectedExport = true,
+                        inventoryGeneration = model.inventory.state.value.generation)
+                    val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+                    state.value = state.value.copy(result = OperationResult.Completed(report, Effect.NONE))
+                    assertNotNull(model.requestInventoryExport(report))
+                }
+            }
+            val current = requireNotNull(model.inventory.state.value.credential)
+            model.submit(OperationInput(if (case == "command") ManagerOperation.PIV_INFO else ManagerOperation.FIDO_INFO,
+                inventoryGeneration = model.inventory.state.value.generation,
+                inventorySelection = when (case) {
+                    "missingCredential" -> null
+                    "credential" -> InventoryCredential(current.rp, InventoryCard(id = byteArrayOf(88)).credential)
+                    else -> current
+                },
+                pin = if (case == "secret") "1234".toCharArray() else charArrayOf(),
+                assertionExtensions = AssertionExtensions(hmacSalts = if (case == "extension") ByteArray(32) { 1 } else null)))
+            assertNull("File survived $case", model.inventory.state.value.fileSize)
+            assertArrayEquals(ByteArray(file.size), file)
+            assertFalse(model.inventory.state.value.blobReady)
+            model.cancel()
+            await { !model.state.value.busy }
+        }
+    }
+
+    @Test fun staleRecognitionGenerationCannotConsumeNewerPreparedFileOrRestoreOldCallback() {
+        val card = InventoryCard()
+        seedInventory(model.inventory, card)
+        model.inventoryAction(ManagerOperation.FIDO_BLOB_WRITE)
+        val oldId = requireNotNull(model.requestInventoryFile(model.inventory.state.value.generation))
+        val stale = OperationInput(ManagerOperation.FIDO_INFO, inventoryGeneration = model.inventory.state.value.generation,
+            inventorySelection = model.inventory.state.value.credential)
+        val newId = requireNotNull(model.requestInventoryFile(model.inventory.state.value.generation))
+        val generation = requireNotNull(model.inventory.receiveFile(newId))
+        val file = byteArrayOf(1, 2)
+        assertTrue(model.inventory.finishFile(newId, generation, file))
+        model.submit(stale)
+        assertEquals(FailureCode.CANCELLED, (model.state.value.result as OperationResult.Failed).code)
+        assertFalse(model.state.value.busy)
+        assertSame(file, ReflectionHelpers.getField<ByteArray>(model.inventory, "file"))
+        assertArrayEquals(byteArrayOf(1, 2), file)
+        var reads = 0
+        val uri = Uri.parse("content://inventory-file/old-recognition")
+        shadowOf(app.contentResolver).registerInputStream(uri, object : ByteArrayInputStream(byteArrayOf(9)) {
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                reads++
+                return super.read(bytes, offset, length)
+            }
+        })
+        model.receiveInventoryFile(oldId, uri)
+        assertEquals(0, reads)
+        assertSame(file, ReflectionHelpers.getField<ByteArray>(model.inventory, "file"))
+    }
+
+    @Test fun recognitionDoesNotPreservePendingFilePickerCallback() {
+        val card = InventoryCard()
+        seedInventory(model.inventory, card)
+        model.inventoryAction(ManagerOperation.FIDO_BLOB_WRITE)
+        val id = requireNotNull(model.requestInventoryFile(model.inventory.state.value.generation))
+        model.submit(OperationInput(ManagerOperation.FIDO_INFO,
+            inventoryGeneration = model.inventory.state.value.generation,
+            inventorySelection = model.inventory.state.value.credential))
+        assertNull(model.inventory.fileRequestId)
+        var reads = 0
+        val uri = Uri.parse("content://inventory-file/pending-recognition")
+        shadowOf(app.contentResolver).registerInputStream(uri, object : ByteArrayInputStream(byteArrayOf(9)) {
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                reads++
+                return super.read(bytes, offset, length)
+            }
+        })
+        model.receiveInventoryFile(id, uri)
+        assertEquals(0, reads)
+        assertNull(model.inventory.state.value.fileSize)
+        assertFalse(model.inventory.state.value.blobReady)
+        assertEquals(0, card.assertions)
+        assertEquals(0, card.blobWrites)
+    }
+
     @Test fun preconnectionFailureWipesTransferredKeyAndFile() {
         val card = InventoryCard(); seedInventory(model.inventory, card); dispatch(card)
         val expected = ReflectionHelpers.getField<ByteArray>(model.inventory, "key")

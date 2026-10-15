@@ -51,7 +51,8 @@ class EnrollmentPanelTest {
             val enrollment = workflow?.state?.collectAsState()?.value ?: state.value
             MaterialTheme {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
-                    ManagerScreen(ManagerState(selectedReader = reader, nfc = false), clear.intValue,
+                    ManagerScreen(ManagerState(selectedReader = reader, nfc = false,
+                        recognition = cc.cardkey.ui.CardRecognition(reader.routeKey, 1, cc.cardkey.ui.CardFamily.PIV)), clear.intValue,
                         {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, enrollment,
                         { address, cn -> state.value = state.value.copy(address = address, cn = cn) }, {},
                         { error("A cancelled confirmation must not submit") }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, { selection ->
@@ -102,7 +103,7 @@ class EnrollmentPanelTest {
                 val (owner, _) = flow.startIssuance(fixture.token(csr))
                 flow.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
             }
-            compose.onNodeWithText("导入证书").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("enrollment-import").performScrollTo().assertIsEnabled()
             val beforeVerified = flow.state.value
             compose.onNodeWithText("文档签名").performScrollTo().performClick()
             compose.runOnIdle {
@@ -114,7 +115,7 @@ class EnrollmentPanelTest {
             }
             compose.onNodeWithText("9D").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P384").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("导入证书").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("enrollment-import").performScrollTo().assertIsEnabled()
             compose.onNodeWithText("客户端认证（TLS）").performScrollTo().performClick()
             compose.runOnIdle {
                 assertEquals(listOf(EnrollmentSelection()), changes)
@@ -125,7 +126,7 @@ class EnrollmentPanelTest {
                 assertEquals(EnrollmentStage.EMPTY, flow.state.value.stage)
                 assertTrue(runCatching { flow.importRequest() }.isFailure)
             }
-            compose.onNodeWithText("导入证书").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-import").assertDoesNotExist()
             compose.onNodeWithText("文档签名").performScrollTo().performClick()
             compose.runOnIdle {
                 assertEquals(listOf(EnrollmentSelection(), EnrollmentSelection(EnrollmentPurpose.DOCUMENT)), changes)
@@ -179,12 +180,12 @@ class EnrollmentPanelTest {
         var exported: ManagerReport? = null
         render(360, 640, flow.state.value, { exported = it }) {
             compose.onNodeWithText("证书已写入所选槽位，并完成回读。").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("导出").performScrollTo().assertIsEnabled().performClick()
+            compose.onNodeWithTag("enrollment-export-chain").performScrollTo().assertIsEnabled().performClick()
             val report = requireNotNull(exported)
             assertEquals("piv-9a-chain.pem", report.fileName)
             assertArrayEquals(bundle.pem().toByteArray(), report.export)
             assertEquals(2, EnrollmentProfile.certificates(requireNotNull(report.export).toString(Charsets.UTF_8)).size)
-            compose.onNodeWithText("导入证书").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-import").assertDoesNotExist()
             compose.onNodeWithText("管理密钥").assertDoesNotExist()
         }
     }

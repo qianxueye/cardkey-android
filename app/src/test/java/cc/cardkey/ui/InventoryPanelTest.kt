@@ -38,7 +38,7 @@ class InventoryPanelTest {
     private val inventory = FidoInventory().apply {
         seedInventory(this, InventoryCard()); action(ManagerOperation.FIDO_VERIFY_CREDENTIAL)
     }
-    private val manager = mutableStateOf(ManagerState())
+    private val manager = mutableStateOf(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
     private var submitted: OperationInput? = null
     private var cancelled = 0
     private fun render(width: Int, height: Int, test: (ComponentActivity, () -> Unit) -> Unit) {

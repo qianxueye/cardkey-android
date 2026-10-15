@@ -187,6 +187,17 @@ class CardSession(private val channel: CardChannel) : Closeable {
         finally { close() }
     }
 
+    suspend fun <T> runSuspending(operation: suspend (CardSession) -> T): OperationResult<T> {
+        check(!running && !finished)
+        running = true
+        return try { OperationResult.Completed(operation(this), effect) }
+        catch (e: CardFailure) { OperationResult.Failed(e.code, effect, e.status, writeAccepted = writeAccepted) }
+        catch (e: TransportException) { OperationResult.Failed(if (e.cancelled) FailureCode.CANCELLED else FailureCode.TRANSPORT_FAILURE, effect, dispatch = e.dispatch, writeAccepted = writeAccepted) }
+        catch (_: java.security.GeneralSecurityException) { OperationResult.Failed(FailureCode.MALFORMED_RESPONSE, effect, writeAccepted = writeAccepted) }
+        catch (_: IllegalArgumentException) { OperationResult.Failed(FailureCode.INVALID_INPUT, effect, writeAccepted = writeAccepted) }
+        finally { close() }
+    }
+
     @Synchronized override fun close() {
         invalidateSecure()
         if (!finished) { finished = true; try { channel.close() } catch (_: IOException) { } }
