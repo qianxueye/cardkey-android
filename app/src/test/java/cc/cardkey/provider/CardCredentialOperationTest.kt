@@ -2,6 +2,10 @@ package cc.cardkey.provider
 
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.IOException
@@ -15,6 +19,7 @@ import java.security.Signature
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class CardCredentialOperationTest {
     private val pair = KeyPairGenerator.getInstance("EC").run {
         initialize(ECGenParameterSpec("secp256r1")); generateKeyPair()
@@ -268,6 +273,115 @@ class CardCredentialOperationTest {
         val required = channel()
         assertTrue(getWith(required) is OperationResult.Failed)
         assertFalse(required.commands.any { it.first == 2 })
+    }
+
+    @Test fun preferredUvWithUnavailablePinTokenRetainsSignedAllowListLoginWithoutProbeAuthentication() = runTest {
+        for (version in listOf(1, 2)) {
+            for (capability in listOf("absent", "disabled", "force-change")) {
+                val options = if (capability == "absent") mapOf("clientPin" to true)
+                    else mapOf("clientPin" to true, "pinUvAuthToken" to (capability == "force-change"))
+                val original = assertion(flags = 1, account = null)
+                val request = get.copy(allowIds = listOf(id), userVerification = UserVerificationRequirement.PREFERRED)
+                val registry = RequestRegistry()
+                val claim = registry.claim(registry.offer(OfferedRequest(ProviderRequestKind.GET, "{}", data.hash,
+                    CallerSnapshot("synthetic.provider", setOf("certificate"), null), "fixture")))
+                val runner = ProviderOperationRunner()
+                var connects = 0
+                val channel = FidoChannel { code, parameters -> when (code) {
+                    4 -> success(info(options, protocols = listOf(version),
+                        extra = if (capability == "force-change") cborMap(12 to true.cbor()) else cborMap()))
+                    2 -> {
+                        assertFalse(requireNotNull(parameters)[5].map()["uv"].bool())
+                        assertArrayEquals(id, parseDescriptor(parameters[3].array().single()))
+                        assertNull(parameters[6])
+                        assertNull(parameters[7])
+                        success(cborMap(1 to descriptor(id), 2 to original.authData.cbor(), 3 to original.signature.cbor()))
+                    }
+                    else -> error("Unavailable PIN path must not authenticate: $code")
+                } }
+                val result = async { runner.recognizeAndExecute(null, request, data, claim = claim,
+                    onRecognized = { assertFalse(it.pinRequired) }) {
+                    connects++
+                    assertFalse(claim.reserveTransport())
+                    channel
+                } }
+                runCurrent()
+                assertEquals(listOf(4), channel.commands.map { it.first })
+                assertFalse(result.isCompleted)
+                assertNull(CardOperationGate.tryAcquire())
+                assertTrue(runner.confirm(null))
+                val completed = result.await() as OperationResult.Completed
+                val provided = (completed.value as ProviderOutput.Assertions).values.single()
+                assertArrayEquals(original.authData, provided.assertion.authData)
+                assertArrayEquals(original.signature, provided.assertion.signature)
+                assertTrue(FidoDiagnostics.verifyAssertion(provided.assertion, key, rp, data.hash).signatureValid)
+                assertEquals(listOf(4, 2), channel.commands.map { it.first })
+                assertEquals(1, connects)
+                assertEquals(1, channel.selectCount)
+                assertTrue(channel.closed)
+                provided.close()
+                assertFalse(runner.confirm(null))
+                assertEquals(FailureCode.CANCELLED, (runner.recognizeAndExecute(null, request, data,
+                    claim = claim, onRecognized = { error("Repeated observation") }) { error("Reconnected") } as OperationResult.Failed).code)
+                CardOperationGate.tryAcquire()!!.close()
+            }
+        }
+    }
+
+    @Test fun builtInUvWithoutPinRetainsSignedLoginWhenOptionalBlobWriteCannotAuthorize() = runTest {
+        val original = assertion(account = null)
+        val blobInput = byteArrayOf(9)
+        val blobKey = ByteArray(32) { 7 }
+        val request = get.copy(allowIds = listOf(id), extensions = GetExtensionInputs(largeBlobWrite = blobInput))
+        val registry = RequestRegistry()
+        val claim = registry.claim(registry.offer(OfferedRequest(ProviderRequestKind.GET, "{}", data.hash,
+            CallerSnapshot("synthetic.provider", setOf("certificate"), null), "fixture")))
+        val runner = ProviderOperationRunner()
+        var connects = 0
+        val channel = FidoChannel { code, parameters -> when (code) {
+            4 -> success(info(mapOf("uv" to true, "largeBlobs" to true), extensions = listOf("largeBlobKey"),
+                extra = cborMap(11 to 4096.cbor())))
+            2 -> {
+                assertTrue(requireNotNull(parameters)[5].map()["uv"].bool())
+                assertTrue(parameters[4].map()["largeBlobKey"].bool())
+                assertNull(parameters[6])
+                assertNull(parameters[7])
+                success(cborMap(1 to descriptor(id), 2 to original.authData.cbor(),
+                    3 to original.signature.cbor(), 7 to blobKey.copyOf().cbor()))
+            }
+            12 -> {
+                assertNotNull(requireNotNull(parameters)[1])
+                assertNull(parameters[2])
+                success(cborMap(1 to LargeBlobs.encode(emptyList()).cbor()))
+            }
+            else -> error("No PIN authorization or optional write may be dispatched: $code")
+        } }
+        val result = async { runner.recognizeAndExecute(null, request, data, claim = claim,
+            onRecognized = { assertFalse(it.pinRequired) }) { connects++; channel } }
+        runCurrent()
+        assertEquals(listOf(4), channel.commands.map { it.first })
+        assertFalse(result.isCompleted)
+        assertNull(CardOperationGate.tryAcquire())
+        assertTrue(runner.confirm(null))
+        val completed = result.await() as OperationResult.Completed
+        val provided = (completed.value as ProviderOutput.Assertions).values.single()
+        assertEquals(false, provided.extensions.largeBlobWritten)
+        assertArrayEquals(original.authData, provided.assertion.authData)
+        assertArrayEquals(original.signature, provided.assertion.signature)
+        assertTrue(FidoDiagnostics.verifyAssertion(provided.assertion, key, rp, data.hash).signatureValid)
+        val response = com.google.gson.JsonParser.parseString(ResponseEncoder.get(provided, data)).asJsonObject
+        assertFalse(response["clientExtensionResults"].asJsonObject["largeBlob"].asJsonObject["written"].asBoolean)
+        assertNull(provided.assertion.largeBlobKey)
+        assertArrayEquals(byteArrayOf(0), blobInput)
+        assertEquals(listOf(4, 2, 4, 12), channel.commands.map { it.first })
+        assertEquals(1, connects)
+        assertEquals(1, channel.selectCount)
+        assertTrue(channel.closed)
+        provided.close()
+        assertFalse(runner.confirm(null))
+        assertEquals(FailureCode.CANCELLED, (runner.recognizeAndExecute(null, request, data,
+            claim = claim, onRecognized = { error("Repeated observation") }) { error("Reconnected") } as OperationResult.Failed).code)
+        CardOperationGate.tryAcquire()!!.close()
     }
 
     @Test fun nativeHashMismatchIsRejectedBeforeCardIoAndPinIsCleared() {

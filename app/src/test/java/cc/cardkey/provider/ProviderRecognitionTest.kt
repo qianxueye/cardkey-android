@@ -99,7 +99,7 @@ class ProviderRecognitionTest {
         assertFalse(runner.confirm(tooEarly))
         assertArrayEquals(CharArray(4), tooEarly)
         val request = get().copy(extensions = GetExtensionInputs(largeBlobWrite = byteArrayOf(9)))
-        val channel = FidoChannel { code, _ -> assertEquals(4, code); success(info(mapOf("clientPin" to true))) }
+        val channel = FidoChannel { code, _ -> assertEquals(4, code); success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true))) }
         val result = async { runner.recognizeAndExecute(null, request, data, claim = claim(),
             onRecognized = { assertTrue(it.pinRequired) }) { channel } }
         runCurrent()
@@ -119,7 +119,7 @@ class ProviderRecognitionTest {
 
     @Test fun cancellationAfterConfirmationBeforeResumeDisposesCapturedPin() = runTest {
         val runner = ProviderOperationRunner()
-        val channel = FidoChannel { code, _ -> assertEquals(4, code); success(info(mapOf("clientPin" to true))) }
+        val channel = FidoChannel { code, _ -> assertEquals(4, code); success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true))) }
         val result = async { runner.recognizeAndExecute(null, get(), data, claim = claim(), onRecognized = {}) { channel } }
         runCurrent()
         val pin = "1234".toCharArray()
@@ -182,10 +182,10 @@ class ProviderRecognitionTest {
                 ProviderRecognition.from(client.getInfo(), null, get().copy(userVerification = requirement))
             } as OperationResult.Completed).value
         }
-        assertFalse(recognition(mapOf("uv" to true, "clientPin" to true), UserVerificationRequirement.REQUIRED).pinRequired)
+        assertFalse(recognition(mapOf("uv" to true, "clientPin" to true, "pinUvAuthToken" to true), UserVerificationRequirement.REQUIRED).pinRequired)
         assertFalse(recognition(emptyMap(), UserVerificationRequirement.DISCOURAGED).pinRequired)
-        assertFalse(recognition(mapOf("clientPin" to true), UserVerificationRequirement.DISCOURAGED).pinRequired)
-        assertTrue(recognition(mapOf("clientPin" to true), UserVerificationRequirement.REQUIRED).pinRequired)
+        assertFalse(recognition(mapOf("clientPin" to true, "pinUvAuthToken" to true), UserVerificationRequirement.DISCOURAGED).pinRequired)
+        assertTrue(recognition(mapOf("clientPin" to true, "pinUvAuthToken" to true), UserVerificationRequirement.REQUIRED).pinRequired)
         val channel = FidoChannel { _, _ -> success(info()) }
         val denied = CardSession(channel).run {
             val client = FidoClient(it); client.select()
@@ -193,4 +193,82 @@ class ProviderRecognitionTest {
         } as OperationResult.Failed
         assertEquals(FailureCode.AUTHORIZATION_DENIED, denied.code)
     }
+
+    @Test fun unavailablePermissionTokenRejectsMandatoryUvWithoutPublishingOrAuthenticating() = runTest {
+        for (version in listOf(1, 2)) {
+            for (capability in listOf("absent", "disabled", "force-change")) {
+                for (requirement in listOf("required", "always-uv", "protected-create")) {
+                    val options = mutableMapOf("clientPin" to true)
+                    if (capability != "absent") options["pinUvAuthToken"] = capability == "force-change"
+                    if (requirement == "always-uv") options["alwaysUv"] = true
+                    val channel = FidoChannel { code, _ ->
+                        assertEquals(4, code)
+                        success(info(options, protocols = listOf(version),
+                            extra = if (capability == "force-change") cborMap(12 to true.cbor()) else cborMap()))
+                    }
+                    val runner = ProviderOperationRunner()
+                    val creating = requirement == "protected-create"
+                    val result = runner.recognizeAndExecute(
+                        if (creating) create().copy(userVerification = UserVerificationRequirement.PREFERRED) else null,
+                        if (creating) null else get().copy(userVerification = if (requirement == "required")
+                            UserVerificationRequirement.REQUIRED else UserVerificationRequirement.PREFERRED),
+                        data, claim = claim(creating),
+                        onRecognized = { error("Mandatory UV without an executable path enabled confirmation") }) { channel }
+                        as OperationResult.Failed
+                    assertEquals(FailureCode.AUTHORIZATION_DENIED, result.code)
+                    assertEquals(Effect.NONE, result.effect)
+                    assertFalse(result.writeAccepted)
+                    assertEquals(listOf(4), channel.commands.map { it.first })
+                    assertFalse(runner.confirm(null))
+                    assertTrue(channel.closed)
+                    CardOperationGate.tryAcquire()!!.close()
+                }
+            }
+        }
+    }
+
+    @Test fun supportedPinTokenPathWaitsForConfirmationThenAuthenticatesOnTheHeldSession() = runTest {
+        for (version in listOf(1, 2)) {
+            val server = FidoClientTest.PinServer(version)
+            val runner = ProviderOperationRunner()
+            val claim = claim()
+            var connects = 0
+            val channel = FidoChannel { code, parameters -> when (code) {
+                4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true), protocols = listOf(version)))
+                6 -> server.respond(requireNotNull(parameters), 2, "example.com")
+                2 -> {
+                    assertArrayEquals(PinProtocol.authenticate(version, server.token, data.hash), requireNotNull(parameters)[6].bytes())
+                    assertEquals(version.toLong(), parameters[7].number())
+                    output(false)
+                }
+                else -> error("Unexpected command $code")
+            } }
+            val result = async { runner.recognizeAndExecute(null, get(), data, claim = claim,
+                onRecognized = { assertTrue(it.pinRequired) }) {
+                connects++
+                assertFalse(claim.reserveTransport())
+                channel
+            } }
+            runCurrent()
+            assertEquals(listOf(4), channel.commands.map { it.first })
+            assertEquals(0, server.tokenRequests)
+            assertFalse(result.isCompleted)
+            assertNull(CardOperationGate.tryAcquire())
+            val pin = "1234".toCharArray()
+            assertTrue(runner.confirm(pin))
+            val completed = result.await() as OperationResult.Completed
+            assertEquals(listOf(4, 6, 6, 2), channel.commands.map { it.first })
+            assertEquals(1, server.tokenRequests)
+            assertEquals(1, connects)
+            assertEquals(1, channel.selectCount)
+            assertTrue(channel.closed)
+            assertArrayEquals(CharArray(4), pin)
+            (completed.value as ProviderOutput.Assertions).values.forEach { it.close() }
+            assertFalse(runner.confirm(null))
+            assertEquals(FailureCode.CANCELLED, (runner.recognizeAndExecute(null, get(), data,
+                claim = claim, onRecognized = { error("Repeated observation") }) { error("Reconnected") } as OperationResult.Failed).code)
+            CardOperationGate.tryAcquire()!!.close()
+        }
+    }
+
 }
