@@ -50,6 +50,7 @@ class InventoryActivityTest {
         val model = model(activity); val card = InventoryCard()
         seedInventory(model.inventory, card)
         compose.waitForIdle()
+        compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
         compose.onNodeWithTag("object-overview").performClick()
         choose("扩展数据 · 设置")
         return model to card
@@ -92,7 +93,7 @@ class InventoryActivityTest {
             waitFor { owner.inventory.state.value.fileSize != null }
             val owned = ReflectionHelpers.getField<ByteArray>(owner.inventory, "file")
             assertArrayEquals(raw, owned); assertFalse(owner.inventory.state.value.blobReady)
-            compose.onNodeWithText("${raw.size} bytes").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("${raw.size} 字节").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             controller.pause()
             assertTrue(owned.all { it == 0.toByte() }); assertNull(owner.inventory.state.value.credential)

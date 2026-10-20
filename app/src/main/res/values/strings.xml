@@ -148,4 +148,22 @@
     <string name="workspace_readFidoFirst">先执行“FIDO2 · 读取”，识别认证器后再输入 PIN 或扩展数据。读取记录不代表卡片持续在场。</string>
     <string name="workspace_readPivFirst">先执行“PIV · 读取”，识别卡片后再输入 PIN、PUK 或管理密钥。读取记录不代表卡片持续在场。</string>
     <string name="workspace_readRecognition">读取卡片信息</string>
+    <string name="navigation_device">设备</string>
+    <string name="navigation_passkeys">通行密钥</string>
+    <string name="navigation_certificates">证书</string>
+    <string name="navigation_settings">设置</string>
+    <string name="device_reader">连接方式与读卡器</string>
+    <string name="settings_services">系统与证书服务</string>
+    <string name="settings_provider">凭据提供者设置</string>
+    <string name="settings_enrollment">申请 PIV 证书</string>
+    <string name="artwork_generic">通用卡片示意图</string>
+    <string name="artwork_loading">正在加载卡片图片…</string>
+    <string name="artwork_failed">卡片图片加载失败，仍可使用卡片功能。</string>
+    <string name="artwork_retry">重试图片</string>
+    <string name="provider_confirm_fido">FIDO PIN 输入错误会减少重试次数。确认继续？</string>
+    <string name="workspace_sites">网站与凭据</string>
+    <string name="workspace_security">安全设置</string>
+    <string name="workspace_fidoPin">更改 FIDO PIN</string>
+    <string name="workspace_createOnWebsite">新通行密钥由网站发起创建。这里可查看支持驻留的凭据。</string>
+    <string name="workspace_readSites">读取网站列表</string>
 </resources>

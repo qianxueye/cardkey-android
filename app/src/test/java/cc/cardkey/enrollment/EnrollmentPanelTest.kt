@@ -65,13 +65,14 @@ class EnrollmentPanelTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNodeWithText("证书申请").performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNode(hasText("设置") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
             check { compose.runOnIdle { clear.intValue++ }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
     }
     @Test fun documentSelectionDefaultsTo9cAndClearsOldCsrAndSecrets() {
         render(360, 640) {
-            compose.onNodeWithText("PIN").performScrollTo().performTextInput("123456")
+            compose.onNodeWithText("当前 PIV PIN").performScrollTo().performTextInput("123456")
             compose.onNodeWithText("文档签名").performScrollTo().performClick()
             compose.onNodeWithText("9C").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("使用所选槽位的现有密钥申请文档签名证书。不会生成或替换密钥。").performScrollTo().assertIsDisplayed()
@@ -140,7 +141,7 @@ class EnrollmentPanelTest {
         render(360, 640) { pause ->
             compose.onNodeWithText("通用名称（CN）").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("导出 CSR").performScrollTo().assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithText("PIN").performScrollTo().performTextInput("123456")
+            compose.onNodeWithText("当前 PIV PIN").performScrollTo().performTextInput("123456")
             compose.onNodeWithText("生成 CSR").performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.onNodeWithText("确认").assertIsDisplayed()
             pause()

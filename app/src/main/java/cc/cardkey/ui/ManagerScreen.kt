@@ -71,14 +71,22 @@ fun ManagerScreen(
     onInventoryFile: (Long) -> Unit,
     onInventoryAction: (ManagerOperation?) -> Unit,
     onEnrollmentSelection: (cc.cardkey.enrollment.EnrollmentSelection) -> Unit = {},
+    artworkReference: CardArtworkReference? = null,
+    artworkSource: CardArtworkSource = UnconfiguredCardArtworkSource,
 ) {
     val displayName = stringResource(R.string.app_name)
+    val artworkScope = rememberCoroutineScope()
+    val artworkLoader = remember(artworkSource) { CardArtworkLoader(artworkSource, artworkScope) }
+    val artwork by artworkLoader.state.collectAsState()
+    LaunchedEffect(artworkLoader, artworkReference, state.selectedReader?.routeKey, state.nfc) { artworkLoader.load(artworkReference) }
+    DisposableEffect(artworkLoader) { onDispose { artworkLoader.clear() } }
     val feedbackRequester = remember { BringIntoViewRequester() }
     val validationRequester = remember { BringIntoViewRequester() }
     var tab by remember { mutableIntStateOf(when {
         signingFiles.restoringSave && signingFiles.restoreOperation == null -> 2
         signingFiles.restoreOperation?.piv == true || signingFiles.active -> 1
-        else -> 0
+        inventory.action != null -> 0
+        else -> 2
     }) }
     var objectDetail by remember { mutableStateOf(signingFiles.active || signingFiles.restoringSave || inventory.credential != null && inventory.action != null) }
     val objectListScroll = rememberScrollState()
@@ -195,21 +203,22 @@ fun ManagerScreen(
             dismissButton = { TextButton(onClick = { onLastRetry(false) }) { Text("取消") } })
     }
     val topBar: @Composable () -> Unit = {
-        TopAppBar(title = { Text(stringResource(R.string.app_name)) }, actions = {
-            TextButton(onClick = onProviderSettings, enabled = !state.busy) { Text("凭据提供者") }
-        })
+        TopAppBar(title = { Text(stringResource(R.string.app_name)) })
     }
     val navigationBar: @Composable () -> Unit = {
         NavigationBar(Modifier.testTag("workspace-navigation")) {
-            listOf("FIDO2", "PIV", "读卡器", "证书申请").forEachIndexed { index, title ->
-                NavigationBarItem(selected = tab == index, enabled = !state.busy && (index !in listOf(1, 3) || state.supportsPiv), onClick = {
-                    if (!state.busy && (index !in listOf(1, 3) || state.supportsPiv)) {
-                        confirmation?.close(); confirmation = null
-                        tab = index
-                        if (index < 2) objectDetail = false
-                        if (index < 2) operation = if (index == 0) ManagerOperation.FIDO_INFO else ManagerOperation.PIV_INFO
+            listOf(2 to R.string.navigation_device, 0 to R.string.navigation_passkeys,
+                1 to R.string.navigation_certificates, 4 to R.string.navigation_settings).forEach { (index, label) ->
+                NavigationBarItem(selected = tab == index || index == 4 && tab == 3,
+                    enabled = !state.busy && (index != 1 || state.supportsPiv), onClick = {
+                    confirmation?.close(); confirmation = null
+                    tab = index
+                    if (index < 2) {
+                        objectDetail = false
+                        operation = if (index == 0) ManagerOperation.FIDO_INFO else ManagerOperation.PIV_INFO
                     }
-                }, icon = { Icon(managerDestinationIcons[if (index == 3) 1 else index], contentDescription = null) }, label = { Text(title) })
+                }, icon = { Icon(managerDestinationIcons[when (index) { 0 -> 0; 1 -> 1; 4 -> 3; else -> 2 }], contentDescription = null) },
+                    label = { Text(stringResource(label)) })
             }
         }
     }
@@ -277,7 +286,9 @@ fun ManagerScreen(
                     confirmation?.close(); confirmation = null
                     onInventoryCredential(inventory.generation, it)
                     operation = ManagerOperation.FIDO_VERIFY_CREDENTIAL; objectDetail = true
-                })
+                },
+                onFidoPin = { operation = ManagerOperation.FIDO_CHANGE_PIN; objectDetail = true },
+                onReadCredentials = { operation = ManagerOperation.FIDO_RPS; objectDetail = true })
         }
         val compact = viewportHeight < 480.dp
         LaunchedEffect(state.busy, state.presenceMessage, state.result, state.awaitingNfc, viewportHeight.takeIf { state.busy }) {
@@ -472,7 +483,9 @@ fun ManagerScreen(
                         }
                     }
                     if (tab == 2) {
-                        Text("读卡器", style = MaterialTheme.typography.headlineSmall)
+                        Text(stringResource(R.string.navigation_device), style = MaterialTheme.typography.headlineSmall)
+                        CardArtworkHero(artwork) { artworkLoader.load(artworkReference) }
+                        Text(stringResource(R.string.device_reader), style = MaterialTheme.typography.titleMedium)
                         if (state.readers.isEmpty()) Text(stringResource(R.string.reader_empty))
                         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             ReaderOption("NFC", null, state.nfc, !state.busy && !state.permissionPending) { onReader(null) }
@@ -483,9 +496,9 @@ fun ManagerScreen(
                                     !state.busy && !state.permissionPending) { onReader(reader) }
                             }
                         }
-                        OutlinedButton(onClick = onRefresh, enabled = !state.busy) { Text("读取") }
+                        OutlinedButton(onClick = onRefresh, enabled = !state.busy) { Text("刷新读卡器") }
                     } else if (tab < 2) {
-                        Text(if (tab == 0) "FIDO2" else "PIV", style = MaterialTheme.typography.headlineSmall)
+                        Text(stringResource(if (tab == 0) R.string.navigation_passkeys else R.string.navigation_certificates), style = MaterialTheme.typography.headlineSmall)
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 val op = operation
@@ -530,11 +543,11 @@ fun ManagerScreen(
                                     Text(stringResource(R.string.signing_limit), style = MaterialTheme.typography.bodySmall)
                                     signingFiles.selection?.let { file -> Text(stringResource(R.string.signing_selectedFile, file.name, file.size)) }
                                 }
-                                if (secretInputReady && needsPin(op)) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK) "PUK" else "PIN", pin, !state.busy, viewportHeight) { pin = it }
+                                if (secretInputReady && needsPin(op)) SecretField(when { op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK -> "当前 PUK"; op.piv -> "当前 PIV PIN"; else -> "当前 FIDO PIN" }, pin, !state.busy, viewportHeight) { pin = it }
                                 if (secretInputReady && op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
                                 if (op in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
                                         ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK)) {
-                                    if (secretInputReady) SecretField(if (op == ManagerOperation.PIV_CHANGE_PUK) "新 PUK" else "新 PIN", newPin, !state.busy, viewportHeight) { newPin = it }
+                                    if (secretInputReady) SecretField(when { op == ManagerOperation.PIV_CHANGE_PUK -> "新 PUK"; op.piv -> "新 PIV PIN"; else -> "新 FIDO PIN" }, newPin, !state.busy, viewportHeight) { newPin = it }
                                 }
                                 if (op in setOf(ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT)) {
                                     Choice("管理密钥 · 算法", adminAlgorithm, ManagementAlgorithm.entries, { it.name }, !state.busy) { adminAlgorithm = it }
@@ -545,7 +558,7 @@ fun ManagerScreen(
                                     if (op == ManagerOperation.FIDO_BLOB_WRITE) {
                                         OutlinedButton(onClick = { if (inventory.credential != null) onInventoryFile(inventory.generation) else onImport() }, enabled = !state.busy) { Text("导入") }
                                         (if (inventory.credential != null) inventory.fileSize else imported?.size)?.let {
-                                            Text("$it bytes", style = MaterialTheme.typography.bodySmall)
+                                            Text("$it 字节", style = MaterialTheme.typography.bodySmall)
                                         }
                                     }
                                 }
@@ -624,6 +637,13 @@ fun ManagerScreen(
                                 if (invalid) Text(stringResource(R.string.error_invalidInput), color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.bringIntoViewRequester(validationRequester))
                             }
+                        }
+                    }
+                    if (tab == 4) {
+                        Text(stringResource(R.string.navigation_settings), style = MaterialTheme.typography.headlineSmall)
+                        PlexoSection(stringResource(R.string.settings_services)) {
+                            OutlinedButton(onClick = onProviderSettings, enabled = !state.busy) { Text(stringResource(R.string.settings_provider)) }
+                            OutlinedButton(onClick = { tab = 3 }, enabled = !state.busy && state.supportsPiv) { Text(stringResource(R.string.settings_enrollment)) }
                         }
                     }
                     if (tab == 3) key(state.selectedReader?.routeKey) { EnrollmentPanel(enrollment, state.busy,
@@ -750,6 +770,16 @@ private val managerDestinationIcons = listOf(
             moveTo(6f, 5f); lineTo(6f, 19f); lineTo(18f, 19f); lineTo(18f, 5f); close()
             moveTo(8f, 7f); lineTo(16f, 7f); lineTo(16f, 9f); lineTo(8f, 9f); close()
             moveTo(8f, 12f); lineTo(12f, 12f); lineTo(12f, 16f); lineTo(8f, 16f); close()
+        }
+    }.build(),
+    ImageVector.Builder("Settings", 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(4f, 5f); lineTo(20f, 5f); lineTo(20f, 7f); lineTo(4f, 7f); close()
+            moveTo(4f, 11f); lineTo(20f, 11f); lineTo(20f, 13f); lineTo(4f, 13f); close()
+            moveTo(4f, 17f); lineTo(20f, 17f); lineTo(20f, 19f); lineTo(4f, 19f); close()
+            moveTo(8f, 3f); lineTo(10f, 3f); lineTo(10f, 9f); lineTo(8f, 9f); close()
+            moveTo(14f, 9f); lineTo(16f, 9f); lineTo(16f, 15f); lineTo(14f, 15f); close()
+            moveTo(8f, 15f); lineTo(10f, 15f); lineTo(10f, 21f); lineTo(8f, 21f); close()
         }
     }.build(),
 )

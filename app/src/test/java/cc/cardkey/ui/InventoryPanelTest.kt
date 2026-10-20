@@ -56,7 +56,7 @@ class InventoryPanelTest {
         try { compose.waitForIdle(); test(controller.get()) { controller.pause().resume(); compose.waitForIdle() } }
         finally { submitted?.close(); controller.pause().stop().destroy() }
     }
-    private fun pin() = compose.onNode(hasText("PIN") and hasSetTextAction())
+    private fun pin() = compose.onNode(hasText("当前 FIDO PIN") and hasSetTextAction())
     private fun composeRoot(view: View): ViewRootForTest? = if (view is ViewRootForTest) view else (view as? ViewGroup)?.let {
         (0 until it.childCount).firstNotNullOfOrNull { index -> composeRoot(it.getChildAt(index)) }
     }

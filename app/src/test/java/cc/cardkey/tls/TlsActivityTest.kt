@@ -97,7 +97,8 @@ class TlsActivityTest {
                 assertEquals(listOf(0xa4, 0xfd, 0xf8, 0xf7, 0xf7, 0xf7), f.card.commands.drop(priorCommands).map { it.ins })
             }
             compose.waitForIdle()
-            compose.onNodeWithText("证书申请").performClick()
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithTag("tls-pin").assertDoesNotExist()
             recognize()
             compose.onNodeWithTag("tls-pin").performScrollTo().performTextInput("123456")
@@ -113,7 +114,8 @@ class TlsActivityTest {
             waitFor { model.tls.value.serverRootSubject != null }
             assertEquals(EnrollmentStage.IMPORTED, model.enrollment.state.value.stage)
             assertSame(f.bundle, model.enrollment.state.value.bundle)
-            compose.onNodeWithText("证书申请").performClick()
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithTag("tls-pin").assertDoesNotExist()
             assertNull(model.state.value.recognition)
             recognize()
@@ -128,7 +130,8 @@ class TlsActivityTest {
         try {
             val activity = controller.get()
             val model = seed(activity, f)
-            compose.waitForIdle(); compose.onNodeWithText("证书申请").performClick()
+            compose.waitForIdle(); compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithTag("tls-root").performScrollTo().performClick()
             val launch = shadowOf(activity).nextStartedActivityForResult
             val entered = CountDownLatch(1)

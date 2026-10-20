@@ -69,7 +69,7 @@ class PivFileSigningPanelTest {
             check(activity) { controller.pause().resume(); compose.waitForIdle() }
         } finally { submitted?.close(); controller.pause().stop().destroy() }
     }
-    private fun pin() = compose.onAllNodes(hasText("PIN") and hasSetTextAction()).onFirst()
+    private fun pin() = compose.onAllNodes(hasText("当前 PIV PIN") and hasSetTextAction()).onFirst()
     private fun choose() = compose.onNodeWithTag("signing-file-picker").performScrollTo().performClick()
     private fun composeRoot(view: View): ViewRootForTest? = if (view is ViewRootForTest) view else (view as? ViewGroup)?.let {
         (0 until it.childCount).firstNotNullOfOrNull { index -> composeRoot(it.getChildAt(index)) }

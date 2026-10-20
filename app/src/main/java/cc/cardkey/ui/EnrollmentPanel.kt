@@ -108,7 +108,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
         }
         if (canUseCard) {
             PlexoSection(stringResource(R.string.plexo_ca_csr), Modifier.testTag("enrollment-csr")) {
-                OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
+                OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("当前 PIV PIN") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-pin"))
                 Text("6–8 位数字", style = MaterialTheme.typography.bodyMedium)

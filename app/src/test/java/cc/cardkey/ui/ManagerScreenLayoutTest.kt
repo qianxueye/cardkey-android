@@ -70,6 +70,7 @@ class ManagerScreenLayoutTest {
         }
         try {
             compose.waitForIdle()
+            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
             compose.onNodeWithTag("object-overview").performClick()
             compose.waitForIdle()
             check(activity) { next -> compose.runOnIdle { state.value = next.copy(recognition = next.recognition ?: recognized) }; compose.waitForIdle() }
@@ -111,7 +112,7 @@ class ManagerScreenLayoutTest {
                 val action = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
                 assertTrue("$label overlaps system area: $action, safe bottom $safeBottom", action.bottom <= safeBottom)
             }
-            val destination = compose.onNode(hasText("FIDO2") and hasClickAction()).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val destination = compose.onNode(hasText("通行密钥") and hasClickAction()).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue("Destination overlaps system area: $destination, safe bottom $safeBottom", destination.bottom <= safeBottom)
             assertTrue("Dock reserves duplicate IME/navigation space: $destination, safe bottom $safeBottom",
                 safeBottom - destination.bottom <= 16f)
@@ -141,21 +142,21 @@ class ManagerScreenLayoutTest {
                 .performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.onNodeWithText(ManagerOperation.FIDO_CHANGE_PIN.title)
                 .performSemanticsAction(SemanticsActions.OnClick) { it() }
-            compose.onNodeWithText("新 PIN").performScrollTo().performTextInput("123456")
-            compose.onNodeWithText("新 PIN").assertIsFocused().assertIsDisplayed()
+            compose.onNodeWithText("新 FIDO PIN").performScrollTo().performTextInput("123456")
+            compose.onNodeWithText("新 FIDO PIN").assertIsFocused().assertIsDisplayed()
             compose.runOnIdle {
                 requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
                     .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 240))
                     .setVisible(WindowInsets.Type.ime(), true).build())
             }
             compose.waitForIdle()
-            compose.onNodeWithText("新 PIN").assertIsFocused()
-            assertFeedbackVisible("新 PIN")
+            compose.onNodeWithText("新 FIDO PIN").assertIsFocused()
+            assertFeedbackVisible("新 FIDO PIN")
         }
     }
 
     private fun submitInvalidManagementHex() {
-        compose.onNodeWithText("PIV").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNode(hasText("证书") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithTag("object-overview").performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -284,7 +285,7 @@ class ManagerScreenLayoutTest {
         render(360, 640, onSubmit = { submissions++; it.close() }) { activity, _ ->
             for (piv in listOf(false, true)) {
                 if (piv) {
-                    compose.onNodeWithText("PIV").performClick()
+                    compose.onNode(hasText("证书") and hasClickAction()).performClick()
                     compose.onNodeWithTag("object-overview").performClick()
                 }
                 val actions = ManagerOperation.entries.filter {
@@ -297,11 +298,12 @@ class ManagerScreenLayoutTest {
                     compose.onNodeWithTag("manager-run").assertExists()
                 }
             }
-            compose.onNodeWithText("证书申请").performClick()
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
-            compose.onNodeWithText("FIDO2").performClick()
+            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
             compose.onNodeWithTag("object-overview").performClick()
             compose.onNodeWithTag("manager-run").assertExists()
             assertEquals(0, submissions)
@@ -333,7 +335,7 @@ class ManagerScreenLayoutTest {
         val report = result.value
         var exported: ManagerReport? = null
         render(360, 480, onExport = { exported = it }) { activity, update ->
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNode(hasText("证书") and hasClickAction()).performClick()
             compose.onNodeWithTag("object-overview").performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithText(ManagerOperation.PIV_SLOT.title).performClick()
@@ -367,17 +369,18 @@ class ManagerScreenLayoutTest {
             compose.onNodeWithText(activity.getString(R.string.workspace_unread)).assertIsDisplayed()
             compose.onAllNodesWithText("读卡器").onLast().performClick()
             compose.onNodeWithText("Reader 20 with a very long synthetic product name").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("读取").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("刷新读卡器").performScrollTo().assertIsDisplayed()
         }
     }
 
     @Test fun busyCertificateTaskKeepsCancelReachableAndDisablesNavigation() {
         render(360, 640) { _, update ->
-            compose.onNodeWithText("证书申请").performClick()
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             update(ManagerState(busy = true, operation = ManagerOperation.PIV_ENROLL_CSR))
             compose.onNode(hasText("取消") and !hasAnyAncestor(hasScrollAction())).assertIsDisplayed().assertHasClickAction()
-            compose.onNodeWithText("FIDO2").assertIsNotEnabled()
-            compose.onNodeWithText("PIV").assertIsNotEnabled()
+            compose.onNode(hasText("通行密钥") and hasClickAction()).assertIsNotEnabled()
+            compose.onNode(hasText("证书") and hasClickAction()).assertIsNotEnabled()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
         }
     }
