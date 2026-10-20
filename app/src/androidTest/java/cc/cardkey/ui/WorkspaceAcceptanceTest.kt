@@ -67,6 +67,7 @@ class WorkspaceAcceptanceTest {
                 }
             }
             compose.waitForIdle()
+            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
             check(activity, { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }, dispatches)
         }
     }
@@ -75,7 +76,7 @@ class WorkspaceAcceptanceTest {
         render { activity, _, dispatches ->
             compose.onNodeWithText(activity.getString(R.string.workspace_unread)).assertIsDisplayed()
             for (piv in listOf(false, true)) {
-                if (piv) compose.onNodeWithText("PIV").performClick()
+                if (piv) compose.onNode(hasText("证书") and hasClickAction()).performClick()
                 compose.onNodeWithTag("workspace-objects").assertExists()
                 compose.onNodeWithTag("manager-run").assertDoesNotExist()
                 compose.onNodeWithTag("object-overview").performClick()
@@ -96,7 +97,8 @@ class WorkspaceAcceptanceTest {
                     }
                 }
             }
-            compose.onNodeWithText("证书申请").performClick()
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()
             compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed().assertIsEnabled()
@@ -130,7 +132,7 @@ class WorkspaceAcceptanceTest {
             compose.onNodeWithText("synthetic-public-key").assertDoesNotExist()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithTag("task-FIDO_CHANGE_PIN").performScrollTo().performClick()
-            compose.onNodeWithText("新 PIN").performScrollTo().performClick().performTextInput("123456")
+            compose.onNodeWithText("新 FIDO PIN").performScrollTo().performClick().performTextInput("123456")
             compose.runOnIdle {
                 assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
                 activity.window.insetsController?.show(WindowInsets.Type.ime())
@@ -139,7 +141,7 @@ class WorkspaceAcceptanceTest {
                 activity.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
             }
             compose.waitForIdle()
-            val field = compose.onNodeWithText("新 PIN").assertIsFocused().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val field = compose.onNodeWithText("新 FIDO PIN").assertIsFocused().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             val viewport = compose.onNode(hasScrollAction()).fetchSemanticsNode().boundsInRoot
             assertTrue("Focused input outside viewport: $field in $viewport",
                 field.top >= viewport.top && field.bottom <= viewport.bottom)

@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -22,6 +23,10 @@ class CardArtworkTest {
             output.toByteArray()
         }
         return CardArtworkPayload(bytes, "Synthetic card artwork")
+    }
+
+    @Before fun initializeNativeCodec() {
+        decodeCardArtwork(payload())
     }
 
     @Test fun validPngLoadsWithLabelAndOpaqueReference() = runBlocking {
@@ -96,6 +101,21 @@ class CardArtworkTest {
         loader.load(reference)
         yield()
         assertEquals(CardArtworkState.Default, loader.state.value)
+        assertEquals(2, attempts)
+    }
+
+    @Test fun currentSourceTimeoutExposesRetryAndPreservesParentScope() = runBlocking {
+        var attempts = 0
+        val loader = CardArtworkLoader({
+            attempts++
+            if (attempts == 1) withTimeout(50) { awaitCancellation() } else null
+        }, this)
+        val reference = CardArtworkReference("record")
+        loader.load(reference)
+        assertEquals(CardArtworkState.Failed, withTimeout(5000) { loader.state.first { it != CardArtworkState.Loading } })
+        assertTrue(coroutineContext.isActive)
+        loader.load(reference)
+        assertEquals(CardArtworkState.Default, withTimeout(5000) { loader.state.first { it != CardArtworkState.Loading } })
         assertEquals(2, attempts)
     }
 

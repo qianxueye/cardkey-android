@@ -9,6 +9,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 data class CardArtworkReference(val recordId: String, val revision: String? = null)
@@ -60,8 +61,9 @@ internal class CardArtworkLoader(private val source: CardArtworkSource, private 
             val result = try {
                 source.load(reference)?.let { payload -> withContext(Dispatchers.Default) { decodeCardArtwork(payload) } }
                     ?: CardArtworkState.Default
-            } catch (_: CancellationException) {
-                return@launch
+            } catch (cancelled: CancellationException) {
+                if (current == generation && scope.isActive) mutableState.value = CardArtworkState.Failed
+                throw cancelled
             } catch (_: Exception) {
                 CardArtworkState.Failed
             }

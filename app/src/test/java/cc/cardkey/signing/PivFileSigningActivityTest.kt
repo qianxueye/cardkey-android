@@ -258,7 +258,7 @@ class PivFileSigningActivityTest {
             compose.onNodeWithText("PIV · 读取").performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.waitForIdle()
             if (readerPage) {
-                compose.onNode(hasText("读卡器") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)).performClick()
+                compose.onNode(hasText("设备") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)).performClick()
                 compose.waitForIdle()
             }
             assertFalse(model.signingFiles.state.value.active)

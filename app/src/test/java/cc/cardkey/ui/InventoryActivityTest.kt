@@ -93,7 +93,7 @@ class InventoryActivityTest {
             waitFor { owner.inventory.state.value.fileSize != null }
             val owned = ReflectionHelpers.getField<ByteArray>(owner.inventory, "file")
             assertArrayEquals(raw, owned); assertFalse(owner.inventory.state.value.blobReady)
-            compose.onNodeWithText("${raw.size} bytes").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("${raw.size} 字节").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             controller.pause()
             assertTrue(owned.all { it == 0.toByte() }); assertNull(owner.inventory.state.value.credential)
