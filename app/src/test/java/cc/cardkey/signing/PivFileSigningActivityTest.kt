@@ -66,7 +66,7 @@ class PivFileSigningActivityTest {
         val model = ViewModelProvider(activity)[ManagerViewModel::class.java]
         model.selectReader(UsbAuthenticatorReader.discover(manager).single())
         compose.waitForIdle()
-        compose.onNodeWithText("PIV").performClick()
+        compose.onNode(hasText("证书") and hasClickAction()).performClick()
         compose.onNodeWithTag("object-overview").performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(if (format == SignatureFormat.CMS) "CMS 文件签名" else "文件签名").performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -95,7 +95,7 @@ class PivFileSigningActivityTest {
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.onNodeWithText("导出 SSH 公钥").performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.waitForIdle()
-            compose.onNodeWithText("PIN", substring = false).assertDoesNotExist()
+            compose.onNodeWithText("当前 PIV PIN", substring = false).assertDoesNotExist()
             for (algorithm in cc.cardkey.protocol.piv.KeyAlgorithm.entries) {
                 val card = EnrollmentCard(algorithm = algorithm)
                 val result = CardSession(card).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SSH_EXPORT)) }

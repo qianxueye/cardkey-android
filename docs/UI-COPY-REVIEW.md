@@ -14,7 +14,7 @@ The table records all resource strings and Chinese authored literals in UI/provi
 | --- | --- | --- | --- |
 | app/src/main/java/cc/cardkey/ui/TlsQualificationPanel.kt / literal | "确认" | "确认" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/TlsQualificationPanel.kt / literal | "取消" | "取消" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
-| app/src/main/java/cc/cardkey/ui/TlsQualificationPanel.kt / literal | (new or revised literal) | "当前 PIV PIN" | Clarify task or protocol context; no capability change. |
+| app/src/main/java/cc/cardkey/ui/TlsQualificationPanel.kt / literal | "PIN" | "当前 PIV PIN" | Clarify task or protocol context; no capability change. |
 | app/src/main/java/cc/cardkey/ui/TlsQualificationPanel.kt / literal | "6–8 位数字" | "6–8 位数字" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/EnrollmentPanel.kt / literal | "确认" | "确认" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/EnrollmentPanel.kt / literal | "取消" | "取消" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
@@ -42,15 +42,15 @@ The table records all resource strings and Chinese authored literals in UI/provi
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "版本" | "版本" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "序列号" | "序列号" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "用户验证方法" | "用户验证方法" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
-| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | (new or revised literal) | "刷新读卡器" | Clarify task or protocol context; no capability change. |
+| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "读取" | "刷新读卡器" | Clarify task or protocol context; no capability change. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "槽位" | "槽位" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "6–8 位数字" | "6–8 位数字" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "新 PUK" | "新 PUK" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
-| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "新 PIN" | "新 PIN" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
+| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / new PIN field | "新 PIN" | "新 FIDO PIN" / "新 PIV PIN" | Identify the operation protocol. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "管理密钥 · 算法" | "管理密钥 · 算法" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "管理密钥 · HEX" | "管理密钥 · HEX" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "导入" | "导入" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
-| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | (new or revised literal) | "$it 字节" | Clarify task or protocol context; no capability change. |
+| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "$it bytes" | "$it 字节" | Clarify task or protocol context; no capability change. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "新管理密钥 · 算法" | "新管理密钥 · 算法" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "新管理密钥 · HEX" | "新管理密钥 · HEX" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / literal | "PIN 验证策略" | "PIN 验证策略" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
@@ -357,24 +357,24 @@ The table records all resource strings and Chinese authored literals in UI/provi
 | app/src/main/res/values/strings.xml / workspace_readFidoFirst | 先执行“FIDO2 · 读取”，识别认证器后再输入 PIN 或扩展数据。读取记录不代表卡片持续在场。 | 先执行“FIDO2 · 读取”，识别认证器后再输入 PIN 或扩展数据。读取记录不代表卡片持续在场。 | Retain: relevant label or scope; conditions and uncertainty remain explicit. |
 | app/src/main/res/values/strings.xml / workspace_readPivFirst | 先执行“PIV · 读取”，识别卡片后再输入 PIN、PUK 或管理密钥。读取记录不代表卡片持续在场。 | 先执行“PIV · 读取”，识别卡片后再输入 PIN、PUK 或管理密钥。读取记录不代表卡片持续在场。 | Retain: relevant label or scope; conditions and uncertainty remain explicit. |
 | app/src/main/res/values/strings.xml / workspace_readRecognition | 读取卡片信息 | 读取卡片信息 | Retain: relevant label or scope; conditions and uncertainty remain explicit. |
-| app/src/main/res/values/strings.xml / navigation_device | (new) | 设备 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / navigation_passkeys | (new) | 通行密钥 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / navigation_certificates | (new) | 证书 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / navigation_settings | (new) | 设置 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / device_reader | (new) | 连接方式与读卡器 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / settings_services | (new) | 系统与证书服务 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / settings_provider | (new) | 凭据提供者设置 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / settings_enrollment | (new) | 申请 PIV 证书 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / artwork_generic | (new) | 通用卡片示意图 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / artwork_loading | (new) | 正在加载卡片图片… | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / artwork_failed | (new) | 卡片图片加载失败，仍可使用卡片功能。 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / artwork_retry | (new) | 重试图片 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / provider_confirm_fido | (new) | FIDO PIN 输入错误会减少重试次数。确认继续？ | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / workspace_sites | (new) | 网站与凭据 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / workspace_security | (new) | 安全设置 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / workspace_fidoPin | (new) | 更改 FIDO PIN | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / workspace_createOnWebsite | (new) | 新通行密钥由网站发起创建。这里可查看支持驻留的凭据。 | Clarify task, scope or presentation; preserve command behavior. |
-| app/src/main/res/values/strings.xml / workspace_readSites | (new) | 读取网站列表 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / navigation_device | Absent (new string) | 设备 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / navigation_passkeys | Absent (new string) | 通行密钥 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / navigation_certificates | Absent (new string) | 证书 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / navigation_settings | Absent (new string) | 设置 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / device_reader | Absent (new string) | 连接方式与读卡器 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / settings_services | Absent (new string) | 系统与证书服务 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / settings_provider | Absent (new string) | 凭据提供者设置 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / settings_enrollment | Absent (new string) | 申请 PIV 证书 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / artwork_generic | Absent (new string) | 通用卡片示意图 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / artwork_loading | Absent (new string) | 正在加载卡片图片… | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / artwork_failed | Absent (new string) | 卡片图片加载失败，仍可使用卡片功能。 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / artwork_retry | Absent (new string) | 重试图片 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / provider_confirm_fido | Absent (new string) | FIDO PIN 输入错误会减少重试次数。确认继续？ | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / workspace_sites | Absent (new string) | 网站与凭据 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / workspace_security | Absent (new string) | 安全设置 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / workspace_fidoPin | Absent (new string) | 更改 FIDO PIN | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / workspace_createOnWebsite | Absent (new string) | 新通行密钥由网站发起创建。这里可查看支持驻留的凭据。 | Clarify task, scope or presentation; preserve command behavior. |
+| app/src/main/res/values/strings.xml / workspace_readSites | Absent (new string) | 读取网站列表 | Clarify task, scope or presentation; preserve command behavior. |
 | app/src/main/java/cc/cardkey/MainActivity.kt / literal | "凭据提供者" | "凭据提供者" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/MainActivity.kt / literal | "启用" | "启用" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
 | app/src/main/java/cc/cardkey/MainActivity.kt / literal | "取消" | "取消" | Retain reviewed wording; preserve technical identifiers, limits and consequences. |
@@ -388,11 +388,11 @@ The table records all resource strings and Chinese authored literals in UI/provi
 | app/src/main/java/cc/cardkey/provider/ProviderActivity.kt / technical literal | "${index + 1}" | "${index + 1}" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/provider/ProviderActivity.kt / technical literal | "NFC" | "NFC" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/provider/ProviderActivity.kt / technical literal | "USB" | "USB" | Retain exact protocol, identifier, format or technical label. |
-| app/src/main/java/cc/cardkey/provider/ProviderActivity.kt / technical literal | "FIDO PIN" | "FIDO PIN" | Retain exact protocol, identifier, format or technical label. |
+| app/src/main/java/cc/cardkey/provider/ProviderActivity.kt / PIN field | "PIN" | "FIDO PIN" | Identify the FIDO PIN used by this request. |
 | app/src/main/java/cc/cardkey/ui/TlsQualificationPanel.kt / technical literal | "P-256 · 9A" | "P-256 · 9A" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/ui/EnrollmentPanel.kt / technical literal | "%02X" | "%02X" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/ui/EnrollmentPanel.kt / technical literal | "P-256 · 9A" | "P-256 · 9A" | Retain exact protocol, identifier, format or technical label. |
-| app/src/main/java/cc/cardkey/ui/EnrollmentPanel.kt / technical literal | "PIN" | "PIN" | Retain exact protocol, identifier, format or technical label. |
+| app/src/main/java/cc/cardkey/ui/EnrollmentPanel.kt / PIN field | "PIN" | "当前 PIV PIN" | Identify the PIV PIN used for certificate operations. |
 | app/src/main/java/cc/cardkey/ui/EnrollmentPanel.kt / technical literal | "enrollment-issue" | "enrollment-issue" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/ui/EnrollmentPanel.kt / technical literal | "enrollment-cancel" | "enrollment-cancel" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/ui/CardArtworkHero.kt / technical literal | "CardKey" | "CardKey" | Retain exact protocol, identifier, format or technical label. |
@@ -409,8 +409,8 @@ The table records all resource strings and Chinese authored literals in UI/provi
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / technical literal | "0x%04X" | "0x%04X" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / technical literal | "RP" | "RP" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / technical literal | "signing-file-picker" | "signing-file-picker" | Retain exact protocol, identifier, format or technical label. |
-| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / technical literal | "PUK" | "PUK" | Retain exact protocol, identifier, format or technical label. |
-| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / technical literal | "PIN" | "PIN" | Retain exact protocol, identifier, format or technical label. |
+| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / current PUK field | "PUK" | "当前 PUK" | Identify the current unlocking secret. |
+| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / current PIN field | "PIN" | "当前 FIDO PIN" / "当前 PIV PIN" | Select the label from the operation protocol. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / technical literal | "largeBlobKey" | "largeBlobKey" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / technical literal | "uvm" | "uvm" | Retain exact protocol, identifier, format or technical label. |
 | app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / technical literal | "credProtect" | "credProtect" | Retain exact protocol, identifier, format or technical label. |
@@ -438,3 +438,5 @@ The table records all resource strings and Chinese authored literals in UI/provi
 ## Familiar task context
 
 PlexoWorkspace protocol subtitle: absent → FIDO2 for Passkeys, PIV for Certificates. These are protocol labels, not certification claims. Credential row secondary text: credential.idHex → credential.rp.id (show website beside account; the credential ID remains in selected-object details). No cloud, biometric, creation-time or last-used state is added. Existing in-repository key icon is retained without a third-party asset dependency.
+
+| app/src/main/java/cc/cardkey/ui/ManagerScreen.kt / new PIN field | "新 PIN" | "新 FIDO PIN" / "新 PIV PIN" | Select the label from the operation protocol; new PUK remains "新 PUK". |

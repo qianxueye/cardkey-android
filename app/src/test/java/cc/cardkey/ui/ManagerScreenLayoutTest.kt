@@ -142,21 +142,21 @@ class ManagerScreenLayoutTest {
                 .performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.onNodeWithText(ManagerOperation.FIDO_CHANGE_PIN.title)
                 .performSemanticsAction(SemanticsActions.OnClick) { it() }
-            compose.onNodeWithText("新 PIN").performScrollTo().performTextInput("123456")
-            compose.onNodeWithText("新 PIN").assertIsFocused().assertIsDisplayed()
+            compose.onNodeWithText("新 FIDO PIN").performScrollTo().performTextInput("123456")
+            compose.onNodeWithText("新 FIDO PIN").assertIsFocused().assertIsDisplayed()
             compose.runOnIdle {
                 requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
                     .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 240))
                     .setVisible(WindowInsets.Type.ime(), true).build())
             }
             compose.waitForIdle()
-            compose.onNodeWithText("新 PIN").assertIsFocused()
-            assertFeedbackVisible("新 PIN")
+            compose.onNodeWithText("新 FIDO PIN").assertIsFocused()
+            assertFeedbackVisible("新 FIDO PIN")
         }
     }
 
     private fun submitInvalidManagementHex() {
-        compose.onNodeWithText("证书").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNode(hasText("证书") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithTag("object-overview").performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -285,7 +285,7 @@ class ManagerScreenLayoutTest {
         render(360, 640, onSubmit = { submissions++; it.close() }) { activity, _ ->
             for (piv in listOf(false, true)) {
                 if (piv) {
-                    compose.onNodeWithText("证书").performClick()
+                    compose.onNode(hasText("证书") and hasClickAction()).performClick()
                     compose.onNodeWithTag("object-overview").performClick()
                 }
                 val actions = ManagerOperation.entries.filter {
@@ -335,7 +335,7 @@ class ManagerScreenLayoutTest {
         val report = result.value
         var exported: ManagerReport? = null
         render(360, 480, onExport = { exported = it }) { activity, update ->
-            compose.onNodeWithText("证书").performClick()
+            compose.onNode(hasText("证书") and hasClickAction()).performClick()
             compose.onNodeWithTag("object-overview").performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithText(ManagerOperation.PIV_SLOT.title).performClick()
@@ -380,7 +380,7 @@ class ManagerScreenLayoutTest {
             update(ManagerState(busy = true, operation = ManagerOperation.PIV_ENROLL_CSR))
             compose.onNode(hasText("取消") and !hasAnyAncestor(hasScrollAction())).assertIsDisplayed().assertHasClickAction()
             compose.onNode(hasText("通行密钥") and hasClickAction()).assertIsNotEnabled()
-            compose.onNodeWithText("证书").assertIsNotEnabled()
+            compose.onNode(hasText("证书") and hasClickAction()).assertIsNotEnabled()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
         }
     }

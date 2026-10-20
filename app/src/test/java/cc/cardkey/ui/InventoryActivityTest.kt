@@ -50,6 +50,7 @@ class InventoryActivityTest {
         val model = model(activity); val card = InventoryCard()
         seedInventory(model.inventory, card)
         compose.waitForIdle()
+        compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
         compose.onNodeWithTag("object-overview").performClick()
         choose("扩展数据 · 设置")
         return model to card

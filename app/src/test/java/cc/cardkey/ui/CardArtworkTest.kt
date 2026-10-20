@@ -9,9 +9,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class CardArtworkTest {
     private fun payload(): CardArtworkPayload {
         val image = Bitmap.createBitmap(16, 10, Bitmap.Config.ARGB_8888)
@@ -28,7 +30,9 @@ class CardArtworkTest {
         val loader = CardArtworkLoader({ received = it; payload() }, this)
         loader.load(reference)
         assertEquals(CardArtworkState.Loading, loader.state.value)
-        val result = withTimeout(5000) { loader.state.first { it is CardArtworkState.Loaded } } as CardArtworkState.Loaded
+        val completed = withTimeout(5000) { loader.state.first { it != CardArtworkState.Loading } }
+        assertTrue("Expected decoded image, got $completed", completed is CardArtworkState.Loaded)
+        val result = completed as CardArtworkState.Loaded
         assertEquals(reference, received)
         assertEquals("Synthetic card artwork", result.label)
         assertEquals(16, result.bitmap.width)
@@ -73,6 +77,13 @@ class CardArtworkTest {
         val decoded = decodeCardArtwork(CardArtworkPayload(output.toByteArray(), "Synthetic large card"))
         assertEquals(1200, decoded.bitmap.width)
         assertEquals(800, decoded.bitmap.height)
+    }
+
+    @Test fun malformedPayloadProducesVisibleFailureState() = runBlocking {
+        val loader = CardArtworkLoader({ CardArtworkPayload(byteArrayOf(1, 2), "Invalid image") }, this)
+        loader.load(CardArtworkReference("record"))
+        val result = withTimeout(5000) { loader.state.first { it != CardArtworkState.Loading } }
+        assertEquals(CardArtworkState.Failed, result)
     }
 
     @Test fun failureCanRetryWithoutAnyCardOperation() = runBlocking {
