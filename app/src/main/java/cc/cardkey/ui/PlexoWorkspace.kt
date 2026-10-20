@@ -72,9 +72,22 @@ internal fun PlexoObjects(
             if (inventory.rp != null) {
                 Text(stringResource(R.string.workspace_credentials), style = MaterialTheme.typography.titleSmall)
                 if (inventory.credentials.isEmpty()) Text(stringResource(R.string.workspace_credentialReadRequired))
-                inventory.credentials.forEach { credential ->
-                    ObjectOption(credential.displayName ?: credential.name ?: credential.idHex,
-                        credential.rp.id, inventory.credential == credential, enabled,
+                val rows = inventory.credentials.map { credential ->
+                    val name = credential.name?.takeIf { it.isNotBlank() }
+                    val title = credential.displayName?.takeIf { it.isNotBlank() } ?: name ?: credential.idHex
+                    Triple(credential, title, name)
+                }
+                val labelCounts = rows.groupingBy { (credential, title, name) ->
+                    Triple(credential.rp.id, title, name)
+                }.eachCount()
+                rows.forEach { (credential, title, name) ->
+                    val ambiguous = name == null || labelCounts.getValue(Triple(credential.rp.id, title, name)) > 1
+                    val details = buildList {
+                        if (name != null && name != title) add(name)
+                        add(credential.rp.id)
+                        if (ambiguous && title != credential.idHex) add("凭据 ID · ${credential.idHex}")
+                    }.joinToString("\n")
+                    ObjectOption(title, details, inventory.credential == credential, enabled,
                         "object-credential-${credential.idHex}") { onCredential(credential) }
                 }
             }

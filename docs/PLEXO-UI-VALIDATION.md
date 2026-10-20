@@ -21,6 +21,14 @@ Preserved full and focused JUnit reports/logs are in app/build/ui-evidence/. Rep
 
 Toolchain: existing JDK 17, Gradle 8.13 and Android SDK 36. The full suite used installed Smallstep CLI 0.31.0 and step-ca 0.30.2 for its local synthetic CA fixtures. Missing public test dependencies were resolved once, then cached checks ran offline.
 
+## PR 32 presentation corrections
+
+Card artwork now applies a 333dp maximum width before filling available width and preserving the 1.586 aspect ratio. It remains at most 210dp tall without contradictory height constraints. The native regression checks phone and wide-landscape layouts in default, loading, failed and loaded states and verifies that following content does not overlap the artwork.
+
+Credential rows retain actual usernames beside display names and RP IDs. Missing usernames or colliding visible account text expose the full credential ID without ellipsis; a full-ID title is not repeated. Synthetic fixtures include shared display names with different usernames, identical names, absent names and IDs that differ only in their final bytes. Every row still selects the exact credential object.
+
+All four new regressions failed against the prior candidate and passed after correction. The focused presentation and existing workspace suites passed 14 cases with zero failures or skips. Cached application APK, instrumentation APK and lint gates passed; unrelated test evidence above was reused. Review-round logs and JUnit reports are preserved in app/build/ui-evidence/review-round/. The committed screenshots below were refreshed from the passing disconnected fixture; the Device image was visually inspected.
+
 ## Disconnected native previews
 
 These committed PNGs are the already verified Robolectric Canvas outputs described above. They show a generic card illustration and unread/disconnected state; they do not show physical-device acceptance.

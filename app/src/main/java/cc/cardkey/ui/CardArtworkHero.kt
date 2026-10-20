@@ -20,7 +20,7 @@ import cc.cardkey.R
 @Composable
 internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Surface(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 210.dp).aspectRatio(1.586f)) {
+        Surface(shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 333.dp).fillMaxWidth().aspectRatio(1.586f)) {
             if (state is CardArtworkState.Loaded) {
                 Image(state.bitmap.asImageBitmap(), state.label, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             } else {
