@@ -21,6 +21,22 @@ Preserved full and focused JUnit reports/logs are in app/build/ui-evidence/. Rep
 
 Toolchain: existing JDK 17, Gradle 8.13 and Android SDK 36. The full suite used installed Smallstep CLI 0.31.0 and step-ca 0.30.2 for its local synthetic CA fixtures. Missing public test dependencies were resolved once, then cached checks ran offline.
 
+## Disconnected native previews
+
+These committed PNGs are the already verified Robolectric Canvas outputs described above. They show a generic card illustration and unread/disconnected state; they do not show physical-device acceptance.
+
+![Device workspace in explicit disconnected state](screenshots/device.png)
+
+![Passkeys workspace in explicit disconnected state](screenshots/passkeys.png)
+
+## Primary design references
+
+The implementation uses familiar task categories, website/account rows, distinct PIN management and native controls. Reference products do not establish CardKey hardware or platform capabilities.
+
+- [Yubico Authenticator: Passkeys / FIDO2](https://docs.yubico.com/software/yubikey/tools/authenticator/auth-guide/fido2.html)
+- [Yubico Authenticator: Home and selected-device context](https://docs.yubico.com/software/yubikey/tools/authenticator/auth-guide/home.html)
+- [Android passkey UI guidance](https://developer.android.com/design/ui/mobile/guides/patterns/passkeys)
+
 ## Acceptance boundary
 
 This evidence covers application source, local builds, synthetic protocol/lifecycle tests and native JVM-rendered previews. No phone/card/reader access, APK installation, installed-manager launch, provider activation, external-account acceptance or production deployment occurred. Device UI/keyboard, USB/NFC and provider/account acceptance remain separate.
