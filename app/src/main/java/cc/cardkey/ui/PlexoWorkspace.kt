@@ -40,11 +40,14 @@ internal fun PlexoObjects(
     onSlot: (Int) -> Unit,
     onRp: (InventoryRp) -> Unit,
     onCredential: (InventoryCredential) -> Unit,
+    onFidoPin: () -> Unit,
+    onReadCredentials: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().testTag("workspace-objects").verticalScroll(scroll).padding(16.dp)
         .selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         deviceContext()
-        Text(stringResource(R.string.workspace_objects), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(if (destination == 1) R.string.navigation_certificates else R.string.navigation_passkeys), style = MaterialTheme.typography.headlineSmall)
+        Text(if (destination == 1) "PIV" else "FIDO2", style = MaterialTheme.typography.labelLarge)
         Text(stringResource(R.string.workspace_selectionOnly), style = MaterialTheme.typography.bodyMedium)
         ObjectOption(stringResource(if (destination == 1) R.string.workspace_pivSecurity else R.string.workspace_authenticator),
             null, false, enabled, "object-overview", onOverview)
@@ -61,7 +64,7 @@ internal fun PlexoObjects(
                 }), slot == candidate, enabled, "object-slot-%02X".format(candidate)) { onSlot(candidate) }
             }
         } else {
-            Text("RP", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.workspace_sites), style = MaterialTheme.typography.titleSmall)
             if (inventory.rps.isEmpty()) Text(stringResource(R.string.workspace_credentialsUnread))
             inventory.rps.forEach { rp ->
                 ObjectOption(rp.id, rp.name, inventory.rp == rp, enabled, "object-rp-${rp.id}") { onRp(rp) }
@@ -71,9 +74,17 @@ internal fun PlexoObjects(
                 if (inventory.credentials.isEmpty()) Text(stringResource(R.string.workspace_credentialReadRequired))
                 inventory.credentials.forEach { credential ->
                     ObjectOption(credential.displayName ?: credential.name ?: credential.idHex,
-                        credential.idHex, inventory.credential == credential, enabled,
+                        credential.rp.id, inventory.credential == credential, enabled,
                         "object-credential-${credential.idHex}") { onCredential(credential) }
                 }
+            }
+            Text(stringResource(R.string.workspace_security), style = MaterialTheme.typography.titleSmall)
+            OutlinedButton(onClick = onFidoPin, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.workspace_fidoPin))
+            }
+            Text(stringResource(R.string.workspace_createOnWebsite), style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onReadCredentials, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.workspace_readSites))
             }
         }
     }

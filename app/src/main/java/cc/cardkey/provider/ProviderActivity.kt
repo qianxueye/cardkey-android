@@ -256,9 +256,9 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                                     R.string.provider_attestation_direct else R.string.provider_attestation_none))
                             }
                             if (recognition?.pinRequired == true) {
-                                OutlinedTextField(pin, { pin = it }, label = { Text("PIN") }, singleLine = true,
+                                OutlinedTextField(pin, { pin = it }, label = { Text("FIDO PIN") }, singleLine = true,
                                     modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation())
-                                Text(stringResource(R.string.confirm_authenticate))
+                                Text(stringResource(R.string.provider_confirm_fido))
                             }
                             Button(onClick = ::confirm,
                                 enabled = !permissionPending && clientData != null &&

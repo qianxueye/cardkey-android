@@ -97,7 +97,7 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
             }
             Text(stringResource(R.string.tls_serverRootHelp), style = MaterialTheme.typography.bodyMedium)
             if (canUseCard) {
-                OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("PIN") }, singleLine = true,
+                OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("当前 PIV PIN") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("tls-pin"))
                 Text("6–8 位数字", style = MaterialTheme.typography.bodyMedium)
                 Button(modifier = Modifier.heightIn(min = 48.dp).testTag("tls-start"), onClick = {

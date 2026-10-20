@@ -1,5 +1,8 @@
 package cc.cardkey.ui
 
+import java.io.File
+import androidx.compose.ui.graphics.asAndroidBitmap
+
 import android.hardware.usb.UsbDevice
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -48,6 +51,7 @@ class PlexoWorkspaceTest {
                        onExport: (ManagerReport) -> Unit = {},
                        initial: ManagerState = ManagerState(),
                        enrollment: EnrollmentState = EnrollmentState(),
+                       openPasskeys: Boolean = true,
                        check: (ComponentActivity, (ManagerState) -> Unit, () -> Pair<ManagerOperation?, Int>?) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val state = mutableStateOf(initial)
@@ -67,15 +71,37 @@ class PlexoWorkspaceTest {
         }
         try {
             compose.waitForIdle()
+            if (openPasskeys) compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
             check(controller.get(), { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }, { action })
         } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun taskNavigationKeepsDeviceAndSettingsPassive() {
+        render(400, 800, openPasskeys = false) { _, _, _ ->
+            compose.onNodeWithText("通用卡片示意图").assertIsDisplayed()
+            compose.onNodeWithText("刷新读卡器").performScrollTo().assertIsDisplayed()
+            savePreview("device")
+            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            compose.onNodeWithTag("object-overview").assertIsDisplayed()
+            savePreview("passkeys")
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("凭据提供者设置").assertIsDisplayed()
+            compose.onNodeWithText("申请 PIV 证书").assertIsDisplayed()
+        }
+    }
+
+    private fun savePreview(name: String) {
+        val output = File(System.getProperty("java.io.tmpdir"), "cardkey-android-ui-$name.png")
+        output.outputStream().use {
+            assertTrue(compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+        }
     }
 
     @Test fun compactObjectSelectionAndSystemBackPreserveSlotWithoutDispatch() {
         render(360, 640, 1.5f) { activity, _, action ->
             compose.onNodeWithTag("workspace-objects").assertExists()
             compose.onNodeWithTag("workspace-detail").assertDoesNotExist()
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithText("证书").performClick()
             compose.onNodeWithTag("object-slot-9C").performScrollTo().performClick()
             compose.onNodeWithTag("workspace-detail").assertExists()
             compose.onNodeWithTag("workspace-objects").assertDoesNotExist()
@@ -90,7 +116,7 @@ class PlexoWorkspaceTest {
 
     @Test fun wideObjectSelectionKeepsBothPanesAndCanReachRetiredSlotsWithoutDispatch() {
         render(1200, 800) { _, _, action ->
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithText("证书").performClick()
             compose.onNodeWithTag("object-slot-8C").performScrollTo().performClick()
             compose.onNodeWithTag("workspace-objects").assertExists()
             compose.onNodeWithTag("workspace-detail").assertExists()
@@ -105,7 +131,7 @@ class PlexoWorkspaceTest {
         val result = fixture.read({ fixture.start + 1 }) as OperationResult.Completed
         var exported: ManagerReport? = null
         render(360, 640, onExport = { exported = it }) { _, update, action ->
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithText("证书").performClick()
             compose.onNodeWithTag("object-slot-9D").performScrollTo().performClick()
             update(ManagerState(operation = ManagerOperation.PIV_SLOT, result = result))
             compose.onNodeWithTag("workspace-object-back").performScrollTo().performClick()
@@ -130,7 +156,7 @@ class PlexoWorkspaceTest {
         val commandCount = card.commands.size
         var exported: ManagerReport? = null
         render(360, 640, onExport = { exported = it }) { _, update, action ->
-            compose.onNodeWithText("PIV").performClick()
+            compose.onNodeWithText("证书").performClick()
             compose.onNodeWithTag("object-slot-9C").performScrollTo().performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithTag("task-PIV_SSH_EXPORT").performScrollTo().performClick()
@@ -166,7 +192,8 @@ class PlexoWorkspaceTest {
     }
 
     private fun chooseTask(operation: ManagerOperation) {
-        if (operation.piv) compose.onNodeWithText("PIV").performClick()
+        if (operation.piv) compose.onNodeWithText("证书").performClick()
+        else compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
         compose.onNodeWithTag("object-overview").performScrollTo().performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
         compose.onNodeWithTag("task-${operation.name}").performScrollTo().performClick()
@@ -212,7 +239,7 @@ class PlexoWorkspaceTest {
         val reads = mutableListOf<OperationInput>()
         try {
             render(360, 640, onSubmit = { reads += it }) { _, update, action ->
-                compose.onNodeWithText("PIV").performClick()
+                compose.onNodeWithText("证书").performClick()
                 compose.onNodeWithTag("object-slot-9D").performScrollTo().performClick()
                 compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
                 compose.onNodeWithTag("task-PIV_ADMIN").performScrollTo().performClick()
@@ -275,7 +302,8 @@ class PlexoWorkspaceTest {
         val selected = reader("recognition-ca")
         val descriptor = ManagerState(nfc = false, selectedReader = selected)
         render(360, 640, initial = descriptor) { _, update, _ ->
-            compose.onNodeWithText("证书申请").performClick()
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("enrollment-cn").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsEnabled()
@@ -302,7 +330,8 @@ class PlexoWorkspaceTest {
         val selected = reader("recognition-tls")
         val descriptor = ManagerState(nfc = false, selectedReader = selected)
         render(360, 640, initial = descriptor, enrollment = imported) { _, update, _ ->
-            compose.onNodeWithText("证书申请").performClick()
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithTag("tls-endpoint").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("tls-root").performScrollTo().assertIsEnabled()
             compose.onNodeWithTag("tls-pin").assertDoesNotExist()
