@@ -13,6 +13,8 @@ data class FidoInfo(val versions: List<String>, val extensions: Set<String>, val
 data class FidoAlgorithmParameter(val type: String, val algorithm: Int)
 data class PinRetries(val pin: Int, val powerCycleState: Boolean?, val uv: Int?)
 data class CredentialCapacity(val existing: Int, val remaining: Int)
+data class CredentialInventory(val capacity: CredentialCapacity, val sites: List<SiteCredentials>)
+data class SiteCredentials(val rp: RelyingParty, val credentials: List<Credential>)
 data class RelyingParty(val id: String, val name: String?, val idHash: ByteArray)
 data class FidoUser(val id: ByteArray, val name: String?, val displayName: String?) {
     internal fun encode(): Cbor.Map {

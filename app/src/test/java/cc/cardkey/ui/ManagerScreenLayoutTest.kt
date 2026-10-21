@@ -71,7 +71,6 @@ class ManagerScreenLayoutTest {
         try {
             compose.waitForIdle()
             compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
-            compose.onNodeWithTag("object-overview").performClick()
             compose.waitForIdle()
             check(activity) { next -> compose.runOnIdle { state.value = next.copy(recognition = next.recognition ?: recognized) }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
@@ -90,6 +89,8 @@ class ManagerScreenLayoutTest {
     }
 
     private fun selectLongRegistrationForm() {
+        compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
+        compose.onNodeWithText("高级 FIDO 设置与诊断").performScrollTo().performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(ManagerOperation.FIDO_REGISTER.title).performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.waitForIdle()
@@ -108,7 +109,7 @@ class ManagerScreenLayoutTest {
             update(ManagerState(busy = true, operation = ManagerOperation.FIDO_INFO))
             val scene = compose.onNodeWithTag("manager-scene").fetchSemanticsNode().boundsInRoot
             val safeBottom = scene.bottom - maxOf(navigationBottom, imeBottom)
-            for (label in listOf("读取", "取消")) {
+            for (label in listOf("继续", "取消")) {
                 val action = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
                 assertTrue("$label overlaps system area: $action, safe bottom $safeBottom", action.bottom <= safeBottom)
             }
@@ -156,8 +157,8 @@ class ManagerScreenLayoutTest {
     }
 
     private fun submitInvalidManagementHex() {
-        compose.onNode(hasText("证书") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithTag("object-overview").performClick()
+        compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
+        compose.onNodeWithText("高级 PIV 管理与诊断").performScrollTo().performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(ManagerOperation.PIV_ADMIN.title).performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -284,13 +285,12 @@ class ManagerScreenLayoutTest {
         var submissions = 0
         render(360, 640, onSubmit = { submissions++; it.close() }) { activity, _ ->
             for (piv in listOf(false, true)) {
-                if (piv) {
-                    compose.onNode(hasText("证书") and hasClickAction()).performClick()
-                    compose.onNodeWithTag("object-overview").performClick()
-                }
+                compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
+                compose.onNodeWithText(if (piv) "高级 PIV 管理与诊断" else "高级 FIDO 设置与诊断").performScrollTo().performClick()
                 val actions = ManagerOperation.entries.filter {
                     it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET,
-                        ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT)
+                        ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT,
+                        ManagerOperation.FIDO_RPS, ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE)
                 }
                 for (action in actions) {
                     compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
@@ -298,13 +298,12 @@ class ManagerScreenLayoutTest {
                     compose.onNodeWithTag("manager-run").assertExists()
                 }
             }
-            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
             compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
-            compose.onNodeWithTag("object-overview").performClick()
             compose.onNodeWithTag("manager-run").assertExists()
             assertEquals(0, submissions)
         }
@@ -358,7 +357,8 @@ class ManagerScreenLayoutTest {
     }
 
     @Test fun longReaderListRemainsReachableAndSelectionIsNotAuthentication() {
-        render(360, 640) { activity, update ->
+        var submissions = 0
+        render(360, 640, onSubmit = { submissions++; it.close() }) { _, update ->
             val readers = (1..20).map { index ->
                 val device = Shadow.newInstanceOf(UsbDevice::class.java)
                 ReflectionHelpers.setField(device, "mName", "workspace-reader-$index")
@@ -366,7 +366,8 @@ class ManagerScreenLayoutTest {
                 UsbReaderDescriptor(device, index, CardWire.APDU)
             }
             update(ManagerState(readers = readers, selectedReader = readers.first(), nfc = false))
-            compose.onNodeWithText(activity.getString(R.string.workspace_unread)).assertIsDisplayed()
+            compose.onNodeWithText("Reader 1 with a very long synthetic product name").assertIsDisplayed()
+            assertEquals(0, submissions)
             compose.onAllNodesWithText("读卡器").onLast().performClick()
             compose.onNodeWithText("Reader 20 with a very long synthetic product name").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("刷新读卡器").performScrollTo().assertIsDisplayed()
@@ -375,7 +376,7 @@ class ManagerScreenLayoutTest {
 
     @Test fun busyCertificateTaskKeepsCancelReachableAndDisablesNavigation() {
         render(360, 640) { _, update ->
-            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             update(ManagerState(busy = true, operation = ManagerOperation.PIV_ENROLL_CSR))
             compose.onNode(hasText("取消") and !hasAnyAncestor(hasScrollAction())).assertIsDisplayed().assertHasClickAction()

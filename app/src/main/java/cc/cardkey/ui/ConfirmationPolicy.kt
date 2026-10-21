@@ -7,12 +7,9 @@ import cc.cardkey.protocol.piv.PivInfo
 object ConfirmationPolicy {
     fun messages(input: OperationInput): List<Int> {
         val primary = when (input.operation) {
-            ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
-            ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK -> R.string.confirm_pinChange
             ManagerOperation.PIV_ADMIN -> R.string.confirm_adminChange
             ManagerOperation.FIDO_BLOB_WRITE -> R.string.confirm_blobWrite
             ManagerOperation.FIDO_DELETE -> R.string.confirm_credentialDelete
-            ManagerOperation.FIDO_UPDATE -> R.string.confirm_credentialUpdate
             ManagerOperation.FIDO_ALWAYS_UV -> if (input.enabled) R.string.confirm_alwaysUvEnable else R.string.confirm_alwaysUvDisable
             ManagerOperation.FIDO_MIN_PIN -> R.string.confirm_minPin
             ManagerOperation.FIDO_ENTERPRISE -> R.string.confirm_enterprise
@@ -24,9 +21,6 @@ object ConfirmationPolicy {
             ManagerOperation.PIV_RESET -> R.string.confirm_pivReset
             else -> null
         }
-        val pinWarning = input.pin.isNotEmpty() && primary != R.string.confirm_pinChange &&
-            input.operation !in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_RESET, ManagerOperation.PIV_ADMIN,
-                ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET)
         val secretWarning = input.operation == ManagerOperation.FIDO_ASSERT &&
             (input.assertionExtensions.hmacSalts != null || input.assertionExtensions.largeBlobKey || input.assertionExtensions.credentialBlob) ||
             input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL && input.assertionExtensions.largeBlobKey ||
@@ -34,7 +28,7 @@ object ConfirmationPolicy {
             input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)
         val documentReplacement = input.operation == ManagerOperation.PIV_ENROLL_IMPORT &&
             input.enrollmentSelection.purpose == cc.cardkey.enrollment.EnrollmentPurpose.DOCUMENT && input.enrollmentSelection.slot == 0x9a
-        return listOfNotNull(primary) + (if (documentReplacement) listOf(R.string.enrollment_document9a) else emptyList()) + (if (secretWarning) listOf(R.string.confirm_secretRead) else emptyList()) + if (pinWarning) listOf(R.string.confirm_authenticate) else emptyList()
+        return listOfNotNull(primary) + (if (documentReplacement) listOf(R.string.enrollment_document9a) else emptyList()) + (if (secretWarning) listOf(R.string.confirm_secretRead) else emptyList())
     }
 
     fun pivVerificationReference(operation: ManagerOperation): String? = when (operation) {
@@ -56,6 +50,7 @@ object ConfirmationPolicy {
         before.serial == after.serial && before.pin == after.pin && before.puk == after.puk
 
     fun canInspect(operation: ManagerOperation): Boolean = operation in setOf(
+        ManagerOperation.FIDO_INVENTORY,
         ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_CAPACITY,
         ManagerOperation.FIDO_RPS, ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_BLOB_READ,
         ManagerOperation.U2F_INFO, ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT,
@@ -66,13 +61,17 @@ object ConfirmationPolicy {
 
     fun resultMessages(result: OperationResult<*>, wire: CardWire = CardWire.APDU,
         operation: ManagerOperation? = null, requiresInspection: Boolean = false): List<Int> = when (result) {
-        is OperationResult.Completed -> listOf(if (operation == ManagerOperation.FIDO_RESET)
-            R.string.operation_fidoResetReadback else R.string.operation_completed)
+        is OperationResult.Completed -> listOf(when (operation) {
+            ManagerOperation.FIDO_RESET -> R.string.operation_fidoResetReadback
+            ManagerOperation.FIDO_DELETE -> R.string.credential_deleted
+            ManagerOperation.FIDO_UPDATE -> R.string.credential_updated
+            else -> R.string.operation_completed
+        })
         is OperationResult.Failed -> {
             val effect = when {
                 result.writeAccepted -> R.string.operation_appliedReadbackFailed
                 result.effect == Effect.UNKNOWN && (result.dispatch == Dispatch.RESPONSE_UNAVAILABLE ||
-                    result.code == FailureCode.MALFORMED_RESPONSE || result.status in setOf(0x7f, 0x6f00, 0x2d)) -> R.string.operation_unknown
+                    result.code in setOf(FailureCode.MALFORMED_RESPONSE, FailureCode.CANCELLED) || result.status in setOf(0x7f, 0x6f00, 0x2d)) -> R.string.operation_unknown
                 result.dispatch == Dispatch.NOT_DISPATCHED -> R.string.operation_notDispatched
                 else -> null
             }
@@ -83,6 +82,8 @@ object ConfirmationPolicy {
                     else R.string.error_hidPhysicalActionRequired
                 } else R.string.error_physicalActionRequired
                 FailureCode.PIN_INVALID -> R.string.error_pinInvalid
+                FailureCode.PIN_SETUP_REQUIRED -> R.string.error_pinSetupRequired
+                FailureCode.PIN_CHANGE_REQUIRED -> R.string.error_pinChangeRequired
                 FailureCode.PIN_BLOCKED -> if (wire == CardWire.CTAP && result.status == 0x34)
                     R.string.error_hidPowerCycleRequired else R.string.error_pinBlocked
                 FailureCode.AUTHORIZATION_DENIED -> R.string.error_authorization

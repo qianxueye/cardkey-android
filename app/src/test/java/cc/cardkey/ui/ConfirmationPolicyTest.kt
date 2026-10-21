@@ -11,7 +11,7 @@ class ConfirmationPolicyTest {
         val messages = ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_WRITE))
         assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead), messages)
         OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "1234".toCharArray()).use {
-            assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead, R.string.confirm_authenticate), ConfirmationPolicy.messages(it))
+            assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead), ConfirmationPolicy.messages(it))
         }
     }
 
@@ -34,14 +34,14 @@ class ConfirmationPolicyTest {
     private fun info(pin: Int, puk: Int, serial: Long = 1) = PivInfo("1.0.0", serial,
         RetryMetadata(false, 3, pin), RetryMetadata(false, 3, puk), ManagementAlgorithm.TDES, false)
 
-    @Test fun deletionConfirmsAccountLossAndPinRetryRisk() {
+    @Test fun deletionConfirmsIrreversibleAccountLoss() {
         val input = OperationInput(ManagerOperation.FIDO_DELETE, pin = "123456".toCharArray())
-        input.use { assertEquals(listOf(R.string.confirm_credentialDelete, R.string.confirm_authenticate), ConfirmationPolicy.messages(it)) }
+        input.use { assertEquals(listOf(R.string.confirm_credentialDelete), ConfirmationPolicy.messages(it)) }
     }
 
-    @Test fun pinChangeDoesNotDuplicateRetryWarning() {
+    @Test fun namedPinChangeDoesNotAddGenericConfirmation() {
         val input = OperationInput(ManagerOperation.PIV_CHANGE_PIN, pin = "123456".toCharArray())
-        input.use { assertEquals(listOf(R.string.confirm_pinChange), ConfirmationPolicy.messages(it)) }
+        input.use { assertEquals(emptyList<Int>(), ConfirmationPolicy.messages(it)) }
     }
 
     @Test fun alwaysUvConfirmationMatchesRequestedDirection() {
@@ -140,8 +140,8 @@ class ConfirmationPolicyTest {
             .contains(R.string.confirm_secretRead))
     }
 
-    @Test fun blobWriteConsentRetainsSecretAndPinConsequencesWhileReadDoesNotAskToWrite() {
-        assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead, R.string.confirm_authenticate),
+    @Test fun blobWriteConsentRetainsOverwriteAndSecretConsequencesWhileReadDoesNotAskToWrite() {
+        assertEquals(listOf(R.string.confirm_blobWrite, R.string.confirm_secretRead),
             ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "123456".toCharArray())))
         assertEquals(listOf(R.string.confirm_secretRead),
             ConfirmationPolicy.messages(OperationInput(ManagerOperation.FIDO_BLOB_READ)))
@@ -191,4 +191,24 @@ class ConfirmationPolicyTest {
             requiresInspection = true)
         assertEquals(listOf(R.string.error_recoveryRequired), messages)
     }
+    @Test fun cancellationOnlyClaimsUncertaintyWhenTheOperationIsUnknown() {
+        val known = OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
+        assertEquals(listOf(R.string.operation_notDispatched, R.string.error_cancelled), ConfirmationPolicy.resultMessages(known))
+        val unknown = OperationResult.Failed(FailureCode.CANCELLED, Effect.UNKNOWN)
+        assertEquals(listOf(R.string.operation_unknown, R.string.error_cancelled), ConfirmationPolicy.resultMessages(unknown))
+    }
+    @Test fun completedAccountMutationsNameTheirActualResult() {
+        val result = OperationResult.Completed(ManagerReport(emptyList()), Effect.APPLIED)
+        assertEquals(listOf(R.string.credential_deleted), ConfirmationPolicy.resultMessages(result, operation = ManagerOperation.FIDO_DELETE))
+        assertEquals(listOf(R.string.credential_updated), ConfirmationPolicy.resultMessages(result, operation = ManagerOperation.FIDO_UPDATE))
+    }
+
+    @Test fun routinePinAndRenameTasksRelyOnExplicitNamedSubmission() {
+        for (operation in listOf(ManagerOperation.FIDO_INVENTORY, ManagerOperation.FIDO_UPDATE,
+            ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
+            ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_SIGN, ManagerOperation.FIDO_CAPACITY)) {
+            OperationInput(operation, pin = "123456".toCharArray()).use { assertTrue(ConfirmationPolicy.messages(it).isEmpty()) }
+        }
+    }
+
 }

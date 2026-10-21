@@ -45,6 +45,7 @@ class PivFileSigningPanelTest {
     private val files = mutableStateOf(SigningFileState(active = true, slot = 0x9c))
     private val manager = mutableStateOf(ManagerState())
     private var submitted: OperationInput? = null
+    private var submissions = 0
     private var picks = 0
     private fun render(width: Int, height: Int, check: (ComponentActivity, () -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
@@ -58,7 +59,7 @@ class PivFileSigningPanelTest {
         activity.setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
-                    ManagerScreen(manager.value, 0, {}, {}, { submitted = it }, {}, {}, null, {}, {}, {}, {},
+                    ManagerScreen(manager.value, 0, {}, {}, { submitted = it; submissions++ }, {}, {}, null, {}, {}, {}, {},
                         EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
                         TlsQualificationState(), {}, {}, { it.close() }, files.value, { _, _ -> }, { picks++ }, InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
                 }
@@ -76,7 +77,7 @@ class PivFileSigningPanelTest {
     }
 
     @Test fun compactFileInputRequiresSelectionAndTransfersOnlyItsGeneration() = fileInput(SignatureFormat.RAW)
-    @Test fun cmsFileInputRequiresSelectionAndSubmitsCmsFormatWithPinConfirmation() = fileInput(SignatureFormat.CMS)
+    @Test fun cmsFileInputRequiresSelectionAndSubmitsCmsFormatExplicitly() = fileInput(SignatureFormat.CMS)
     private fun fileInput(format: SignatureFormat) {
         files.value = files.value.copy(operation = if (format == SignatureFormat.CMS) ManagerOperation.PIV_CMS_SIGN else ManagerOperation.PIV_SIGN)
         render(360, 480) { _, _ ->
@@ -90,7 +91,8 @@ class PivFileSigningPanelTest {
             compose.onNodeWithText("raw.pem · 1048576 字节").performScrollTo().assertIsDisplayed()
             pin().performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("manager-run").performClick()
-            compose.onNodeWithText("确认").performClick()
+            compose.onNodeWithText("确认").assertDoesNotExist()
+            assertEquals(1, submissions)
             assertEquals(format, submitted!!.signatureFormat)
             assertEquals(if (format == SignatureFormat.CMS) ManagerOperation.PIV_CMS_SIGN else ManagerOperation.PIV_SIGN, submitted!!.operation)
             assertEquals(42L, submitted!!.signingFileGeneration)
@@ -100,8 +102,8 @@ class PivFileSigningPanelTest {
         }
     }
 
-    @Test fun landscapeImeKeepsFileAndPinControlsReachableAndPauseClosesConfirmation() = pinPause(SignatureFormat.RAW)
-    @Test fun cmsPauseClearsPinAndConfirmationWithImeVisible() = pinPause(SignatureFormat.CMS)
+    @Test fun landscapeImeKeepsFileAndPinControlsReachableAndPauseClearsPendingPin() = pinPause(SignatureFormat.RAW)
+    @Test fun cmsPauseClearsPendingPinWithImeVisible() = pinPause(SignatureFormat.CMS)
     private fun pinPause(format: SignatureFormat) {
         files.value = files.value.copy(operation = if (format == SignatureFormat.CMS) ManagerOperation.PIV_CMS_SIGN else ManagerOperation.PIV_SIGN)
         files.value = files.value.copy(selection = SigningFileSelection("synthetic.raw", 100, 3))
@@ -113,11 +115,11 @@ class PivFileSigningPanelTest {
             compose.waitForIdle()
             compose.onNodeWithTag("signing-file-picker").performScrollTo().assertIsDisplayed()
             pin().performScrollTo().performTextInput("123456")
-            compose.onNodeWithTag("manager-run").assertIsEnabled().performClick()
-            compose.onNodeWithText("确认").assertIsDisplayed()
+            compose.onNodeWithTag("manager-run").assertIsEnabled()
             pause()
             compose.onNodeWithText("确认").assertDoesNotExist()
             assertNull(submitted)
+            assertEquals(0, submissions)
             pin().performScrollTo().assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
             assertTrue(compose.onNode(hasScrollAction()).fetchSemanticsNode().boundsInRoot.height >= 80)
         }

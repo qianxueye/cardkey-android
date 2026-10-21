@@ -450,8 +450,18 @@ class ManagerFidoVerificationTest(private val wire: CardWire) {
                 }
                 else -> error("Unexpected command")
             } }
-            val result = CardSession(channel).run { manager.execute(it, OperationInput(operation,
-                pin = "1234".toCharArray(), text = id.hex(), secondary = "new")) }
+            val inventory = FidoInventory()
+            val site = RelyingParty("cardkey.example", null, rpHash)
+            inventory.begin(OperationInput(ManagerOperation.FIDO_RPS)).use { inventory.settle(it,
+                ManagerReport(emptyList(), relyingParties = listOf(site))) }
+            inventory.selectRp(inventory.state.value.rps.single())
+            inventory.begin(OperationInput(ManagerOperation.FIDO_CREDENTIALS)).use { inventory.settle(it,
+                ManagerReport(emptyList(), credentials = listOf(Credential(id, FidoUser(byteArrayOf(1), "old", null), key, null)))) }
+            inventory.selectCredential(inventory.state.value.credentials.single())
+            val input = OperationInput(operation, pin = "1234".toCharArray(), secondary = "new",
+                inventoryGeneration = inventory.state.value.generation, inventorySelection = inventory.state.value.credential)
+            input.inventoryRequest = inventory.begin(input)
+            val result = input.use { CardSession(channel).run { manager.execute(it, input) } }
             assertEquals(Effect.UNKNOWN, (result as OperationResult.Failed).effect)
             assertEquals(1, server.tokenRequests)
             val untouched = assertion(true, 1)

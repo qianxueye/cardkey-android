@@ -20,6 +20,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import cc.cardkey.enrollment.EnrollmentState
 import cc.cardkey.protocol.*
+import cc.cardkey.protocol.fido.FidoUser
 import cc.cardkey.signing.SigningFileState
 import org.junit.Assert.*
 import org.junit.Rule
@@ -41,6 +42,7 @@ class InventoryPanelTest {
     private val manager = mutableStateOf(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
     private var submitted: OperationInput? = null
     private var cancelled = 0
+    private val presentedInventory = mutableStateOf<InventoryState?>(null)
     private fun render(width: Int, height: Int, test: (ComponentActivity, () -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         controller.get().enableEdgeToEdge()
@@ -50,13 +52,13 @@ class InventoryPanelTest {
                 ManagerScreen(manager.value, 0, {}, {}, { submitted = it }, { cancelled++; inventory.retire() }, {}, null, {}, {}, {}, {},
                     EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
-                    state, { _, rp -> inventory.selectRp(rp) }, { _, credential -> inventory.selectCredential(credential) }, {}, inventory::action)
+                    presentedInventory.value ?: state, { _, rp -> inventory.selectRp(rp) }, { _, credential -> inventory.selectCredential(credential) }, {}, inventory::action)
             } }
         }
         try { compose.waitForIdle(); test(controller.get()) { controller.pause().resume(); compose.waitForIdle() } }
         finally { submitted?.close(); controller.pause().stop().destroy() }
     }
-    private fun pin() = compose.onNode(hasText("当前 FIDO PIN") and hasSetTextAction())
+    private fun pin() = compose.onNode(hasText("FIDO PIN") and hasSetTextAction())
     private fun composeRoot(view: View): ViewRootForTest? = if (view is ViewRootForTest) view else (view as? ViewGroup)?.let {
         (0 until it.childCount).firstNotNullOfOrNull { index -> composeRoot(it.getChildAt(index)) }
     }
@@ -64,10 +66,11 @@ class InventoryPanelTest {
         render(360, 480) { _, _ ->
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             compose.onNodeWithText("RP SHA-256 · HEX").assertDoesNotExist()
+            compose.onNode(isToggleable()).performScrollTo().performClick()
             pin().performScrollTo().performTextInput("1234")
             compose.onNodeWithTag("manager-run").assertIsEnabled().performClick()
-            compose.onNodeWithText("RP · login.example.test").assertIsDisplayed()
-            compose.onNodeWithText("凭据 ID · 15").assertIsDisplayed()
+            compose.onNodeWithText("网站 · login.example.test").assertIsDisplayed()
+            compose.onNodeWithText("账户 · alice").assertIsDisplayed()
             compose.onNodeWithText("确认").performClick()
             assertEquals(ManagerOperation.FIDO_VERIFY_CREDENTIAL, submitted!!.operation)
             assertEquals(inventory.state.value.generation, submitted!!.inventoryGeneration)
@@ -75,10 +78,53 @@ class InventoryPanelTest {
             assertArrayEquals("1234".toCharArray(), submitted!!.pin)
         }
     }
+    @Test fun compactSameNameDeletionKeepsExactBoundTarget() = deletionTarget("alice", "Alice")
+
+    @Test fun compactUnnamedDeletionKeepsExactBoundTarget() = deletionTarget(null, null)
+
+    private fun deletionTarget(name: String?, displayName: String?) {
+        val initial = inventory.state.value
+        val original = initial.credential!!
+        val selected = InventoryCredential(original.rp, original.value().copy(
+            id = byteArrayOf(0x21, 0x01), user = FidoUser(byteArrayOf(7), name, displayName)))
+        val other = InventoryCredential(original.rp, original.value().copy(
+            id = byteArrayOf(0x21, 0x02), user = FidoUser(byteArrayOf(8), name, displayName)))
+        presentedInventory.value = initial.copy(credentials = listOf(selected, other), credential = selected,
+            action = ManagerOperation.FIDO_DELETE)
+        render(360, 480) { _, _ ->
+            compose.onNodeWithText(selected.idHex).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(other.idHex).assertDoesNotExist()
+            compose.onNodeWithText("凭据 ID · HEX").assertDoesNotExist()
+            pin().performScrollTo().performTextInput("1234")
+            assertNull(submitted)
+            compose.onNodeWithTag("manager-run").performClick()
+            assertNull(submitted)
+            compose.onNodeWithText("网站 · ${selected.rp.id}").assertIsDisplayed()
+            compose.onNodeWithText("账户 · ${name ?: displayName ?: "未命名账户"}").assertIsDisplayed()
+            compose.onNodeWithText("凭据 ID · ${selected.idHex}").assertIsDisplayed()
+            compose.runOnIdle {
+                presentedInventory.value = presentedInventory.value!!.copy(credential = other)
+            }
+            compose.onNodeWithText("凭据 ID · ${selected.idHex}").assertIsDisplayed()
+            compose.onNodeWithText("凭据 ID · ${other.idHex}").assertDoesNotExist()
+            assertNull(submitted)
+            compose.onNodeWithText("确认").performClick()
+            assertEquals(ManagerOperation.FIDO_DELETE, submitted!!.operation)
+            assertSame(selected, submitted!!.inventorySelection)
+            assertEquals(selected.rp.id, submitted!!.inventorySelection!!.rp.id)
+            assertEquals(name, submitted!!.inventorySelection!!.name)
+            assertEquals(displayName, submitted!!.inventorySelection!!.displayName)
+            assertEquals(selected.idHex, submitted!!.inventorySelection!!.idHex)
+            assertEquals(initial.generation, submitted!!.inventoryGeneration)
+            assertArrayEquals("1234".toCharArray(), submitted!!.pin)
+        }
+    }
+
     @Test fun landscapeImeKeepsProofControlReachableAndPauseRetiresConfirmationPin() {
         render(800, 480) { activity, pause ->
             compose.runOnIdle { requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
                 .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 240)).setVisible(WindowInsets.Type.ime(), true).build()) }
+            compose.onNode(isToggleable()).performScrollTo().performClick()
             pin().performScrollTo().performTextInput("1234")
             compose.onNodeWithTag("manager-run").performClick()
             compose.onNodeWithText("确认").assertIsDisplayed()
@@ -92,7 +138,7 @@ class InventoryPanelTest {
             pin().performScrollTo().performTextInput("1234")
             compose.runOnIdle { manager.value = manager.value.copy(busy = true) }
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
-            compose.onNode(hasText("RP") and hasClickAction()).performScrollTo().assertIsNotEnabled()
+            compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().assertIsNotEnabled()
             compose.runOnIdle { manager.value = manager.value.copy(busy = false, requiresInspection = true,
                 result = OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN, dispatch = Dispatch.RESPONSE_UNAVAILABLE)) }
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()

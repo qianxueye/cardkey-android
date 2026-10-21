@@ -74,30 +74,28 @@ class WorkspaceAcceptanceTest {
 
     @Test fun noCardNavigationKeepsCommonAdvancedAndCertificateTasksReachableWithoutDispatch() {
         render { activity, _, dispatches ->
-            compose.onNodeWithText(activity.getString(R.string.workspace_unread)).assertIsDisplayed()
+            compose.onNodeWithTag("recognition-task").assertDoesNotExist()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertExists()
+            compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             for (piv in listOf(false, true)) {
-                if (piv) compose.onNode(hasText("证书") and hasClickAction()).performClick()
-                compose.onNodeWithTag("workspace-objects").assertExists()
-                compose.onNodeWithTag("manager-run").assertDoesNotExist()
-                compose.onNodeWithTag("object-overview").performClick()
+                compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)).performClick()
+                compose.onNodeWithText(if (piv) "高级 PIV 管理与诊断" else "高级 FIDO 设置与诊断").performScrollTo().performClick()
                 val actions = ManagerOperation.entries.filter {
-                    it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET,
+                    it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET, ManagerOperation.FIDO_RPS,
+                        ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
                         ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT)
                 }
                 for (action in actions) {
                     compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
-                    compose.onNodeWithText(activity.getString(R.string.workspace_common)).assertExists()
-                    compose.onNodeWithText(activity.getString(R.string.workspace_advanced)).assertExists()
                     compose.onNodeWithTag("task-${action.name}").performScrollTo().assertIsDisplayed().performClick()
                     compose.onNodeWithTag("manager-run").assertExists()
-                    compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password)).assertCountEquals(0)
-                    if (action in setOf(ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_ADMIN)) {
-                        compose.onNodeWithTag("manager-run").assertIsNotEnabled()
-                        compose.onNodeWithTag("recognition-task").performScrollTo().assertIsEnabled()
-                    }
+                    compose.onNodeWithTag("recognition-task").assertDoesNotExist()
+                    val secrets = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password)).fetchSemanticsNodes()
+                    secrets.forEach { assertEquals("", it.config[SemanticsProperties.EditableText].text) }
+                    if (secrets.isNotEmpty()) assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
                 }
             }
-            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()

@@ -12,18 +12,19 @@ import java.util.Base64
 import java.util.Locale
 
 enum class ManagerOperation(val title: String, val piv: Boolean = false) {
+    FIDO_INVENTORY("查看通行密钥"),
     FIDO_INFO("FIDO2 · 读取"), FIDO_RESET("FIDO2 · 重置"), FIDO_RETRIES("PIN · 重试次数"),
-    FIDO_SET_PIN("PIN · 设置"), FIDO_CHANGE_PIN("PIN · 修改"),
+    FIDO_SET_PIN("设置 FIDO PIN"), FIDO_CHANGE_PIN("更改 FIDO PIN"),
     FIDO_CAPACITY("凭据 · 容量"), FIDO_RPS("RP · 读取"),
-    FIDO_CREDENTIALS("凭据 · 读取"), FIDO_DELETE("凭据 · 删除"),
-    FIDO_UPDATE("凭据 · 修改"), FIDO_ALWAYS_UV("始终验证用户"),
+    FIDO_CREDENTIALS("凭据 · 读取"), FIDO_DELETE("删除通行密钥"),
+    FIDO_UPDATE("修改用户名"), FIDO_ALWAYS_UV("始终验证用户"),
     FIDO_MIN_PIN("PIN · 最短长度"), FIDO_ENTERPRISE("企业证明 · 启用"),
     FIDO_REGISTER("注册 · 验证"), FIDO_ASSERT("签名 · 验证"), FIDO_VERIFY_CREDENTIAL("验证签名"),
     U2F_INFO("U2F · 读取"), U2F_REGISTER("U2F · 注册"), U2F_ASSERT("U2F · 验证"),
     FIDO_BLOB_READ("扩展数据 · 读取"), FIDO_BLOB_WRITE("扩展数据 · 设置"),
-    PIV_INFO("PIV · 读取", true), PIV_SLOT("证书 · 读取", true), PIV_SSH_EXPORT("导出 SSH 公钥", true),
-    PIV_CHANGE_PIN("PIN · 修改", true), PIV_CHANGE_PUK("PUK · 修改", true),
-    PIV_UNBLOCK("PIN · 解锁", true), PIV_ADMIN("管理密钥 · 修改", true),
+    PIV_INFO("查看 PIV 状态", true), PIV_SLOT("查看证书", true), PIV_SSH_EXPORT("导出 SSH 公钥", true),
+    PIV_CHANGE_PIN("更改 PIV PIN", true), PIV_CHANGE_PUK("更改 PUK", true),
+    PIV_UNBLOCK("解锁 PIV PIN", true), PIV_ADMIN("管理密钥 · 修改", true),
     PIV_GENERATE("生成密钥", true), PIV_CSR("导出 CSR", true),
     PIV_IMPORT("导入证书", true), PIV_SIGN("文件签名", true), PIV_CMS_SIGN("CMS 文件签名", true),
     PIV_ECDH("ECDH · 验证", true), PIV_DECRYPT("RSA · 验证", true),
@@ -77,7 +78,8 @@ class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob:
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
     val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null,
     val relyingParties: List<RelyingParty>? = null, val credentials: List<Credential>? = null,
-    val inventoryGeneration: Long? = null, val signatureFormat: SignatureFormat? = null, val sshPublicKey: Boolean = false) {
+    val inventoryGeneration: Long? = null, val signatureFormat: SignatureFormat? = null, val sshPublicKey: Boolean = false,
+    val inventory: CredentialInventory? = null) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 
@@ -127,7 +129,7 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
         }
     }
 
-    fun execute(session: CardSession, input: OperationInput): ManagerReport {
+    fun execute(session: CardSession, input: OperationInput, approveFinalAttempt: () -> Boolean = { false }): ManagerReport {
         input.inventoryRequest?.requireCurrent()
         if (input.operation == ManagerOperation.FIDO_RESET && (session.wire != CardWire.CTAP || !session.supportsCtap2))
             throw CardFailure(FailureCode.UNSUPPORTED)
@@ -138,6 +140,7 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
         if (!input.operation.piv && input.operation !in setOf(ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT)) fido.select()
         fun empty() = ManagerReport(emptyList())
         return when (input.operation) {
+            ManagerOperation.FIDO_INVENTORY -> ManagerReport(emptyList(), inventory = fido.inventory(input.pin, approveFinalAttempt))
             ManagerOperation.FIDO_INFO -> info(fido.getInfo())
             ManagerOperation.FIDO_RESET -> {
                 clearSession()
@@ -172,14 +175,18 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
                 }, credentials = credentials)
             }
             ManagerOperation.FIDO_DELETE -> {
-                val id = input.text.hexBytes()
+                val target = input.inventoryRequest?.credential ?: throw CardFailure(FailureCode.INVALID_INPUT)
+                input.inventoryRequest?.requireCurrent()
+                val id = target.value().id
                 if (diagnosticCredential?.credentialId?.contentEquals(id) == true) diagnosticCredential = null
-                fido.deleteCredential(input.pin, id); empty()
+                fido.deleteCredential(input.pin, id, target.rp.value() to target.value()); empty()
             }
             ManagerOperation.FIDO_UPDATE -> {
-                val id = input.text.hexBytes()
+                val target = input.inventoryRequest?.credential ?: throw CardFailure(FailureCode.INVALID_INPUT)
+                input.inventoryRequest?.requireCurrent()
+                val id = target.value().id
                 if (diagnosticCredential?.credentialId?.contentEquals(id) == true) diagnosticCredential = null
-                fido.updateUser(input.pin, id, input.secondary, null); empty()
+                fido.updateUser(input.pin, id, input.secondary, target.displayName, target.rp.value() to target.value()); empty()
             }
             ManagerOperation.FIDO_ALWAYS_UV -> info(fido.setAlwaysUv(input.pin.takeIf { it.isNotEmpty() }, input.enabled))
             ManagerOperation.FIDO_MIN_PIN -> info(fido.setMinPinLength(input.pin.takeIf { it.isNotEmpty() }, input.text.toInt(), rpIds = input.rpIds, forceChange = input.enabled))

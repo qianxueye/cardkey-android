@@ -47,8 +47,18 @@ class ManagerCredentialMutationTest(private val wire: CardWire) {
 
     private fun run(operation: ManagerOperation, card: Card): OperationResult<ManagerReport> {
         card.channel = channel(card)
-        return OperationInput(operation, pin = "1234".toCharArray(), text = id.hex(),
+        val inventory = FidoInventory()
+        val site = RelyingParty("example.test", null, rpHash)
+        inventory.begin(OperationInput(ManagerOperation.FIDO_RPS)).use { inventory.settle(it,
+            ManagerReport(emptyList(), relyingParties = listOf(site))) }
+        inventory.selectRp(inventory.state.value.rps.single())
+        inventory.begin(OperationInput(ManagerOperation.FIDO_CREDENTIALS)).use { inventory.settle(it,
+            ManagerReport(emptyList(), credentials = listOf(Credential(id, FidoUser(userId, "old", "old"), cborMap(), null)))) }
+        inventory.selectCredential(inventory.state.value.credentials.single())
+        return OperationInput(operation, pin = "1234".toCharArray(), text = "ff",
+            inventoryGeneration = inventory.state.value.generation, inventorySelection = inventory.state.value.credential,
             secondary = "updated", bytes = byteArrayOf(99)).use { input ->
+            input.inventoryRequest = inventory.begin(input)
             CardSession(card.channel).run { ManagerOperations().execute(it, input) }
         }
     }
@@ -76,7 +86,7 @@ class ManagerCredentialMutationTest(private val wire: CardWire) {
         assertTrue(run(ManagerOperation.FIDO_UPDATE, card) is OperationResult.Completed)
         assertArrayEquals(userId, card.user!!["id"].bytes())
         assertEquals("updated", card.user!!["name"].text())
-        assertNull(card.user!!["displayName"])
+        assertEquals("old", card.user!!["displayName"].text())
         assertEquals(1, card.server.tokenRequests)
         assertEquals(listOf(2L, 4L, 7L, 4L), card.channel.commands.filter { it.first == 10 }.map { it.second!![1].number() })
     }

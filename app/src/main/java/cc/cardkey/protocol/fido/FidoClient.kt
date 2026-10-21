@@ -176,6 +176,49 @@ class FidoClient(private val session: CardSession) {
 
     fun enumerateRelyingParties(pin: CharArray): List<RelyingParty> = managed(pin, ::relyingParties)
 
+    fun inventory(pin: CharArray, approveFinalAttempt: () -> Boolean = { false }): CredentialInventory = try {
+        val info = getInfo()
+        info.requireOption("credMgmt")
+        info.requireOption("pinUvAuthToken")
+        val protocol = info.protocol()
+        when (info.options["clientPin"]) {
+            false -> throw CardFailure(FailureCode.PIN_SETUP_REQUIRED)
+            true -> Unit
+            null -> throw CardFailure(FailureCode.UNSUPPORTED)
+        }
+        if (info.forcePinChange == true) throw CardFailure(FailureCode.PIN_CHANGE_REQUIRED)
+        val retries = command(6, cborMap(1 to protocol.cbor(), 2 to 1.cbor()))
+        val remaining = retries[3].count()
+        if (remaining == 0) throw CardFailure(FailureCode.PIN_BLOCKED)
+        if (retries[4]?.bool() == true) throw CardFailure(
+            if (session.wire == CardWire.CTAP) FailureCode.PIN_BLOCKED else FailureCode.PHYSICAL_ACTION_REQUIRED, 0x34)
+        if (remaining == 1) {
+            if (!approveFinalAttempt()) throw CardFailure(FailureCode.CANCELLED)
+            val current = command(6, cborMap(1 to protocol.cbor(), 2 to 1.cbor()))
+            if (current[4]?.bool() == true) throw CardFailure(
+                if (session.wire == CardWire.CTAP) FailureCode.PIN_BLOCKED else FailureCode.PHYSICAL_ACTION_REQUIRED, 0x34)
+            if (current[3].count() != 1)
+                throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+        }
+        withToken(pin, 4, info = info) { token ->
+            val capacity = management(1, token = token).let {
+                CredentialCapacity(it[1].count(), it[2].count())
+            }
+            var seen = 0
+            val sites = relyingParties(token).map { rp ->
+                if (!sha256(rp.id.toByteArray(Charsets.UTF_8)).contentEquals(rp.idHash)) malformed()
+                val entries = credentials(token, rp.idHash)
+                seen += entries.size
+                if (seen > capacity.existing) malformed()
+                SiteCredentials(rp, entries)
+            }
+            if (sites.sumOf { it.credentials.size } != capacity.existing ||
+                sites.map { it.rp.id }.distinct().size != sites.size ||
+                sites.flatMap { it.credentials }.map { it.id.toList() }.distinct().size != capacity.existing) malformed()
+            CredentialInventory(capacity, sites)
+        }
+    } finally { pin.fill('\u0000') }
+
     private fun relyingParties(token: PinToken): List<RelyingParty> {
         val first = try { management(2, token = token) } catch (failure: CardFailure) {
             if (failure.status == 0x2e) return emptyList() else throw failure
@@ -215,18 +258,31 @@ class FidoClient(private val session: CardSession) {
         throw CardFailure(FailureCode.INVALID_INPUT)
     }
 
-    fun deleteCredential(pin: CharArray, id: ByteArray) = managed(pin) { token ->
-        val (rp, _) = credential(token, id)
+    fun deleteCredential(pin: CharArray, id: ByteArray, expected: Pair<RelyingParty, Credential>? = null) = managed(pin) { token ->
+        val (rp, existing) = credential(token, id)
+        requireTarget(rp, existing, expected)
         management(6, cborMap(2 to descriptor(id)), token, true)
         if (credentials(token, rp.idHash).any { it.id.contentEquals(id) }) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
     }
 
-    fun updateUser(pin: CharArray, id: ByteArray, name: String?, displayName: String?) = managed(pin) { token ->
+    fun updateUser(pin: CharArray, id: ByteArray, name: String?, displayName: String?, expected: Pair<RelyingParty, Credential>? = null) = managed(pin) { token ->
         val (rp, existing) = credential(token, id)
-        val user = existing.user.copy(name = name, displayName = displayName)
+        requireTarget(rp, existing, expected)
+        val user = existing.user.copy(name = name, displayName = if (expected != null) existing.user.displayName else displayName)
         management(7, cborMap(2 to descriptor(id), 3 to user.encode()), token, true)
-        val updated = credentials(token, rp.idHash).singleOrNull { it.id.contentEquals(id) }?.user
-        if (updated == null || !updated.id.contentEquals(user.id) || updated.name.orEmpty() != name.orEmpty() || updated.displayName.orEmpty() != displayName.orEmpty())
+        val updated = credentials(token, rp.idHash).singleOrNull { it.id.contentEquals(id) }
+        if (updated == null || !updated.user.id.contentEquals(user.id) || updated.user.name.orEmpty() != user.name.orEmpty() ||
+            updated.user.displayName.orEmpty() != user.displayName.orEmpty() || updated.publicKey != existing.publicKey ||
+            updated.protection != existing.protection)
+            throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+    }
+
+    private fun requireTarget(rp: RelyingParty, credential: Credential, expected: Pair<RelyingParty, Credential>?) {
+        if (expected == null) return
+        val (site, target) = expected
+        if (rp.id != site.id || !rp.idHash.contentEquals(site.idHash) ||
+            !credential.id.contentEquals(target.id) || !credential.user.id.contentEquals(target.user.id) ||
+            credential.publicKey != target.publicKey || credential.protection != target.protection)
             throw CardFailure(FailureCode.RECOVERY_REQUIRED)
     }
 
