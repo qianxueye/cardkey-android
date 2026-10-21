@@ -1,6 +1,6 @@
 # Consumer manager copy review
 
-Related issue: #33. Reviewed with the plain-language-iso-24495 workflow. Activation is this Android manager runtime package after installation; no installation, provider enablement, hardware or real-account acceptance is claimed. Provider workflow behavior remains a separate package.
+Related issue: #33. Reviewed with the plain-language-iso-24495 workflow. Activation is this Android manager runtime package after installation; no installation, provider enablement, hardware or real-account acceptance is claimed. Provider workflow behavior remained a separate package at this manager checkpoint. The [provider consumer review](PROVIDER-CONSUMER-COPY-REVIEW.md) supersedes all provider-specific retained/deferred rows below for the subsequent provider package; manager scope and evidence remain historical and unchanged.
 
 The consumer task is to view passkeys, prepare its PIN, connect the card, and receive a complete inventory. Retain concrete irreversible consequences and uncertain results at the relevant action. Do not repeat generic PIN-risk or manual status-read reminders. Ordinary inventory and rename have no redundant generic confirmation. Delete keeps the account-loss confirmation. Final-attempt consent uses fresh card facts under the operation lease; dismissal or backgrounding declines authentication. No PIN is persisted or replaced with phone biometrics.
 
@@ -20,7 +20,7 @@ The consumer task is to view passkeys, prepare its PIN, connect the card, and re
 
 ## Resource coverage: exact before and after
 
-Every string in the three resource files below was reviewed. Unchanged entries retain existing data-loss, permission, input, trust and activation conditions; diagnostic wording remains only in its relevant advanced task. Provider-specific unchanged entries are audited here and scheduled for the separate provider flow package. Shared error text remains accurate in both callers.
+Every string in the three resource files below was reviewed. Unchanged entries retain existing data-loss, permission, input, trust and activation conditions; diagnostic wording remains only in its relevant advanced task. Provider-specific entries record the manager baseline; the linked provider consumer review supersedes their wording and activation for the separate provider package. Shared error text remains accurate in both callers.
 
 | Resource / key | Before | After | Review decision / activation |
 |---|---|---|---|
@@ -43,34 +43,34 @@ Every string in the three resource files below was reviewed. Unchanged entries r
 | `app/src/main/res/values/plexo_ca.xml` / `plexo_tls_certificate` | 连接所用证书 | 连接所用证书 | Reviewed unchanged; retain precise meaning and conditions. |
 | `app/src/main/res/values/plexo_ca.xml` / `plexo_tls_result` | 本次连接结果 | 本次连接结果 | Reviewed unchanged; retain precise meaning and conditions. |
 | `app/src/main/res/values/plexo_ca.xml` / `plexo_tls_service` | 服务与认证 | 服务与认证 | Reviewed unchanged; retain precise meaning and conditions. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_account` | 账户 | 账户 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_accounts` | 选择账户 | 选择账户 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_caller` | 调用应用 | 调用应用 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_cancel` | 取消 | 取消 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_close` | 关闭 | 关闭 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_confirm` | 确认 | 确认 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_confirmation` | 确认操作 | 确认操作 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_create_consequence` | 将在这张卡上创建 FIDO 凭据。驻留凭据会占用卡内存储，此 App 无法将凭据复制到另一张卡。 | 将在这张卡上创建 FIDO 凭据。驻留凭据会占用卡内存储，此 App 无法将凭据复制到另一张卡。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_create_title` | 确认创建凭据 | 确认创建凭据 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_executing` | 正在处理凭据请求 | 正在处理凭据请求 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_get_consequence` | 将使用这张卡登录所列网站。 | 将使用这张卡登录所列网站。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_get_title` | 确认本次登录 | 确认本次登录 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_keep_nfc` | 请保持卡片贴近手机。连接中断后，本次请求会结束。 | 请保持卡片贴近手机。连接中断后，本次请求会结束。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_permission` | 等待 USB 访问授权 | 等待 USB 访问授权 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_permission_prompt` | 在系统提示中决定是否允许 %1$s 访问此 USB 读卡器。 | 在系统提示中决定是否允许 %1$s 访问此 USB 读卡器。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_reader` | 读卡器 | 读卡器 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognition` | 先识别卡片 | 先识别卡片 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognition_explanation` | 先读取卡片的 FIDO2 信息。识别后再确认创建或登录；需要 PIN 时才显示输入框。 | 先读取卡片的 FIDO2 信息。识别后再确认创建或登录；需要 PIN 时才显示输入框。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognition_nfc` | 请将卡片贴近手机，读取 FIDO2 信息。 | 请将卡片贴近手机，读取 FIDO2 信息。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognize` | 识别卡片 | 识别卡片 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognized` | 已读取 FIDO2 信息。请确认本次操作。 | 已读取 FIDO2 信息。请确认本次操作。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognizing` | 正在识别卡片 | 正在识别卡片 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_rejected` | 请求未通过核验 | 请求未通过核验 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_result` | 本次请求结果 | 本次请求结果 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_rp` | 网站 · RP | 网站 · RP | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_title` | 系统凭据请求 | 系统凭据请求 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_verified` | 此页面来自系统凭据请求。调用应用与 RP 已通过核验。 | 此页面来自系统凭据请求。调用应用与 RP 已通过核验。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_verifying` | 正在核验请求 | 正在核验请求 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_account` | 账户 | 账户 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_accounts` | 选择账户 | 选择账户 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_caller` | 调用应用 | 调用应用 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_cancel` | 取消 | 取消 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_close` | 关闭 | 关闭 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_confirm` | 确认 | 确认 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_confirmation` | 确认操作 | 确认操作 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_create_consequence` | 将在这张卡上创建 FIDO 凭据。驻留凭据会占用卡内存储，此 App 无法将凭据复制到另一张卡。 | 将在这张卡上创建 FIDO 凭据。驻留凭据会占用卡内存储，此 App 无法将凭据复制到另一张卡。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_create_title` | 确认创建凭据 | 确认创建凭据 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_executing` | 正在处理凭据请求 | 正在处理凭据请求 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_get_consequence` | 将使用这张卡登录所列网站。 | 将使用这张卡登录所列网站。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_get_title` | 确认本次登录 | 确认本次登录 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_keep_nfc` | 请保持卡片贴近手机。连接中断后，本次请求会结束。 | 请保持卡片贴近手机。连接中断后，本次请求会结束。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_permission` | 等待 USB 访问授权 | 等待 USB 访问授权 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_permission_prompt` | 在系统提示中决定是否允许 %1$s 访问此 USB 读卡器。 | 在系统提示中决定是否允许 %1$s 访问此 USB 读卡器。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_reader` | 读卡器 | 读卡器 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognition` | 先识别卡片 | 先识别卡片 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognition_explanation` | 先读取卡片的 FIDO2 信息。识别后再确认创建或登录；需要 PIN 时才显示输入框。 | 先读取卡片的 FIDO2 信息。识别后再确认创建或登录；需要 PIN 时才显示输入框。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognition_nfc` | 请将卡片贴近手机，读取 FIDO2 信息。 | 请将卡片贴近手机，读取 FIDO2 信息。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognize` | 识别卡片 | 识别卡片 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognized` | 已读取 FIDO2 信息。请确认本次操作。 | 已读取 FIDO2 信息。请确认本次操作。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_recognizing` | 正在识别卡片 | 正在识别卡片 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_rejected` | 请求未通过核验 | 请求未通过核验 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_result` | 本次请求结果 | 本次请求结果 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_rp` | 网站 · RP | 网站 · RP | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_title` | 系统凭据请求 | 系统凭据请求 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_verified` | 此页面来自系统凭据请求。调用应用与 RP 已通过核验。 | 此页面来自系统凭据请求。调用应用与 RP 已通过核验。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/plexo_provider.xml` / `plexo_provider_verifying` | 正在核验请求 | 正在核验请求 | Historical manager baseline; superseded by the linked provider consumer review. |
 | `app/src/main/res/values/strings.xml` / `app_name` | CardKey | CardKey | Reviewed unchanged; retain precise meaning and conditions. |
 | `app/src/main/res/values/strings.xml` / `artwork_failed` | 卡片图片加载失败，仍可使用卡片功能。 | 卡片图片加载失败，仍可使用卡片功能。 | Reviewed unchanged; retain precise meaning and conditions. |
 | `app/src/main/res/values/strings.xml` / `artwork_generic` | 通用卡片示意图 | 通用卡片示意图 | Reviewed unchanged; retain precise meaning and conditions. |
@@ -164,12 +164,12 @@ Every string in the three resource files below was reviewed. Unchanged entries r
 | `app/src/main/res/values/strings.xml` / `operation_fidoResetReadback` | 设备已接受 FIDO 重置，当前状态已读取。 | 设备已接受 FIDO 重置，当前状态已读取。 | Reviewed unchanged; retain precise meaning and conditions. |
 | `app/src/main/res/values/strings.xml` / `operation_notDispatched` | 指令未发送到卡片。 | 指令未发送到卡片。 | Reviewed unchanged; retain precise meaning and conditions. |
 | `app/src/main/res/values/strings.xml` / `operation_unknown` | 指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。 | 指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。 | Reviewed unchanged; retain precise meaning and conditions. |
-| `app/src/main/res/values/strings.xml` / `provider_attestation_direct` | 该服务请求卡片证明，响应可能包含可识别这张卡的证书。 | 该服务请求卡片证明，响应可能包含可识别这张卡的证书。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/strings.xml` / `provider_attestation_none` | 本次注册不发送卡片证明证书，AAGUID 将置零。 | 本次注册不发送卡片证明证书，AAGUID 将置零。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/strings.xml` / `provider_choose_account` | 选择用于登录 %1$s 的账户。 | 选择用于登录 %1$s 的账户。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/strings.xml` / `provider_confirm_fido` | FIDO PIN 输入错误会减少重试次数。确认继续？ | FIDO PIN 输入错误会减少重试次数。确认继续？ | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/strings.xml` / `provider_request_rejected` | 无法验证请求应用或请求内容，未向卡片发送指令。 | 无法验证请求应用或请求内容，未向卡片发送指令。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
-| `app/src/main/res/values/strings.xml` / `provider_settings` | 在 Android 设置中选择并启用 %1$s，然后返回。 | 在 Android 设置中选择并启用 %1$s，然后返回。 | Reviewed unchanged; flow-specific rewrite deferred to the separate provider package. |
+| `app/src/main/res/values/strings.xml` / `provider_attestation_direct` | 该服务请求卡片证明，响应可能包含可识别这张卡的证书。 | 该服务请求卡片证明，响应可能包含可识别这张卡的证书。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/strings.xml` / `provider_attestation_none` | 本次注册不发送卡片证明证书，AAGUID 将置零。 | 本次注册不发送卡片证明证书，AAGUID 将置零。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/strings.xml` / `provider_choose_account` | 选择用于登录 %1$s 的账户。 | 选择用于登录 %1$s 的账户。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/strings.xml` / `provider_confirm_fido` | FIDO PIN 输入错误会减少重试次数。确认继续？ | FIDO PIN 输入错误会减少重试次数。确认继续？ | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/strings.xml` / `provider_request_rejected` | 无法验证请求应用或请求内容，未向卡片发送指令。 | 无法验证请求应用或请求内容，未向卡片发送指令。 | Historical manager baseline; superseded by the linked provider consumer review. |
+| `app/src/main/res/values/strings.xml` / `provider_settings` | 在 Android 设置中选择并启用 %1$s，然后返回。 | 在 Android 设置中选择并启用 %1$s，然后返回。 | Historical manager baseline; superseded by the linked provider consumer review. |
 | `app/src/main/res/values/strings.xml` / `reader_empty` | 未连接受支持的 USB 读卡器。 | 未连接受支持的 USB 读卡器。 | Reviewed unchanged; retain precise meaning and conditions. |
 | `app/src/main/res/values/strings.xml` / `reader_nfc` | 选择操作后，将卡片贴近手机。 | 选择操作后，将卡片贴近手机。 | Reviewed unchanged; retain precise meaning and conditions. |
 | `app/src/main/res/values/strings.xml` / `reader_permissionDenied` | [new] | 未获 USB 读卡器访问授权。请重新选择读卡器，或改用 NFC。 | Applied manager task/outcome copy; no claim of installation or hardware acceptance. |
@@ -422,9 +422,9 @@ Retained: irreversible credential loss; PIN/PUK change and PIV erasure condition
 
 PIN setup and forced-change results direct users to the named separate task, with no automatic reuse of an entered current PIN as setup consent. A complete successful empty enumeration is distinguished from unread, loading and failed states. Unknown writes retain the existing mutation fence. Document outcomes never imply a card mutation succeeded or failed.
 
-## Provider review, deferred activation
+## Provider review at the manager baseline
 
-The provider-specific resource rows and ProviderActivity literal rows were reviewed in the existing verified-request → reader → recognition → conditional PIN → explicit consent → result flow. The consumer provider package should prepare request/PIN/consent before card presentation where actual request requirements permit; retain verified caller/origin, claim reservation, secure-window input, card user presence, account selection, cancellation and response ownership. Its current recognize-button behavior is deliberately unchanged here. Shared error labels are accurate but do not authorize provider activation or protocol changes.
+The provider-specific resource rows and ProviderActivity literal rows were reviewed in the existing verified-request → reader → recognition → conditional PIN → explicit consent → result flow. At that checkpoint, provider consumer work was deferred while retaining verified caller/origin, claim reservation, secure-window input, card user presence, account selection, cancellation and response ownership. The linked provider review now owns the subsequent flow and copy decisions. The manager checkpoint deliberately left the recognize-button behavior unchanged. The linked provider consumer review records its subsequent replacement and activation. Shared error labels do not by themselves authorize provider activation or protocol changes.
 
 ## Verification adjudication
 

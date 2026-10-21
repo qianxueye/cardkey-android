@@ -12,6 +12,8 @@ import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import cc.cardkey.transport.UsbAuthenticatorReader
 import cc.cardkey.transport.UsbReaderDescriptor
 import java.util.concurrent.atomic.AtomicReference
@@ -176,6 +178,55 @@ class ProviderRecognitionActivityTest {
         assertEquals(cc.cardkey.R.string.error_nfcUnavailable,
             ReflectionHelpers.callInstanceMethod<Int?>(activity, "getConnectionMessage"))
         assertFalse(ReflectionHelpers.getField<ProviderOperationRunner>(activity, "runner").isActive)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun finalAttemptRequiresItsCurrentVisibleApprovalAndDeclineNeverAuthenticates() = runTest {
+        for (retirement in listOf("decline", "background", "approve")) {
+            val approve = retirement == "approve"
+            val activity = activity()
+            val runner = ReflectionHelpers.getField<ProviderOperationRunner>(activity, "runner")
+            val data = ClientData(byteArrayOf(), ByteArray(32), true)
+            val request = ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.REQUIRED)
+            val registry = RequestRegistry()
+            val claim = registry.claim(registry.offer(OfferedRequest(ProviderRequestKind.GET, "{}", data.hash,
+                CallerSnapshot("synthetic.provider", setOf("certificate"), null), "fixture")))
+            val server = FidoClientTest.PinServer(2)
+            val channel = FidoChannel { code, map -> when (code) {
+                4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true)))
+                6 -> if (map!![2].number() == 1L) success(cborMap(3 to 1.cbor(), 4 to false.cbor())) else server.respond(map, 2, "example.com")
+                2 -> success(cborMap(1 to descriptor(byteArrayOf(1)),
+                    2 to (sha256("example.com".toByteArray()) + byteArrayOf(5, 0, 0, 0, 1)).cbor(),
+                    3 to byteArrayOf(0x30, 6, 2, 1, 1, 2, 1, 1).cbor()))
+                else -> error("Unexpected provider command")
+            } }
+            val operation = async { runner.recognizeAndExecute(null, request, data, claim = claim,
+                onRecognized = { publish(activity, observation = it) }) { channel } }
+            runCurrent()
+            input(activity)
+            val confirm = ProviderActivity::class.java.getDeclaredMethod("confirm", ProviderRecognition::class.java).apply { isAccessible = true }
+            confirm.invoke(activity, null)
+            val approval = ReflectionHelpers.callInstanceMethod<ProviderRecognition?>(activity, "getFinalAttempt")!!
+            assertEquals(0, server.tokenRequests)
+            assertNull(CardOperationGate.tryAcquire())
+            confirm.invoke(activity, ProviderRecognition(true, 1))
+            assertEquals(0, server.tokenRequests)
+            if (approve) confirm.invoke(activity, approval)
+            else ReflectionHelpers.callInstanceMethod<Unit>(activity, if (retirement == "background") "onPause" else "cancelRequest")
+            val result = operation.await()
+            if (approve) {
+                assertTrue(result is OperationResult.Completed)
+                assertEquals(1, server.tokenRequests)
+                ((result as OperationResult.Completed).value as ProviderOutput.Assertions).values.forEach { it.close() }
+            } else {
+                assertEquals(FailureCode.CANCELLED, (result as OperationResult.Failed).code)
+                assertEquals(0, server.tokenRequests)
+            }
+            assertEquals("", pin(activity))
+            assertNull(ReflectionHelpers.callInstanceMethod<ProviderRecognition?>(activity, "getFinalAttempt"))
+            assertTrue(channel.closed)
+            claim.finish(cancelled = !approve)
+        }
     }
 
 }

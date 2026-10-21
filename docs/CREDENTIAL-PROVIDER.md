@@ -1,6 +1,6 @@
 # Android credential provider
 
-The provider targets Android 14 (API 34) and later. It supports interactive public-key creation and sign-in using the same public Kotlin FIDO implementation as the manager over NFC/CCID APDUs or direct USB CTAPHID. It stores no passkeys, private keys, PIN tokens, credential index or account database on the phone. Each operation opens one card session after user confirmation.
+The provider targets Android 14 (API 34) and later. It supports interactive public-key creation and sign-in using the same public Kotlin FIDO implementation as the manager over NFC/CCID APDUs or direct USB CTAPHID. It stores no passkeys, private keys, PIN tokens, credential index or account database on the phone. Each operation opens one card session after the verified named task action. Recognition is internal. Actual no-PIN policy continues under that consent; a PIN-required policy waits for explicit secure submission in the same leased session. [Consumer copy and task progression](PROVIDER-CONSUMER-COPY-REVIEW.md)
 
 ## Android integration
 
@@ -8,7 +8,7 @@ The provider targets Android 14 (API 34) and later. It supports interactive publ
 
 The mutable pending intents have explicit private activities, distinct request codes and unguessable data URIs. An in-memory five-minute offer binds the operation, original JSON, delegated hash, caller and selected option ID. The registry holds at most 64 entries and evicts the oldest unclaimed offer when full. Active and transport-reserved entries cannot be evicted to admit another offer. If all entries are active or reserved, a new offer fails.
 
-The activity retrieves and validates the system request with `PendingIntentHandler` before claiming the entry. A claim excludes concurrent launches. Cancellation before transport reservation reopens an unexpired entry and returns `RESULT_CANCELED`, allowing the selector to show it again. A new selection validates the same request and requires confirmation again. Old claim callbacks cannot reserve or release a newer claim. Reservation occurs before connection because connection may initialize or power the card. Once reserved, cancellation, connection failure and unknown command outcomes cannot reopen the entry. Activity destruction cancels its runner and releases only an unreserved claim; recreation never starts card work automatically. Process death loses all offers. Clear-state invalidates transient offers for the caller; it never deletes card credentials or resets an applet.
+The activity retrieves and validates the system request with `PendingIntentHandler` before claiming the entry. A claim excludes concurrent launches. Cancellation before transport reservation reopens an unexpired entry and returns `RESULT_CANCELED`, allowing the selector to show it again. A new selection validates the same request and requires the named task action again. Old claim callbacks cannot reserve or release a newer claim. Reservation occurs before connection because connection may initialize or power the card. Once reserved, cancellation, connection failure and unknown command outcomes cannot reopen the entry. Activity destruction cancels its runner and releases only an unreserved claim; recreation never starts card work automatically. Process death loses all offers. Clear-state invalidates transient offers for the caller; it never deletes card credentials or resets an applet.
 
 ## Calling application trust
 
@@ -28,7 +28,7 @@ DAL uses a dedicated OkHttp client with Android's default TLS trust and hostname
 
 ## Card behavior and privacy
 
-The provider supports ES256, discoverable and non-discoverable credentials, allow/exclude lists, required/preferred/discouraged resident keys and user verification. Unsupported required behavior is rejected before the credential command. Optional extensions are not requested and no client-extension result is claimed. Enterprise attestation is unsupported in the provider; manager configuration is a separate workflow.
+The provider supports ES256, discoverable and non-discoverable credentials, allow/exclude lists, required/preferred/discouraged resident keys and user verification. Unsupported required behavior is rejected before the credential command. Unsupported optional extensions are omitted and no corresponding client-extension result is claimed. Enterprise attestation is unsupported in the provider; manager configuration is a separate workflow.
 
 Registration verifies RP binding, user presence, required UV, the ES256 credential key, exclusions and any supplied attestation signature before encoding a response. For `none` and `indirect`, the response uses `fmt=none`, an empty statement and a zero AAGUID; other authenticator-data bytes remain unchanged. `direct` preserves the validated card response. A valid original `none` response has no attestation signature. Certificate signature verification does not establish certificate trust.
 

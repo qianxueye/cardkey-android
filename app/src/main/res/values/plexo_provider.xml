@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="plexo_provider_title">系统凭据请求</string>
     <string name="plexo_provider_create_title">创建通行密钥</string>
     <string name="plexo_provider_get_title">使用通行密钥登录</string>
     <string name="plexo_provider_verified">网站与请求应用已通过核验。</string>
