@@ -99,7 +99,11 @@ class ProviderRecognitionTest {
         assertFalse(runner.confirm(tooEarly))
         assertArrayEquals(CharArray(4), tooEarly)
         val request = get().copy(extensions = GetExtensionInputs(largeBlobWrite = byteArrayOf(9)))
-        val channel = FidoChannel { code, _ -> assertEquals(4, code); success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true))) }
+        val channel = FidoChannel { code, parameters -> when (code) {
+            4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true)))
+            6 -> { assertEquals(1L, parameters!![2].number()); success(cborMap(3 to 8.cbor(), 4 to false.cbor())) }
+            else -> error("Unexpected authentication before confirmation")
+        } }
         val result = async { runner.recognizeAndExecute(null, request, data, claim = claim(),
             onRecognized = { assertTrue(it.pinRequired) }) { channel } }
         runCurrent()
@@ -111,7 +115,7 @@ class ProviderRecognitionTest {
         assertEquals(FailureCode.CANCELLED, failed.code)
         assertEquals(Effect.NONE, failed.effect)
         assertFalse(failed.writeAccepted)
-        assertEquals(listOf(4), channel.commands.map { it.first })
+        assertEquals(listOf(4, 6), channel.commands.map { it.first })
         assertArrayEquals(byteArrayOf(0), request.extensions.largeBlobWrite)
         assertTrue(channel.closed)
         CardOperationGate.tryAcquire()!!.close()
@@ -119,7 +123,11 @@ class ProviderRecognitionTest {
 
     @Test fun cancellationAfterConfirmationBeforeResumeDisposesCapturedPin() = runTest {
         val runner = ProviderOperationRunner()
-        val channel = FidoChannel { code, _ -> assertEquals(4, code); success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true))) }
+        val channel = FidoChannel { code, parameters -> when (code) {
+            4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true)))
+            6 -> { assertEquals(1L, parameters!![2].number()); success(cborMap(3 to 8.cbor(), 4 to false.cbor())) }
+            else -> error("Unexpected authentication before confirmation")
+        } }
         val result = async { runner.recognizeAndExecute(null, get(), data, claim = claim(), onRecognized = {}) { channel } }
         runCurrent()
         val pin = "1234".toCharArray()
@@ -129,7 +137,7 @@ class ProviderRecognitionTest {
         runner.cancel()
         assertArrayEquals(CharArray(4), pin)
         assertEquals(Effect.NONE, (result.await() as OperationResult.Failed).effect)
-        assertEquals(listOf(4), channel.commands.map { it.first })
+        assertEquals(listOf(4, 6), channel.commands.map { it.first })
     }
 
     @Test fun coroutineRetirementCancelsPendingConfirmationAndReleasesTransport() = runTest {
@@ -215,7 +223,7 @@ class ProviderRecognitionTest {
                         data, claim = claim(creating),
                         onRecognized = { error("Mandatory UV without an executable path enabled confirmation") }) { channel }
                         as OperationResult.Failed
-                    assertEquals(FailureCode.AUTHORIZATION_DENIED, result.code)
+                    assertEquals(if (capability == "force-change") FailureCode.PIN_CHANGE_REQUIRED else FailureCode.AUTHORIZATION_DENIED, result.code)
                     assertEquals(Effect.NONE, result.effect)
                     assertFalse(result.writeAccepted)
                     assertEquals(listOf(4), channel.commands.map { it.first })
@@ -235,7 +243,7 @@ class ProviderRecognitionTest {
             var connects = 0
             val channel = FidoChannel { code, parameters -> when (code) {
                 4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true), protocols = listOf(version)))
-                6 -> server.respond(requireNotNull(parameters), 2, "example.com")
+                6 -> server.providerResponse(requireNotNull(parameters), 2, "example.com")
                 2 -> {
                     assertArrayEquals(PinProtocol.authenticate(version, server.token, data.hash), requireNotNull(parameters)[6].bytes())
                     assertEquals(version.toLong(), parameters[7].number())
@@ -250,14 +258,14 @@ class ProviderRecognitionTest {
                 channel
             } }
             runCurrent()
-            assertEquals(listOf(4), channel.commands.map { it.first })
+            assertEquals(listOf(4, 6), channel.commands.map { it.first })
             assertEquals(0, server.tokenRequests)
             assertFalse(result.isCompleted)
             assertNull(CardOperationGate.tryAcquire())
             val pin = "1234".toCharArray()
             assertTrue(runner.confirm(pin))
             val completed = result.await() as OperationResult.Completed
-            assertEquals(listOf(4, 6, 6, 2), channel.commands.map { it.first })
+            assertEquals(listOf(4, 6, 6, 6, 6, 2), channel.commands.map { it.first })
             assertEquals(1, server.tokenRequests)
             assertEquals(1, connects)
             assertEquals(1, channel.selectCount)
@@ -269,6 +277,63 @@ class ProviderRecognitionTest {
                 claim = claim, onRecognized = { error("Repeated observation") }) { error("Reconnected") } as OperationResult.Failed).code)
             CardOperationGate.tryAcquire()!!.close()
         }
+    }
+
+    @Test fun freshRetryPreflightBlocksInvalidStatesAndPublishesFinalAttemptWithoutAuthentication() = runTest {
+        for (state in listOf("malformed", "blocked", "power-cycle", "final")) {
+            val runner = ProviderOperationRunner()
+            var observed: ProviderRecognition? = null
+            var authentication = 0
+            val channel = FidoChannel { code, map -> when (code) {
+                4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true)))
+                6 -> {
+                    if (map!![2].number() != 1L) { authentication++; error("Preflight must not authenticate") }
+                    if (state == "malformed") success(cborMap())
+                    else success(cborMap(3 to (if (state == "blocked") 0 else 1).cbor(), 4 to (state == "power-cycle").cbor()))
+                }
+                else -> error("Unexpected command")
+            } }
+            val operation = async { runner.recognizeAndExecute(null, get(), data, claim = claim(),
+                onRecognized = { observed = it }) { channel } }
+            runCurrent()
+            if (state == "final") {
+                assertEquals(1, observed?.remainingAttempts)
+                assertNull(CardOperationGate.tryAcquire())
+                runner.cancel()
+            } else assertNull(observed)
+            val result = operation.await() as OperationResult.Failed
+            assertEquals(when (state) {
+                "malformed" -> FailureCode.MALFORMED_RESPONSE
+                "blocked" -> FailureCode.PIN_BLOCKED
+                "power-cycle" -> FailureCode.PHYSICAL_ACTION_REQUIRED
+                else -> FailureCode.CANCELLED
+            }, result.code)
+            assertEquals(0, authentication)
+            assertTrue(channel.closed)
+        }
+    }
+    @Test fun changedRetryFactsAfterPinEntryNeverAuthenticateOrAutomaticallyReprompt() = runTest {
+        val runner = ProviderOperationRunner()
+        var reads = 0
+        val channel = FidoChannel { code, map -> when (code) {
+            4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true)))
+            6 -> {
+                assertEquals(1L, map!![2].number())
+                success(cborMap(3 to (if (++reads == 1) 8 else 1).cbor(), 4 to false.cbor()))
+            }
+            else -> error("Changed retry facts reached authentication")
+        } }
+        var observations = 0
+        val operation = async { runner.recognizeAndExecute(null, get(), data, claim = claim(),
+            onRecognized = { observations++; assertEquals(8, it.remainingAttempts) }) { channel } }
+        runCurrent()
+        val pin = "1234".toCharArray()
+        assertTrue(runner.confirm(pin))
+        assertEquals(FailureCode.RECOVERY_REQUIRED, (operation.await() as OperationResult.Failed).code)
+        assertEquals(1, observations)
+        assertEquals(2, reads)
+        assertArrayEquals(CharArray(4), pin)
+        assertFalse(runner.confirm("1234".toCharArray()))
     }
 
 }

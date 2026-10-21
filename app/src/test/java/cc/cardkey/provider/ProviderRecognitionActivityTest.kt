@@ -8,6 +8,10 @@ import android.hardware.usb.UsbManager
 import cc.cardkey.protocol.CardChannel
 import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.Medium
+import cc.cardkey.protocol.*
+import cc.cardkey.protocol.fido.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
 import cc.cardkey.transport.UsbAuthenticatorReader
 import cc.cardkey.transport.UsbReaderDescriptor
 import java.util.concurrent.atomic.AtomicReference
@@ -46,10 +50,10 @@ class ProviderRecognitionActivityTest {
     private fun pin(activity: ProviderActivity): String = ReflectionHelpers.callInstanceMethod(activity, "getPin")
     private fun input(activity: ProviderActivity) = ReflectionHelpers.callInstanceMethod<Unit>(activity, "setPin",
         ReflectionHelpers.ClassParameter.from(String::class.java, "1234"))
-    private fun publish(activity: ProviderActivity, reader: UsbReaderDescriptor? = null, generation: Long = 1L) {
+    private fun publish(activity: ProviderActivity, reader: UsbReaderDescriptor? = null, generation: Long = 1L, observation: ProviderRecognition = ProviderRecognition(true)) {
         ProviderActivity::class.java.getDeclaredMethod("updateRecognition", Long::class.javaPrimitiveType,
             UsbReaderDescriptor::class.java, ProviderRecognition::class.java).apply { isAccessible = true }
-            .invoke(activity, generation, reader, ProviderRecognition(true))
+            .invoke(activity, generation, reader, observation)
     }
     private fun reader(): UsbReaderDescriptor {
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
@@ -112,4 +116,66 @@ class ProviderRecognitionActivityTest {
         assertNull(observed(activity))
         assertFalse(UsbAuthenticatorReader.isCurrent(activity.getSystemService(UsbManager::class.java), original))
     }
+    @Test fun verifiedNoPinPolicyContinuesAutomaticallyWithinTheExistingClaimAndSession() = runTest {
+        val activity = activity()
+        val runner = ReflectionHelpers.getField<ProviderOperationRunner>(activity, "runner")
+        val data = ClientData(byteArrayOf(), ByteArray(32), true)
+        val request = ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.DISCOURAGED)
+        val registry = RequestRegistry()
+        val claim = registry.claim(registry.offer(OfferedRequest(ProviderRequestKind.GET, "{}", data.hash,
+            CallerSnapshot("synthetic.provider", setOf("certificate"), null), "fixture")))
+        val channel = FidoChannel { code, _ -> when (code) {
+            4 -> success(info())
+            2 -> success(cborMap(1 to descriptor(byteArrayOf(1)),
+                2 to (sha256("example.com".toByteArray()) + byteArrayOf(1, 0, 0, 0, 1)).cbor(),
+                3 to byteArrayOf(0x30, 6, 2, 1, 1, 2, 1, 1).cbor()))
+            else -> error("No-PIN policy queried or verified a PIN")
+        } }
+        var observations = 0
+        val operation = async { runner.recognizeAndExecute(null, request, data, claim = claim,
+            onRecognized = { observed -> observations++; assertFalse(observed.pinRequired); publish(activity, observation = observed) }) {
+            assertFalse(claim.reserveTransport())
+            channel
+        } }
+        val result = operation.await() as OperationResult.Completed
+        assertEquals(1, observations)
+        assertEquals(listOf(4, 2), channel.commands.map { it.first })
+        assertEquals("", pin(activity))
+        assertNull(observed(activity))
+        assertTrue(channel.closed)
+        (result.value as ProviderOutput.Assertions).values.forEach { it.close() }
+        claim.finish(cancelled = false)
+    }
+    @Test fun deniedPermissionClearsPendingStateWithoutStartingOrRebindingAnOperation() {
+        val activity = Robolectric.buildActivity(ProviderActivity::class.java,
+            Intent().setAction(ProviderRequests.ACTION_GET)).get()
+        val reader = reader()
+        val usb = activity.getSystemService(UsbManager::class.java)
+        shadowOf(usb).addOrUpdateUsbDevice(reader.device, false)
+        ReflectionHelpers.setField(activity, "pendingReader", reader)
+        state(activity, "PermissionPending", true)
+        val receiver = ReflectionHelpers.getField<BroadcastReceiver>(activity, "receiver")
+        val action = ReflectionHelpers.callInstanceMethod<String>(activity, "getPermissionAction")
+        receiver.onReceive(activity, Intent(action).setIdentifier("stale-reader"))
+        assertTrue(ReflectionHelpers.callInstanceMethod<Boolean>(activity, "getPermissionPending"))
+        receiver.onReceive(activity, Intent(action).setIdentifier(reader.routeKey))
+        assertFalse(ReflectionHelpers.callInstanceMethod<Boolean>(activity, "getPermissionPending"))
+        assertEquals(cc.cardkey.R.string.reader_permissionDenied,
+            ReflectionHelpers.callInstanceMethod<Int?>(activity, "getConnectionMessage"))
+        assertFalse(ReflectionHelpers.getField<ProviderOperationRunner>(activity, "runner").isActive)
+        assertEquals("", pin(activity))
+    }
+    @Test fun unavailableNfcKeepsTheVerifiedTaskRecoverableWithoutClaimingTransportSuccess() {
+        org.robolectric.shadows.ShadowNfcAdapter.setNfcHardwareExists(false)
+        val activity = Robolectric.buildActivity(ProviderActivity::class.java).get()
+        ReflectionHelpers.setField(activity, "active", true)
+        ReflectionHelpers.setField(activity, "clientData", ClientData(byteArrayOf(), ByteArray(32), true))
+        state(activity, "Loading", false)
+        ReflectionHelpers.callInstanceMethod<Unit>(activity, "recognize")
+        assertFalse(ReflectionHelpers.callInstanceMethod<Boolean>(activity, "getBusy"))
+        assertEquals(cc.cardkey.R.string.error_nfcUnavailable,
+            ReflectionHelpers.callInstanceMethod<Int?>(activity, "getConnectionMessage"))
+        assertFalse(ReflectionHelpers.getField<ProviderOperationRunner>(activity, "runner").isActive)
+    }
+
 }

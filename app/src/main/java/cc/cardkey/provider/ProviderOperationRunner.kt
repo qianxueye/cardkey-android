@@ -101,8 +101,16 @@ internal class ProviderOperationRunner {
                             val client = FidoClient(it)
                             client.select()
                             val info = client.getInfo()
+                            val observed = ProviderRecognition.from(info, create, get).let { policy ->
+                                if (!policy.pinRequired) policy else {
+                                    val retries = client.pinRetries(info)
+                                    if (retries.pin == 0) throw CardFailure(FailureCode.PIN_BLOCKED)
+                                    if (retries.powerCycleState == true) throw CardFailure(
+                                        if (session.wire == CardWire.CTAP) FailureCode.PIN_BLOCKED else FailureCode.PHYSICAL_ACTION_REQUIRED, 0x34)
+                                    policy.copy(remainingAttempts = retries.pin)
+                                }
+                            }
                             run {
-                                val observed = ProviderRecognition.from(info, create, get)
                                 val waiting = CompletableDeferred<Unit>()
                                 synchronized(inputLock) {
                                     if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
@@ -114,6 +122,13 @@ internal class ProviderOperationRunner {
                                 synchronized(inputLock) { confirmation = null; recognition = null }
                             }
                             if (cancelled.get()) throw CardFailure(FailureCode.CANCELLED)
+                            if (observed.pinRequired) {
+                                val retries = client.pinRetries(info)
+                                if (retries.pin == 0) throw CardFailure(FailureCode.PIN_BLOCKED)
+                                if (retries.powerCycleState == true) throw CardFailure(
+                                    if (session.wire == CardWire.CTAP) FailureCode.PIN_BLOCKED else FailureCode.PHYSICAL_ACTION_REQUIRED, 0x34)
+                                if (retries.pin != observed.remainingAttempts) throw CardFailure(FailureCode.RECOVERY_REQUIRED)
+                            }
                             val secret = synchronized(inputLock) { ownedPin }
                             val result = if (create != null) ProviderOutput.Created(CardCredentialOperation.create(client, info, create, clientData, secret))
                                 else ProviderOutput.Assertions(CardCredentialOperation.get(client, info, requireNotNull(get), clientData, secret))
