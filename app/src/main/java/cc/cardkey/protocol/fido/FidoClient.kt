@@ -190,11 +190,14 @@ class FidoClient(private val session: CardSession) {
         val retries = command(6, cborMap(1 to protocol.cbor(), 2 to 1.cbor()))
         val remaining = retries[3].count()
         if (remaining == 0) throw CardFailure(FailureCode.PIN_BLOCKED)
-        if (retries[4]?.bool() == true) throw CardFailure(FailureCode.PIN_BLOCKED, 0x34)
+        if (retries[4]?.bool() == true) throw CardFailure(
+            if (session.wire == CardWire.CTAP) FailureCode.PIN_BLOCKED else FailureCode.PHYSICAL_ACTION_REQUIRED, 0x34)
         if (remaining == 1) {
             if (!approveFinalAttempt()) throw CardFailure(FailureCode.CANCELLED)
             val current = command(6, cborMap(1 to protocol.cbor(), 2 to 1.cbor()))
-            if (current[3].count() != 1 || current[4]?.bool() == true)
+            if (current[4]?.bool() == true) throw CardFailure(
+                if (session.wire == CardWire.CTAP) FailureCode.PIN_BLOCKED else FailureCode.PHYSICAL_ACTION_REQUIRED, 0x34)
+            if (current[3].count() != 1)
                 throw CardFailure(FailureCode.RECOVERY_REQUIRED)
         }
         withToken(pin, 4, info = info) { token ->
