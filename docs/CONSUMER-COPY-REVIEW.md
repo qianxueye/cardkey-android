@@ -450,3 +450,17 @@ The bounded power-cycle correction passed 51 relevant protocol/confirmation/inve
 The first remote CI run executed 872 tests and found four signing-panel fixtures still expecting the removed routine PIN confirmation. The runtime had already adopted explicit task submission. The fixtures now verify one submission of the captured file generation/slot/format/PIN after the named action, with no duplicate dialog. Background retirement is tested before submission and still requires an empty secure field, zero dispatches and a reachable IME-constrained scroll area. Existing unknown-export, card-recovery and CMS trust assertions remain.
 
 The relevant signing-panel, signing-activity and confirmation suites passed all 49 tests in the bounded local rerun (28 seconds). This correction changes tests and this evidence record only; application source and the preserved debug APK are unchanged. Remote CI must pass on the final candidate before merge.
+
+### Selected credential and deletion target correction
+
+Reviewed with `plain-language-iso-24495` for the manager's existing Chinese vocabulary. Activation is limited to the manager presentation in this candidate; provider behavior, card mutation, PIN, permission, cancellation and generation gates remain unchanged.
+
+| Screen/key | Before | After | Reason and activation |
+| --- | --- | --- | --- |
+| Manager / selected passkey detail | `RP`, optional `名称`, `账户`; no credential identifier | Existing rows plus `凭据 ID` with the selected credential's complete `idHex` | Match the selected list item even when account names collide or are absent. Visible for selected passkeys; no manual ID entry. |
+| Manager / final `FIDO_DELETE` confirmation | Irreversible-loss warning without website/account/credential target | `网站 · {rp.id}`, `账户 · {name or displayName or 未命名账户}`, `凭据 ID · {idHex}`, followed by the unchanged warning | Identify the exact deletion target before explicit `确认`. All three fields come from immutable `input.inventorySelection`, never the current selection. |
+| Manager / selected proof and blob confirmation | `网站 · {rp.id}`, `账户 · {name or displayName or 未命名账户}` | Existing fields plus `凭据 ID · {idHex}` | Use the same complete identifier as selected detail and deletion confirmation. Existing confirmation conditions remain unchanged. |
+
+The complete identifier is retained for every selected credential, so disambiguation does not depend on a mutable list or a shortened-ID collision rule. Compact Compose regressions cover colliding names and unnamed accounts, visible detail and final-confirmation IDs, zero submissions before explicit confirmation, and dispatch of the original RP/account/ID selection even if the presented selection changes while the dialog is open. Existing inventory lifecycle, cryptographic proof and confirmation-policy evidence is retained.
+
+Bounded verification passed in 2 minutes 30 seconds: 71 targeted tests, zero failures/errors/skips (`InventoryPanelTest` 5, `InventoryProofTest` 12, `InventoryViewModelTest` 17, `InventoryActivityTest` 8, `ConfirmationPolicyTest` 29), application Kotlin and instrumentation Kotlin compilation, and debug lint (0 errors, 10 retained warnings). `git diff --check` passed. No device, emulator, card, NFC, reader, provider acceptance or deployment check was performed. Remote candidate gates remain root-owned.

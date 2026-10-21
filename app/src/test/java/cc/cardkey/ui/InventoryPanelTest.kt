@@ -20,6 +20,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import cc.cardkey.enrollment.EnrollmentState
 import cc.cardkey.protocol.*
+import cc.cardkey.protocol.fido.FidoUser
 import cc.cardkey.signing.SigningFileState
 import org.junit.Assert.*
 import org.junit.Rule
@@ -41,6 +42,7 @@ class InventoryPanelTest {
     private val manager = mutableStateOf(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
     private var submitted: OperationInput? = null
     private var cancelled = 0
+    private val presentedInventory = mutableStateOf<InventoryState?>(null)
     private fun render(width: Int, height: Int, test: (ComponentActivity, () -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         controller.get().enableEdgeToEdge()
@@ -50,7 +52,7 @@ class InventoryPanelTest {
                 ManagerScreen(manager.value, 0, {}, {}, { submitted = it }, { cancelled++; inventory.retire() }, {}, null, {}, {}, {}, {},
                     EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
-                    state, { _, rp -> inventory.selectRp(rp) }, { _, credential -> inventory.selectCredential(credential) }, {}, inventory::action)
+                    presentedInventory.value ?: state, { _, rp -> inventory.selectRp(rp) }, { _, credential -> inventory.selectCredential(credential) }, {}, inventory::action)
             } }
         }
         try { compose.waitForIdle(); test(controller.get()) { controller.pause().resume(); compose.waitForIdle() } }
@@ -76,6 +78,48 @@ class InventoryPanelTest {
             assertArrayEquals("1234".toCharArray(), submitted!!.pin)
         }
     }
+    @Test fun compactSameNameDeletionKeepsExactBoundTarget() = deletionTarget("alice", "Alice")
+
+    @Test fun compactUnnamedDeletionKeepsExactBoundTarget() = deletionTarget(null, null)
+
+    private fun deletionTarget(name: String?, displayName: String?) {
+        val initial = inventory.state.value
+        val original = initial.credential!!
+        val selected = InventoryCredential(original.rp, original.value().copy(
+            id = byteArrayOf(0x21, 0x01), user = FidoUser(byteArrayOf(7), name, displayName)))
+        val other = InventoryCredential(original.rp, original.value().copy(
+            id = byteArrayOf(0x21, 0x02), user = FidoUser(byteArrayOf(8), name, displayName)))
+        presentedInventory.value = initial.copy(credentials = listOf(selected, other), credential = selected,
+            action = ManagerOperation.FIDO_DELETE)
+        render(360, 480) { _, _ ->
+            compose.onNodeWithText(selected.idHex).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(other.idHex).assertDoesNotExist()
+            compose.onNodeWithText("凭据 ID · HEX").assertDoesNotExist()
+            pin().performScrollTo().performTextInput("1234")
+            assertNull(submitted)
+            compose.onNodeWithTag("manager-run").performClick()
+            assertNull(submitted)
+            compose.onNodeWithText("网站 · ${selected.rp.id}").assertIsDisplayed()
+            compose.onNodeWithText("账户 · ${name ?: displayName ?: "未命名账户"}").assertIsDisplayed()
+            compose.onNodeWithText("凭据 ID · ${selected.idHex}").assertIsDisplayed()
+            compose.runOnIdle {
+                presentedInventory.value = presentedInventory.value!!.copy(credential = other)
+            }
+            compose.onNodeWithText("凭据 ID · ${selected.idHex}").assertIsDisplayed()
+            compose.onNodeWithText("凭据 ID · ${other.idHex}").assertDoesNotExist()
+            assertNull(submitted)
+            compose.onNodeWithText("确认").performClick()
+            assertEquals(ManagerOperation.FIDO_DELETE, submitted!!.operation)
+            assertSame(selected, submitted!!.inventorySelection)
+            assertEquals(selected.rp.id, submitted!!.inventorySelection!!.rp.id)
+            assertEquals(name, submitted!!.inventorySelection!!.name)
+            assertEquals(displayName, submitted!!.inventorySelection!!.displayName)
+            assertEquals(selected.idHex, submitted!!.inventorySelection!!.idHex)
+            assertEquals(initial.generation, submitted!!.inventoryGeneration)
+            assertArrayEquals("1234".toCharArray(), submitted!!.pin)
+        }
+    }
+
     @Test fun landscapeImeKeepsProofControlReachableAndPauseRetiresConfirmationPin() {
         render(800, 480) { activity, pause ->
             compose.runOnIdle { requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()

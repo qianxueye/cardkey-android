@@ -175,9 +175,13 @@ fun ManagerScreen(
         AlertDialog(onDismissRequest = dismiss,
             title = { Text(input.operation.title) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL ||
+                if (input.operation in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_DELETE) ||
                     input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
-                    input.inventorySelection?.let { Text("网站 · ${it.rp.id}"); Text("账户 · ${it.name ?: it.displayName ?: "未命名账户"}") }
+                    input.inventorySelection?.let {
+                        Text("网站 · ${it.rp.id}")
+                        Text("账户 · ${it.name ?: it.displayName ?: "未命名账户"}")
+                        Text("凭据 ID · ${it.idHex}")
+                    }
                 }
                 input.messages.forEach { Text(stringResource(it)) }
             } },
@@ -406,6 +410,7 @@ fun ManagerScreen(
                                     PlexoFactRow("RP", credential.rp.id)
                                     credential.displayName?.let { PlexoFactRow("名称", it) }
                                     PlexoFactRow("账户", credential.name ?: credential.displayName ?: "未命名账户")
+                                    PlexoFactRow("凭据 ID", credential.idHex)
                                 } ?: inventory.rp?.let { PlexoFactRow("RP", it.id) }
                                     ?: Text(stringResource(R.string.workspace_authenticator))
                             }
