@@ -31,9 +31,12 @@ class InventoryCredential(val rp: InventoryRp, credential: Credential) {
     override fun hashCode() = 31 * (31 * rp.hashCode() + id.contentHashCode()) + encodedKey.contentHashCode()
 }
 
+enum class InventoryLoad { UNREAD, LOADING, LOADED, FAILED }
+
 data class InventoryState(val generation: Long = 0, val rps: List<InventoryRp> = emptyList(),
     val rp: InventoryRp? = null, val credentials: List<InventoryCredential> = emptyList(),
-    val credential: InventoryCredential? = null, val blobReady: Boolean = false, val fileSize: Int? = null, val action: ManagerOperation? = null)
+    val credential: InventoryCredential? = null, val blobReady: Boolean = false, val fileSize: Int? = null, val action: ManagerOperation? = null,
+    val load: InventoryLoad = InventoryLoad.UNREAD, val allCredentials: List<InventoryCredential> = emptyList())
 
 /** The operation owns transferred keys; retirement never wipes a worker's active input. */
 class InventoryRequest internal constructor(private val owner: FidoInventory, val generation: Long,
@@ -100,10 +103,10 @@ class FidoInventory {
             rp = rp, credentials = emptyList(), credential = null, blobReady = false)
     }
     @Synchronized fun selectCredential(credential: InventoryCredential) {
-        if (credential !in mutable.value.credentials) return
+        if (credential !in mutable.value.credentials && credential !in mutable.value.allCredentials) return
         clearKey(); clearFile()
         mutable.value = mutable.value.copy(generation = mutable.value.generation + 1,
-            credential = credential, blobReady = false)
+            credential = credential, rp = credential.rp, blobReady = false)
     }
     @Synchronized fun begin(input: OperationInput): InventoryRequest {
         val before = mutable.value
@@ -111,14 +114,16 @@ class FidoInventory {
             throw CardFailure(FailureCode.INVALID_INPUT)
         if (input.inventoryGeneration != null && input.inventoryGeneration != before.generation)
             throw CardFailure(FailureCode.CANCELLED)
-        val selected = input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL ||
+        val mutation = input.operation in setOf(ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE)
+        val selected = mutation || input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL ||
             input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) && before.credential != null
-        val blob = selected && input.operation != ManagerOperation.FIDO_VERIFY_CREDENTIAL
+        val blob = selected && input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)
         if (selected && (before.credential == null || input.inventoryGeneration == null || input.pin.isEmpty())) {
             throw CardFailure(FailureCode.INVALID_INPUT)
         }
         if (selected && input.inventorySelection != null && input.inventorySelection != before.credential)
             throw CardFailure(FailureCode.CANCELLED)
+        if (mutation && input.inventorySelection != before.credential) throw CardFailure(FailureCode.CANCELLED)
         if (blob && key == null) throw CardFailure(FailureCode.INVALID_INPUT)
         val transferred = if (blob) key.also { key = null } else null
         clearKey()
@@ -130,7 +135,9 @@ class FidoInventory {
         fileRequest = null
         if (!preserveBlobFile && input.operation !in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_WRITE)) clearFile()
         val generation = before.generation + 1
-        mutable.value = mutable.value.copy(generation = generation, blobReady = false)
+        mutable.value = mutable.value.copy(generation = generation, blobReady = false,
+            load = if (input.operation == ManagerOperation.FIDO_INVENTORY) InventoryLoad.LOADING else before.load,
+            allCredentials = if (input.operation == ManagerOperation.FIDO_INVENTORY) emptyList() else before.allCredentials)
         return InventoryRequest(this, generation, before.rp, before.credential.takeIf { selected },
             before.credential.takeIf { selected }?.let { counters[it.counterIdentity] }, transferred)
     }
@@ -144,6 +151,12 @@ class FidoInventory {
     }
     @Synchronized fun settle(request: InventoryRequest, report: ManagerReport) {
         if (!current(request)) return
+        report.inventory?.let { inventory ->
+            val sites = inventory.sites.map { site -> InventoryRp(site.rp) to site.credentials }
+            val entries = sites.flatMap { (rp, credentials) -> credentials.map { InventoryCredential(rp, it) } }
+            mutable.value = mutable.value.copy(rps = sites.map { it.first }, rp = null,
+                credentials = emptyList(), credential = null, allCredentials = entries, load = InventoryLoad.LOADED)
+        }
         report.relyingParties?.let { rps ->
             mutable.value = mutable.value.copy(rps = rps.map(::InventoryRp), rp = null,
                 credentials = emptyList(), credential = null)
@@ -152,6 +165,16 @@ class FidoInventory {
             if (request.rp != null) mutable.value = mutable.value.copy(rp = request.rp,
                 credentials = credentials.map { InventoryCredential(request.rp, it) }, credential = null)
         }
+    }
+    @Synchronized fun failedCurrent() {
+        if (mutable.value.load == InventoryLoad.LOADING)
+            mutable.value = mutable.value.copy(load = InventoryLoad.FAILED, rps = emptyList(),
+                credentials = emptyList(), allCredentials = emptyList(), rp = null, credential = null)
+    }
+    @Synchronized fun failed(request: InventoryRequest) {
+        if (current(request) && mutable.value.load == InventoryLoad.LOADING)
+            mutable.value = mutable.value.copy(load = InventoryLoad.FAILED, rps = emptyList(),
+                credentials = emptyList(), allCredentials = emptyList(), rp = null, credential = null)
     }
     @Synchronized fun retire() {
         clearKey(); clearFile(); counters.clear()

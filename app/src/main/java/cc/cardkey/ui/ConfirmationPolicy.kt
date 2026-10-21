@@ -12,7 +12,6 @@ object ConfirmationPolicy {
             ManagerOperation.PIV_ADMIN -> R.string.confirm_adminChange
             ManagerOperation.FIDO_BLOB_WRITE -> R.string.confirm_blobWrite
             ManagerOperation.FIDO_DELETE -> R.string.confirm_credentialDelete
-            ManagerOperation.FIDO_UPDATE -> R.string.confirm_credentialUpdate
             ManagerOperation.FIDO_ALWAYS_UV -> if (input.enabled) R.string.confirm_alwaysUvEnable else R.string.confirm_alwaysUvDisable
             ManagerOperation.FIDO_MIN_PIN -> R.string.confirm_minPin
             ManagerOperation.FIDO_ENTERPRISE -> R.string.confirm_enterprise
@@ -25,6 +24,7 @@ object ConfirmationPolicy {
             else -> null
         }
         val pinWarning = input.pin.isNotEmpty() && primary != R.string.confirm_pinChange &&
+            input.operation !in setOf(ManagerOperation.FIDO_INVENTORY, ManagerOperation.FIDO_UPDATE) &&
             input.operation !in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_RESET, ManagerOperation.PIV_ADMIN,
                 ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT, ManagerOperation.PIV_RESET)
         val secretWarning = input.operation == ManagerOperation.FIDO_ASSERT &&
@@ -56,6 +56,7 @@ object ConfirmationPolicy {
         before.serial == after.serial && before.pin == after.pin && before.puk == after.puk
 
     fun canInspect(operation: ManagerOperation): Boolean = operation in setOf(
+        ManagerOperation.FIDO_INVENTORY,
         ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_CAPACITY,
         ManagerOperation.FIDO_RPS, ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_BLOB_READ,
         ManagerOperation.U2F_INFO, ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT,
@@ -83,6 +84,8 @@ object ConfirmationPolicy {
                     else R.string.error_hidPhysicalActionRequired
                 } else R.string.error_physicalActionRequired
                 FailureCode.PIN_INVALID -> R.string.error_pinInvalid
+                FailureCode.PIN_SETUP_REQUIRED -> R.string.error_pinSetupRequired
+                FailureCode.PIN_CHANGE_REQUIRED -> R.string.error_pinChangeRequired
                 FailureCode.PIN_BLOCKED -> if (wire == CardWire.CTAP && result.status == 0x34)
                     R.string.error_hidPowerCycleRequired else R.string.error_pinBlocked
                 FailureCode.AUTHORIZATION_DENIED -> R.string.error_authorization

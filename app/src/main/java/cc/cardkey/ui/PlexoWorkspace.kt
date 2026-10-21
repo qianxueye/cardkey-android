@@ -48,7 +48,6 @@ internal fun PlexoObjects(
         deviceContext()
         Text(stringResource(if (destination == 1) R.string.navigation_certificates else R.string.navigation_passkeys), style = MaterialTheme.typography.headlineSmall)
         Text(if (destination == 1) "PIV" else "FIDO2", style = MaterialTheme.typography.labelLarge)
-        Text(stringResource(R.string.workspace_selectionOnly), style = MaterialTheme.typography.bodyMedium)
         ObjectOption(stringResource(if (destination == 1) R.string.workspace_pivSecurity else R.string.workspace_authenticator),
             null, false, enabled, "object-overview", onOverview)
         if (destination == 1) {
@@ -65,31 +64,17 @@ internal fun PlexoObjects(
             }
         } else {
             Text(stringResource(R.string.workspace_sites), style = MaterialTheme.typography.titleSmall)
-            if (inventory.rps.isEmpty()) Text(stringResource(R.string.workspace_credentialsUnread))
-            inventory.rps.forEach { rp ->
-                ObjectOption(rp.id, rp.name, inventory.rp == rp, enabled, "object-rp-${rp.id}") { onRp(rp) }
-            }
-            if (inventory.rp != null) {
-                Text(stringResource(R.string.workspace_credentials), style = MaterialTheme.typography.titleSmall)
-                if (inventory.credentials.isEmpty()) Text(stringResource(R.string.workspace_credentialReadRequired))
-                val rows = inventory.credentials.map { credential ->
-                    val name = credential.name?.takeIf { it.isNotBlank() }
-                    val title = credential.displayName?.takeIf { it.isNotBlank() } ?: name ?: credential.idHex
-                    Triple(credential, title, name)
-                }
-                val labelCounts = rows.groupingBy { (credential, title, name) ->
-                    Triple(credential.rp.id, title, name)
-                }.eachCount()
-                rows.forEach { (credential, title, name) ->
-                    val ambiguous = name == null || labelCounts.getValue(Triple(credential.rp.id, title, name)) > 1
-                    val details = buildList {
-                        if (name != null && name != title) add(name)
-                        add(credential.rp.id)
-                        if (ambiguous && title != credential.idHex) add("凭据 ID · ${credential.idHex}")
-                    }.joinToString("\n")
-                    ObjectOption(title, details, inventory.credential == credential, enabled,
-                        "object-credential-${credential.idHex}") { onCredential(credential) }
-                }
+            Text(stringResource(when (inventory.load) {
+                InventoryLoad.UNREAD -> R.string.inventory_unread
+                InventoryLoad.LOADING -> R.string.inventory_loading
+                InventoryLoad.FAILED -> R.string.inventory_failed
+                InventoryLoad.LOADED -> if (inventory.allCredentials.isEmpty()) R.string.inventory_empty else R.string.inventory_loaded
+            }))
+            inventory.allCredentials.forEach { credential ->
+                val title = credential.name?.takeIf { it.isNotBlank() }
+                    ?: credential.displayName?.takeIf { it.isNotBlank() } ?: "未命名账户"
+                ObjectOption(title, credential.rp.id, inventory.credential == credential, enabled,
+                    "object-credential-${credential.idHex}") { onCredential(credential) }
             }
             Text(stringResource(R.string.workspace_security), style = MaterialTheme.typography.titleSmall)
             OutlinedButton(onClick = onFidoPin, enabled = enabled, modifier = Modifier.fillMaxWidth()) {

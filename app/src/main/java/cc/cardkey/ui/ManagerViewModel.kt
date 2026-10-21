@@ -34,6 +34,8 @@ data class ManagerState(
     val awaitingNfc: Boolean = false,
     val result: OperationResult<ManagerReport>? = null,
     val lastRetry: Pair<String, String>? = null,
+    val fidoFinalAttempt: Boolean = false,
+    val documentMessage: Int? = null,
     val requiresInspection: Boolean = false,
     val operation: ManagerOperation? = null,
     val permissionPending: Boolean = false,
@@ -83,6 +85,15 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private var signingAction: ManagerOperation? = null
     private val signingInput = AtomicReference<OperationInput?>()
     private val inventoryInput = AtomicReference<OperationInput?>()
+    private var documentGeneration = 0L
+    fun beginDocument(): Long {
+        mutable.update { it.copy(documentMessage = null) }
+        return ++documentGeneration
+    }
+    fun ownsDocument(generation: Long) = generation == documentGeneration
+    fun documentResult(generation: Long, message: Int) {
+        if (ownsDocument(generation)) mutable.update { it.copy(documentMessage = message) }
+    }
     private var pendingEnrollmentRoot: Pair<Long, Long>? = null
     private val tlsMutable = MutableStateFlow(TlsQualificationState())
     val tls = tlsMutable.asStateFlow()
@@ -480,12 +491,16 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun receiveInventoryExport(id: String, uri: Uri?) {
         val request = inventoryExport?.takeIf { it.id == id } ?: return
         inventoryExport = null
-        if (uri == null) { request.close(); return }
+        val generation = beginDocument()
+        if (uri == null) { request.close(); documentResult(generation, cc.cardkey.R.string.document_cancelled); return }
         inventoryExportWrite.getAndSet(request)?.close()
         viewModelScope.launch(Dispatchers.IO) {
             if (!inventoryExportWrite.compareAndSet(request, null)) return@launch
             val bytes = request.take() ?: return@launch
-            try { runCatching { getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } } }
+            try {
+                val saved = DocumentIo.write(bytes) { getApplication<Application>().contentResolver.openOutputStream(uri, "wt") }
+                withContext(Dispatchers.Main) { documentResult(generation, if (saved) cc.cardkey.R.string.document_saved else cc.cardkey.R.string.document_unknown) }
+            }
             finally { bytes.fill(0) }
         }
     }
@@ -716,7 +731,23 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                                         }
                                     }
                                     if (cancelled) OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE)
-                                    else session.run { operations.execute(it, input) }.also { outcome ->
+                                    else session.run { operations.execute(it, input) {
+                                        kotlinx.coroutines.runBlocking {
+                                            val approval = CompletableDeferred<Boolean>()
+                                            withContext(Dispatchers.Main) {
+                                                retryApproval = approval
+                                                mutable.update { state -> state.copy(fidoFinalAttempt = true) }
+                                                if (cancelled) approval.complete(false)
+                                            }
+                                            val approved = withTimeoutOrNull(120_000) { approval.await() } == true
+                                            withContext(Dispatchers.Main) {
+                                                retryApproval = null
+                                                mutable.update { state -> state.copy(fidoFinalAttempt = false) }
+                                            }
+                                            input.inventoryRequest?.requireCurrent()
+                                            approved && !cancelled
+                                        }
+                                    } }.also { outcome ->
                                         writeAccepted = session.hasAcceptedWrite
                                         if (reader?.wire == CardWire.APDU && outcome is OperationResult.Failed && outcome.code == FailureCode.PHYSICAL_ACTION_REQUIRED)
                                             CardOperationGate.requireRemoval(reader.routeKey)
@@ -771,9 +802,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
                 input.inventoryRequest?.let { inventory.settle(it, result.value) }
+                if (input.operation in setOf(ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE)) inventory.retire()
                 result.value.enrollmentCsr?.let { enrollment.settleCsr(enrollmentOwner, it) }
                 if (input.operation == ManagerOperation.PIV_ENROLL_IMPORT) enrollment.imported(enrollmentOwner)
             }
+            if (result is OperationResult.Failed) input.inventoryRequest?.let(inventory::failed)
             finish(if (retired && result is OperationResult.Completed)
                 OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result)
         }
@@ -792,6 +825,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun finish(result: OperationResult<ManagerReport>) {
+        if (result is OperationResult.Failed) inventory.failedCurrent()
         presenceGeneration++
         if (result is OperationResult.Failed && (mutable.value.operation?.recognitionFamily != null ||
             result.code in setOf(FailureCode.TRANSPORT_FAILURE, FailureCode.MALFORMED_RESPONSE,
@@ -815,7 +849,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         }
         if (!requiresInspection) { recoveryRoute = null; recoveryWire = null }
         retireResult(result)
-        mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null, userPresenceRequired = false,
+        mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null, fidoFinalAttempt = false, userPresenceRequired = false,
             result = result, requiresInspection = requiresInspection)
     }
 
@@ -852,6 +886,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun cancel() { cancel(false) }
 
     private fun cancel(preserveSigningDocuments: Boolean, preserveInventoryDocument: Boolean = false, preserveInventoryExport: Boolean = false) {
+        documentGeneration++
         retireRecognition()
         if (!preserveInventoryExport) retireInventoryExport()
         signingInput.getAndSet(null)?.close()

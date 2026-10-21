@@ -104,37 +104,47 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     private fun chooseTlsRoot() { model.requestTlsRoot(); tlsRootImporter.launch(arrayOf("*/*")) }
     private val rootImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> model.receiveEnrollmentRoot(uri) }
     private val importer = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) lifecycleScope.launch {
-            imported = withContext(Dispatchers.IO) {
-                runCatching {
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        val buffer = ByteArray(65537)
-                        var length = 0
-                        while (length < buffer.size) {
-                            val read = input.read(buffer, length, buffer.size - length)
-                            if (read < 0) break
-                            if (read == 0) throw java.io.IOException()
-                            length += read
-                        }
-                        val bytes = buffer.copyOf(length)
-                        require(bytes.size in 0..65536)
-                        if (bytes.take(27).toByteArray().toString(Charsets.US_ASCII).startsWith("-----BEGIN CERTIFICATE-----")) {
-                            val text = bytes.toString(Charsets.US_ASCII)
+        val generation = model.beginDocument()
+        imported?.fill(0)
+        imported = null
+        if (uri == null) model.documentResult(generation, R.string.document_cancelled)
+        else lifecycleScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                try {
+                    val raw = cc.cardkey.ui.DocumentIo.read { contentResolver.openInputStream(uri) }
+                    if (raw.take(27).toByteArray().toString(Charsets.US_ASCII).startsWith("-----BEGIN CERTIFICATE-----")) {
+                        try {
+                            val text = raw.toString(Charsets.US_ASCII)
                             require(text.trim().endsWith("-----END CERTIFICATE-----"))
                             Base64.getMimeDecoder().decode(text.substringAfter("-----BEGIN CERTIFICATE-----").substringBefore("-----END CERTIFICATE-----"))
-                        } else bytes
-                    }
-                }.getOrNull()
+                        } finally { raw.fill(0) }
+                    } else raw
+                } catch (_: Exception) { null }
+            }
+            if (!model.ownsDocument(generation)) bytes?.fill(0)
+            else {
+                imported = bytes
+                if (bytes == null) model.documentResult(generation, R.string.document_readFailed)
             }
         }
     }
     private val exporter = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val report = export
         export = null
-        if (uri == null && report?.protectedExport == true) report.export?.fill(0)
-        if (uri != null && report?.export != null && model.currentEnrollmentExport(report)) lifecycleScope.launch(Dispatchers.IO) {
-            try { runCatching { contentResolver.openOutputStream(uri)?.use { it.write(report.export) } } }
-            finally { if (report.protectedExport) report.export.fill(0) }
+        val generation = model.beginDocument()
+        if (uri == null) {
+            if (report?.protectedExport == true) report.export?.fill(0)
+            model.documentResult(generation, R.string.document_cancelled)
+        } else if (report?.export != null && model.currentEnrollmentExport(report)) {
+            val bytes = report.export.copyOf()
+            if (report.protectedExport) report.export.fill(0)
+            lifecycleScope.launch {
+                val saved = withContext(Dispatchers.IO) {
+                    try { cc.cardkey.ui.DocumentIo.write(bytes) { contentResolver.openOutputStream(uri, "wt") } }
+                    finally { bytes.fill(0) }
+                }
+                model.documentResult(generation, if (saved) R.string.document_saved else R.string.document_unknown)
+            }
         }
     }
 
@@ -153,6 +163,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             if (intent.action == permissionAction) {
                 requestedReader?.takeIf { intent.identifier == it.routeKey }?.let { reader ->
                     if (UsbAuthenticatorReader.isCurrent(usb, reader) && usb.hasPermission(reader.device)) model.selectReader(reader)
+                    else model.documentResult(model.beginDocument(), R.string.reader_permissionDenied)
                     requestedReader = null
                     model.permissionPending(false)
                 }
@@ -223,7 +234,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                         showProviderSettings = false
                         providerSettings.launch(IntentSenderRequest.Builder(
                             CredentialManager.create(this@MainActivity).createSettingsPendingIntent()).build())
-                    }) { Text("启用") } },
+                    }) { Text("打开设置") } },
                     dismissButton = { TextButton(onClick = { showProviderSettings = false }) { Text("取消") } },
                 )
             }

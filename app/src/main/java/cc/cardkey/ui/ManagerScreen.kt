@@ -86,12 +86,13 @@ fun ManagerScreen(
         signingFiles.restoringSave && signingFiles.restoreOperation == null -> 2
         signingFiles.restoreOperation?.piv == true || signingFiles.active -> 1
         inventory.action != null -> 0
-        else -> 2
+        else -> 0
     }) }
-    var objectDetail by remember { mutableStateOf(signingFiles.active || signingFiles.restoringSave || inventory.credential != null && inventory.action != null) }
+    var objectDetail by remember { mutableStateOf(true) }
+    var advanced by remember { mutableStateOf(false) }
     val objectListScroll = rememberScrollState()
     val detailScroll = rememberScrollState()
-    var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) signingFiles.operation else inventory.action ?: ManagerOperation.FIDO_INFO) }
+    var operation by remember { mutableStateOf(signingFiles.restoreOperation ?: if (signingFiles.active) signingFiles.operation else inventory.action ?: ManagerOperation.FIDO_INVENTORY) }
     var pin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var adminKey by remember { mutableStateOf("") }
@@ -126,7 +127,7 @@ fun ManagerScreen(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, operation, inventory.credential) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE && (operation.isFileSigning || inventory.credential != null)) {
+            if (event == Lifecycle.Event.ON_PAUSE) {
                 pin = ""; confirmation?.close(); confirmation = null
             }
         }
@@ -136,10 +137,11 @@ fun ManagerScreen(
     val report = (state.result as? OperationResult.Completed)?.value
     val secretResult = report?.secrets != null || report?.protectedExport == true
     val secretForm = tab < 2 && needsSecretInput(operation)
-    val secretInputReady = if (operation.piv) state.canEnterPivSecrets else state.canEnterFidoSecrets
-    SideEffect { onSecureChange(tab == 1 || tab == 3 || secretForm || secretResult || state.lastRetry != null) }
+    val secretInputReady = !state.permissionPending
+    SideEffect { onSecureChange(tab == 1 || tab == 3 || secretForm || secretResult || state.lastRetry != null || state.fidoFinalAttempt) }
     LaunchedEffect(state.busy, state.result, state.requiresInspection) {
-        if (state.busy || state.result != null || state.requiresInspection) objectDetail = true
+        if (!state.busy && (state.result as? OperationResult.Completed)?.value?.inventory != null) objectDetail = false
+        else if (state.busy || state.result != null || state.requiresInspection) objectDetail = true
     }
     LaunchedEffect(state.result) { showSecrets = false; showSecretConfirmation = false; exportConfirmation = null }
     LaunchedEffect(clearInputs, operation, state.selectedReader?.routeKey, state.nfc, inventory.generation, state.recognition, state.permissionPending) {
@@ -169,14 +171,14 @@ fun ManagerScreen(
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (input.operation == ManagerOperation.FIDO_VERIFY_CREDENTIAL ||
                     input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
-                    input.inventorySelection?.let { Text("RP · ${it.rp.id}"); Text("凭据 ID · ${it.idHex}") }
+                    input.inventorySelection?.let { Text("网站 · ${it.rp.id}"); Text("账户 · ${it.name ?: it.displayName ?: "未命名账户"}") }
                 }
                 input.messages.forEach { Text(stringResource(it)) }
             } },
             confirmButton = { TextButton(onClick = {
                 val recognitionCurrent = !needsSecretInput(input.operation) ||
                     confirmationRecognition == state.recognition &&
-                    (if (input.operation.piv) state.canEnterPivSecrets else state.canEnterFidoSecrets)
+                    !state.permissionPending
                 confirmation = null; confirmationRecognition = null
                 if (recognitionCurrent) input.dispatch(onSubmit) else input.close()
             }) { Text("确认") } },
@@ -194,6 +196,11 @@ fun ManagerScreen(
         } },
         confirmButton = { TextButton(onClick = { exportConfirmation = null; onExport(pending) }) { Text("确认") } },
         dismissButton = { TextButton(onClick = { exportConfirmation = null }) { Text("取消") } }) }
+    if (state.fidoFinalAttempt) AlertDialog(onDismissRequest = { onLastRetry(false) },
+        title = { Text("仅剩一次 PIN 尝试") },
+        text = { Text(stringResource(R.string.confirm_fidoLastRetry)) },
+        confirmButton = { TextButton(onClick = { onLastRetry(true) }) { Text("验证一次") } },
+        dismissButton = { TextButton(onClick = { onLastRetry(false) }) { Text("取消") } })
     state.lastRetry?.let { (current, other) ->
         AlertDialog(onDismissRequest = { onLastRetry(false) },
             title = { Text(state.operation?.title ?: "PIV") },
@@ -213,9 +220,11 @@ fun ManagerScreen(
                     enabled = !state.busy && (index != 1 || state.supportsPiv), onClick = {
                     confirmation?.close(); confirmation = null
                     tab = index
+                    advanced = false
+                    objectDetail = true
                     if (index < 2) {
                         objectDetail = false
-                        operation = if (index == 0) ManagerOperation.FIDO_INFO else ManagerOperation.PIV_INFO
+                        operation = if (index == 0) ManagerOperation.FIDO_INVENTORY else ManagerOperation.PIV_INFO
                     }
                 }, icon = { Icon(managerDestinationIcons[when (index) { 0 -> 0; 1 -> 1; 4 -> 3; else -> 2 }], contentDescription = null) },
                     label = { Text(stringResource(label)) })
@@ -239,7 +248,7 @@ fun ManagerScreen(
                             else -> R.string.workspace_unread
                         }), style = MaterialTheme.typography.bodySmall,
                             color = if (state.requiresInspection) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (state.nfc) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodySmall)
+                        if (state.nfc && state.busy) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodySmall)
                     }
                     if (tab != 2) TextButton(onClick = {
                         if (!state.busy) {
@@ -269,7 +278,7 @@ fun ManagerScreen(
                 deviceContext = { if (viewportHeight < 480.dp) { topBar(); readerContext() } },
                 onOverview = {
                     confirmation?.close(); confirmation = null
-                    operation = if (tab == 1) ManagerOperation.PIV_INFO else ManagerOperation.FIDO_INFO
+                    operation = if (tab == 1) ManagerOperation.PIV_INFO else ManagerOperation.FIDO_INVENTORY
                     objectDetail = true
                 },
                 onSlot = {
@@ -285,10 +294,10 @@ fun ManagerScreen(
                 onCredential = {
                     confirmation?.close(); confirmation = null
                     onInventoryCredential(inventory.generation, it)
-                    operation = ManagerOperation.FIDO_VERIFY_CREDENTIAL; objectDetail = true
+                    operation = ManagerOperation.FIDO_UPDATE; objectDetail = true
                 },
                 onFidoPin = { operation = ManagerOperation.FIDO_CHANGE_PIN; objectDetail = true },
-                onReadCredentials = { operation = ManagerOperation.FIDO_RPS; objectDetail = true })
+                onReadCredentials = { operation = ManagerOperation.FIDO_INVENTORY; objectDetail = true })
         }
         val compact = viewportHeight < 480.dp
         LaunchedEffect(state.busy, state.presenceMessage, state.result, state.awaitingNfc, viewportHeight.takeIf { state.busy }) {
@@ -332,7 +341,7 @@ fun ManagerScreen(
                                         enterpriseMode = enterpriseMode.takeIf { it != 0 }, displayName = displayName,
                                         signingFileGeneration = signingFiles.selection?.generation.takeIf { op.isFileSigning },
                                         inventoryGeneration = inventory.generation, inventorySelection = inventory.credential.takeIf {
-                                            op in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) })
+                                            op in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) })
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""
                                     if (ConfirmationPolicy.messages(input).isEmpty()) onSubmit(input)
                                     else {
@@ -340,11 +349,11 @@ fun ManagerScreen(
                                         confirmation = PendingOperation(input)
                                     }
                                 } catch (_: IllegalArgumentException) { invalid = true; validationFailures++ }
-                            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("manager-run"), enabled = !state.busy && (!needsSecretInput(op) || secretInputReady) && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
+                            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("manager-run"), enabled = !state.busy && (op != ManagerOperation.FIDO_INVENTORY || pin.isNotEmpty()) && (!needsSecretInput(op) || secretInputReady) && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
                                 (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
-                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(op.title.substringAfter("·").trim()) }
+                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(if (op == ManagerOperation.FIDO_INVENTORY) "继续" else op.title.substringAfter("·").trim()) }
                             if (state.busy) OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
                         }
                     }
@@ -366,6 +375,7 @@ fun ManagerScreen(
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (!compact) readerContext()
+                state.documentMessage?.let { Text(stringResource(it), Modifier.padding(12.dp)) }
                 Row(Modifier.weight(1f).widthIn(max = 1200.dp).fillMaxWidth()) {
                     if (tab < 2 && (twoPanes || !detailVisible)) {
                         Box(if (twoPanes) Modifier.width(280.dp).fillMaxHeight() else Modifier.fillMaxSize()) { objectPane() }
@@ -396,10 +406,9 @@ fun ManagerScreen(
                                 inventory.credential?.let { credential ->
                                     PlexoFactRow("RP", credential.rp.id)
                                     credential.displayName?.let { PlexoFactRow("名称", it) }
-                                    PlexoFactRow("凭据 ID", credential.idHex)
+                                    PlexoFactRow("账户", credential.name ?: credential.displayName ?: "未命名账户")
                                 } ?: inventory.rp?.let { PlexoFactRow("RP", it.id) }
                                     ?: Text(stringResource(R.string.workspace_authenticator))
-                                Text(stringResource(R.string.workspace_selectionOnly), style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }
@@ -414,7 +423,6 @@ fun ManagerScreen(
                                 when (val result = state.result) {
                                     is OperationResult.Completed -> {
                                         Text(stringResource(R.string.workspace_receipt), style = MaterialTheme.typography.labelLarge)
-                                        Text(stringResource(R.string.workspace_receiptOwner), style = MaterialTheme.typography.bodyMedium)
                                         ConfirmationPolicy.resultMessages(result, state.resultWire, state.operation).forEach {
                                             Text(stringResource(it), style = MaterialTheme.typography.titleMedium)
                                         }
@@ -502,34 +510,19 @@ fun ManagerScreen(
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 val op = operation
-                                if (!op.piv && inventory.rps.isNotEmpty()) {
-                                    Choice("RP", inventory.rp, inventory.rps,
-                                        { it?.id ?: "RP" }, !state.busy) { it?.let { rp -> onInventoryRp(inventory.generation, rp) } }
-                                    if (inventory.credentials.isNotEmpty()) Choice("凭据 ID", inventory.credential,
-                                        inventory.credentials, { it?.idHex ?: "凭据 ID" }, !state.busy) { it?.let { credential -> onInventoryCredential(inventory.generation, credential) } }
-                                }
                                 if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
                                         ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
                                     Text(stringResource(R.string.workspace_slotContext), style = MaterialTheme.typography.bodySmall)
                                     Choice("槽位", slot, PivClient.slots, { "%02X".format(it) }, !state.busy) { slot = it }
                                 }
-                                OperationChoice(operation, ManagerOperation.entries.filter { it.piv == (tab == 1) && it !in setOf(ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }, !state.busy) { operation = it }
+                                val tasks = if (advanced) ManagerOperation.entries.filter { it.piv == (tab == 1) && it !in setOf(ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT, ManagerOperation.FIDO_RPS, ManagerOperation.FIDO_CREDENTIALS) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }
+                                else if (tab == 1) listOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT, ManagerOperation.PIV_SSH_EXPORT, ManagerOperation.PIV_CMS_SIGN, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_UNBLOCK)
+                                else listOf(ManagerOperation.FIDO_INVENTORY, ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN) +
+                                    if (inventory.credential != null) listOf(ManagerOperation.FIDO_UPDATE, ManagerOperation.FIDO_DELETE) else emptyList()
+                                OperationChoice(operation, tasks, !state.busy) { operation = it }
                                 Text(op.title, style = MaterialTheme.typography.titleLarge)
-                                if (needsSecretInput(op) && !secretInputReady) {
-                                    Text(stringResource(if (op.piv) R.string.workspace_readPivFirst else R.string.workspace_readFidoFirst))
-                                    OutlinedButton(onClick = {
-                                        confirmation?.close(); confirmation = null
-                                        onSubmit(OperationInput(if (op.piv) ManagerOperation.PIV_INFO else ManagerOperation.FIDO_INFO,
-                                            slot = slot, displayName = displayName, inventoryGeneration = inventory.generation,
-                                            inventorySelection = inventory.credential.takeIf { !op.piv }))
-                                    }, enabled = !state.busy && !state.permissionPending &&
-                                        (state.nfc || state.selectedReader != null) && (!op.piv || state.supportsPiv) &&
-                                        signingFiles.exportStatus != SignatureExportStatus.WRITING,
-                                        modifier = Modifier.testTag("recognition-task")) {
-                                        Text(stringResource(R.string.workspace_readRecognition))
-                                    }
-                                }
-                                if (op in setOf(ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_CAPACITY, ManagerOperation.FIDO_RPS,
+                                if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission, displayName))
+                                if (advanced && op in setOf(ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_CAPACITY, ManagerOperation.FIDO_RPS,
                                         ManagerOperation.FIDO_CREDENTIALS, ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
                                         ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) && inventory.rps.isEmpty())
                                     Text(stringResource(R.string.workspace_credentialsUnread), style = MaterialTheme.typography.bodySmall)
@@ -543,7 +536,8 @@ fun ManagerScreen(
                                     Text(stringResource(R.string.signing_limit), style = MaterialTheme.typography.bodySmall)
                                     signingFiles.selection?.let { file -> Text(stringResource(R.string.signing_selectedFile, file.name, file.size)) }
                                 }
-                                if (secretInputReady && needsPin(op)) SecretField(when { op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK -> "当前 PUK"; op.piv -> "当前 PIV PIN"; else -> "当前 FIDO PIN" }, pin, !state.busy, viewportHeight) { pin = it }
+                                if (secretInputReady && needsPin(op)) SecretField(when { op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK -> "当前 PUK"; op.piv -> "当前 PIV PIN"; else -> "FIDO PIN" }, pin, !state.busy, viewportHeight) { pin = it }
+                                if (secretInputReady && !op.piv && needsPin(op)) Text("PIN 输入错误会减少重试次数。", style = MaterialTheme.typography.bodySmall)
                                 if (secretInputReady && op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
                                 if (op in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
                                         ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK)) {
@@ -570,13 +564,11 @@ fun ManagerScreen(
                                     Choice("算法", algorithm, KeyAlgorithm.entries, { it.name }, !state.busy) { algorithm = it }
                                     Choice("PIN 验证策略", pinPolicy, PinPolicy.entries, { it.name }, !state.busy) { pinPolicy = it }
                                 }
-                                if (op in setOf(ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE,
-                                        ManagerOperation.FIDO_MIN_PIN, ManagerOperation.PIV_CSR)) {
+                                if (op in setOf(ManagerOperation.FIDO_MIN_PIN, ManagerOperation.PIV_CSR)) {
                                     val label = when (op) {
-                                        ManagerOperation.FIDO_CREDENTIALS -> "RP SHA-256 · HEX"
                                         ManagerOperation.FIDO_MIN_PIN -> "PIN · 最短长度"
                                         ManagerOperation.PIV_CSR -> "Subject · CN=${stringResource(R.string.app_name)}"
-                                        else -> "凭据 ID · HEX"
+                                        else -> "主题名称"
                                     }
                                     OutlinedTextField(text, { text = it }, label = { Text(label) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
                                 }
@@ -587,7 +579,7 @@ fun ManagerScreen(
                                 }
                                 if (op == ManagerOperation.FIDO_UPDATE) {
                                     Text(stringResource(R.string.user_updateHelp))
-                                    OutlinedTextField(secondary, { secondary = it }, label = { Text("名称") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
+                                    OutlinedTextField(secondary, { secondary = it }, label = { Text("新用户名") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
                                 }
                                 if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -644,10 +636,12 @@ fun ManagerScreen(
                         PlexoSection(stringResource(R.string.settings_services)) {
                             OutlinedButton(onClick = onProviderSettings, enabled = !state.busy) { Text(stringResource(R.string.settings_provider)) }
                             OutlinedButton(onClick = { tab = 3 }, enabled = !state.busy && state.supportsPiv) { Text(stringResource(R.string.settings_enrollment)) }
+                            OutlinedButton(onClick = { advanced = true; tab = 0; operation = ManagerOperation.FIDO_INFO }, enabled = !state.busy) { Text("高级 FIDO 设置与诊断") }
+                            OutlinedButton(onClick = { advanced = true; tab = 1; operation = ManagerOperation.PIV_INFO }, enabled = !state.busy && state.supportsPiv) { Text("高级 PIV 管理与诊断") }
                         }
                     }
                     if (tab == 3) key(state.selectedReader?.routeKey) { EnrollmentPanel(enrollment, state.busy,
-                        !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection && state.canEnterPivSecrets,
+                        !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection,
                         clearInputs + recognitionInputRetirements, onEnrollmentSettings, onEnrollmentRoot, { input ->
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                             onEnrollmentSubmit(input)
@@ -659,14 +653,14 @@ fun ManagerScreen(
                         enrollment.selection == cc.cardkey.enrollment.EnrollmentSelection()) {
                         key(state.selectedReader?.routeKey, enrollment.bundle) {
                             TlsQualificationPanel(tls, enrollment, state.busy,
-                                !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection && state.canEnterPivSecrets,
+                                !state.nfc && state.selectedReader?.wire == CardWire.APDU && !state.requiresInspection,
                                 clearInputs + recognitionInputRetirements, onTlsSettings, onTlsRoot, { input ->
                                     pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                                     onTlsSubmit(input)
                                 }, onCancel, viewportHeight)
                         }
                     }
-                    if (tab == 0 && state.supportsPiv) Text(stringResource(R.string.restriction_fidoReset), style = MaterialTheme.typography.bodySmall)
+                    if (advanced && tab == 0 && state.supportsPiv) Text(stringResource(R.string.restriction_fidoReset), style = MaterialTheme.typography.bodySmall)
                 }
                 }
             }

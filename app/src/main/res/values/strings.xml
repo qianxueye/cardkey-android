@@ -126,7 +126,7 @@
     <string name="ssh_publicKeyExported">已导出 SSH 公钥。</string>
     <string name="certificate_dateScope">仅检查证书有效期，未验证信任链、吊销状态或与槽位公钥的匹配关系。</string>
     <string name="workspace_disconnected">当前连接 · 未选择 USB 读卡器</string>
-    <string name="workspace_objects">对象列表</string>
+    <string name="workspace_objects">返回列表</string>
     <string name="workspace_selectedObject">当前选择</string>
     <string name="workspace_selectedSlot">槽位 · %1$s</string>
     <string name="workspace_selectionOnly">选择对象或任务不会发送卡片指令。</string>
@@ -161,9 +161,22 @@
     <string name="artwork_failed">卡片图片加载失败，仍可使用卡片功能。</string>
     <string name="artwork_retry">重试图片</string>
     <string name="provider_confirm_fido">FIDO PIN 输入错误会减少重试次数。确认继续？</string>
-    <string name="workspace_sites">网站与凭据</string>
+    <string name="workspace_sites">网站与通行密钥</string>
     <string name="workspace_security">安全设置</string>
-    <string name="workspace_fidoPin">更改 FIDO PIN</string>
+    <string name="workspace_fidoPin">设置或更改 FIDO PIN</string>
     <string name="workspace_createOnWebsite">新通行密钥由网站发起创建。这里可查看支持驻留的凭据。</string>
-    <string name="workspace_readSites">读取网站列表</string>
+    <string name="workspace_readSites">查看通行密钥</string>
+    <string name="inventory_unread">输入 FIDO PIN 后继续，再连接卡片。</string>
+    <string name="inventory_loading">正在读取通行密钥…</string>
+    <string name="inventory_failed">通行密钥未能读取。请重新发起读取。</string>
+    <string name="inventory_empty">这张卡没有可列出的通行密钥。</string>
+    <string name="inventory_loaded">选择账户以修改用户名或删除通行密钥。</string>
+    <string name="confirm_fidoLastRetry">FIDO PIN 仅剩一次尝试。输入错误将锁定 PIN，可能需要重置设备并重新绑定账户。仅验证一次？</string>
+    <string name="error_pinSetupRequired">此卡尚未设置 FIDO PIN。请先选择“设置 FIDO PIN”。本次未验证 PIN。</string>
+    <string name="error_pinChangeRequired">此卡要求更改 FIDO PIN。请先选择“更改 FIDO PIN”。本次未验证 PIN。</string>
+    <string name="document_readFailed">文件未能读取，请重新选择文件。</string>
+    <string name="document_saved">文件已保存。</string>
+    <string name="document_cancelled">已取消文件操作。</string>
+    <string name="document_unknown">未确认文件保存结果。请检查所选位置，勿重复提交卡片操作。</string>
+    <string name="reader_permissionDenied">未获 USB 读卡器访问授权。请重新选择读卡器，或改用 NFC。</string>
 </resources>
