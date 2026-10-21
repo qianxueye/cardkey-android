@@ -381,4 +381,19 @@ class FidoClientTest {
             } finally { key.fill(0) }
         }
     }
+    @Test fun retryHelperPreservesThePublicPinAndUvReadbackWithOneInfoRead() {
+        val channel = FidoChannel { code, map -> when (code) {
+            4 -> success(info(mapOf("uv" to true)))
+            6 -> when (map!![2].number()) {
+                1L -> success(cborMap(3 to 8.cbor(), 4 to false.cbor()))
+                7L -> success(cborMap(5 to 3.cbor()))
+                else -> error("Retry inspection authenticated")
+            }
+            else -> error("Unexpected retry command")
+        } }
+        val result = CardSession(channel).run { FidoClient(it).apply { select() }.retries() } as OperationResult.Completed
+        assertEquals(PinRetries(8, false, 3), result.value)
+        assertEquals(listOf(4, 6, 6), channel.commands.map { it.first })
+    }
+
 }

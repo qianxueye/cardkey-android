@@ -2,6 +2,7 @@ package cc.cardkey.provider
 
 import cc.cardkey.protocol.CardChannel
 import cc.cardkey.protocol.OperationResult
+import cc.cardkey.protocol.fido.*
 import kotlinx.coroutines.runBlocking
 
 internal fun ProviderOperationRunner.executeAndConfirm(
@@ -21,3 +22,6 @@ internal fun ProviderOperationRunner.executeAndConfirm(
         }
     } finally { pin?.fill('\u0000'); if (claim == null) owned.finish(cancelled = false) }
 }
+
+internal fun FidoClientTest.PinServer.providerResponse(map: Cbor.Map, permission: Int, rp: String?): ByteArray =
+    if (map[2].number() == 1L) success(cborMap(3 to 8.cbor(), 4 to false.cbor())) else respond(map, permission, rp)

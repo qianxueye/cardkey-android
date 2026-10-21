@@ -102,10 +102,15 @@ class FidoClient(private val session: CardSession) {
     }
 
     fun retries(): PinRetries {
-        val info = getInfo(); val protocol = info.protocol()
-        val pin = command(6, cborMap(1 to protocol.cbor(), 2 to 1.cbor()))
-        val uv = if (info.options.containsKey("uv")) command(6, cborMap(1 to protocol.cbor(), 2 to 7.cbor()))[5]?.count() else null
-        return PinRetries(pin[3].count(), pin[4]?.bool(), uv)
+        val info = getInfo()
+        val pin = pinRetries(info)
+        val uv = if (info.options.containsKey("uv")) command(6, cborMap(1 to info.protocol().cbor(), 2 to 7.cbor()))[5]?.count() else null
+        return pin.copy(uv = uv)
+    }
+
+    internal fun pinRetries(info: FidoInfo): PinRetries {
+        val pin = command(6, cborMap(1 to info.protocol().cbor(), 2 to 1.cbor()))
+        return PinRetries(pin[3].count(), pin[4]?.bool(), null)
     }
 
     private fun agreement(protocol: Int): PinProtocol {

@@ -97,7 +97,7 @@ class ProviderPrfSelectionTest {
             var commandsAtPreflight = 0
             val underlying = FidoChannel { code, map -> when (code) {
                 4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true), listOf(version), listOf("hmac-secret")))
-                6 -> server.respond(map!!, 2, rp)
+                6 -> server.providerResponse(map!!, 2, rp)
                 2 -> {
                     assertions++
                     if (assertions == 1) {

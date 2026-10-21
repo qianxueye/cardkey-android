@@ -118,7 +118,7 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
                 4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true, "largeBlobs" to true),
                     protocols = listOf(pinVersion), extensions = listOf("largeBlobKey"),
                     extra = cborMap(5 to 256.cbor(), 11 to 4096.cbor())))
-                6 -> server.respond(parameters!!, if (asserted) 16 else 2, if (asserted) null else rp)
+                6 -> server.providerResponse(parameters!!, if (asserted) 16 else 2, if (asserted) null else rp)
                 2 -> {
                     assertEquals(pinVersion.toLong(), parameters!![7].number())
                     assertArrayEquals(PinProtocol.authenticate(pinVersion, server.token, data.hash), parameters[6].bytes())
@@ -170,7 +170,11 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
         val server = FidoClientTest.PinServer(pinVersion)
         val peer = SyntheticHidPeer(reports) { code, parameters -> when (code) {
             4 -> success(info(mapOf("clientPin" to true, "pinUvAuthToken" to true), protocols = listOf(pinVersion)))
-            6 -> if (parameters!![2].number() == 2L) server.respond(parameters, 2, rp) else byteArrayOf(0x31)
+            6 -> when (parameters!![2].number()) {
+                1L -> success(cborMap(3 to 8.cbor(), 4 to false.cbor()))
+                2L -> server.respond(parameters, 2, rp)
+                else -> byteArrayOf(0x31)
+            }
             else -> error("Incorrect PIN must not dispatch an assertion")
         } }
         val pin = "9999".toCharArray()
@@ -178,7 +182,7 @@ class TypedProviderWorkflowTest(numbered: Boolean, private val pinVersion: Int) 
         assertEquals(FailureCode.PIN_INVALID, result.code)
         assertEquals(Effect.APPLIED, result.effect)
         assertEquals(1, peer.initializationCount)
-        assertEquals(listOf(4, 6, 6), peer.commands)
+        assertEquals(listOf(4, 6, 6, 6, 6), peer.commands)
         assertTrue(peer.closed)
         assertArrayEquals(CharArray(4), pin)
     }
