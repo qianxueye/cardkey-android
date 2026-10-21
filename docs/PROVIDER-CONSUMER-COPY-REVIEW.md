@@ -128,3 +128,7 @@ Final one-attempt consent is shown in a native conditional dialog using the exis
 The provider/protocol/confirmation regression checkpoint passed 207 cases with zero failures/skips. The later 211-case run passed its other 208 cases and failed only three optional `captureToImage` exports for the documented redraw timeout; replacing that unavailable capture path with the existing native View.draw method passed the 33 presentation/public-retry cases plus build/lint. The final sole-title and conditional-consent round reused unchanged protocol evidence: current-snapshot/decline/background checks passed, and after correcting the count's placement, all 15 provider presentation and activity-lifecycle cases passed with APK and instrumentation compilation and lint. Final lint reports 0 errors and 10 retained protocol/dependency warnings.
 
 The public retries API is separately checked to retain PIN and optional built-in-UV retry counts with one GetInfo read. No dependency, manifest permission, caller/DAL/origin rule, wire protocol or provider storage policy changed. Source, synthetic tests/previews, Android activation, real reader/card interaction and actual site acceptance remain separate evidence.
+
+## Integrated delivery evidence
+
+The [post-parent validation and delivery record](PROVIDER-CONSUMER-VALIDATION.md) records the normal manager merge, the existing 26-case integration result, verified debug APK aliases and the already inspected native fixture PNGs. It does not extend the activation or hardware/site acceptance scope above.
