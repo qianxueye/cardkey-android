@@ -6,24 +6,21 @@
     <string name="operation_appliedReadbackFailed" formatted="false">卡片已接受更改，但回读未完成。请读取卡片状态，勿重复提交更改。</string>
     <string name="error_contactRequired" formatted="false">此操作需要接触式读卡器。NFC 目前仅支持读取 PIV 公开信息。</string>
     <string name="error_physicalActionRequired" formatted="false">请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。</string>
-    <string name="error_pinInvalid" formatted="false">PIN 或 PUK 验证失败，请查看剩余重试次数。</string>
+    <string name="error_pinInvalid" formatted="false">PIN 或 PUK 不正确。请确认后重新发起操作。</string>
     <string name="error_pinBlocked" formatted="false">PIN 或 PUK 已锁定。</string>
-    <string name="error_unsupported" formatted="false">当前卡片或读卡器不支持此操作。</string>
+    <string name="error_unsupported" formatted="false">此卡片或读卡器不支持这项操作。</string>
     <string name="error_authorization" formatted="false">卡片未授权此操作。</string>
     <string name="error_malformed" formatted="false">卡片响应无效。</string>
     <string name="error_keyMismatch" formatted="false">证书公钥与所选槽位不匹配，未导入证书。</string>
     <string name="error_invalidInput" formatted="false">输入格式有误，请检查所填内容。</string>
     <string name="error_transport" formatted="false">卡片连接失败。</string>
-    <string name="error_cancelled" formatted="false">操作已取消。已发送的指令可能已生效，请查看卡片状态。</string>
+    <string name="error_cancelled" formatted="false">操作已取消。</string>
     <string name="reader_nfc" formatted="false">选择操作后，将卡片贴近手机。</string>
     <string name="reader_usbPermission">请在系统提示中允许 %1$s 访问此 USB 读卡器。</string>
     <string name="reader_empty" formatted="false">未连接受支持的 USB 读卡器。</string>
-    <string name="confirm_authenticate" formatted="false">当前 PIN 或 PUK 输入错误会减少重试次数。确认继续？</string>
-    <string name="confirm_pinChange" formatted="false">当前 PIN 或 PUK 输入错误会减少重试次数。确认修改？</string>
     <string name="confirm_lastRetryErasesKeys" formatted="false">{当前验证项} 仅剩一次重试，{另一项} 已锁定。此次验证失败将清除 PIV 私钥。确认继续？</string>
     <string name="confirm_adminChange" formatted="false">更换后，后续管理操作需要新管理密钥。请先妥善保存新密钥。确认更换？</string>
     <string name="confirm_credentialDelete" formatted="false">删除所选凭据后，无法再用它登录已绑定的账户。此操作不可撤销。确认删除？</string>
-    <string name="confirm_credentialUpdate" formatted="false">更新所选凭据的用户信息，用户 ID 保留。确认更新？</string>
     <string name="confirm_alwaysUvEnable" formatted="false">开启后，创建凭据和登录验证始终要求用户验证，U2F 将不可用。确认开启？</string>
     <string name="confirm_alwaysUvDisable" formatted="false">关闭后，创建凭据和登录验证按卡片和凭据各自的策略要求用户验证。确认关闭？</string>
     <string name="confirm_minPin" formatted="false">最短 PIN 长度不能降低。提高长度后，卡片可能要求修改 PIN；选择强制修改时，须先修改 PIN 才能再次进行 PIN 验证。同时替换最短 PIN 长度的披露名单。确认应用？</string>
@@ -108,15 +105,11 @@
     <string name="signing_exported">已导出签名。</string>
     <string name="signing_exportCancelled">已取消导出。</string>
     <string name="signing_exportUnknown">未确认导出结果。请检查所选文件。</string>
-    <string name="workspace_unread">卡片状态尚未读取</string>
-    <string name="workspace_busy">操作执行中</string>
-    <string name="workspace_lastResult">最近操作结果见下方；不代表实时卡片状态</string>
     <string name="workspace_inspection">结果待核实；请先读取卡片状态</string>
     <string name="workspace_common">常用任务</string>
     <string name="workspace_advanced">高级与协议诊断</string>
     <string name="workspace_details">技术详情</string>
     <string name="workspace_slotContext">槽位选择用于本次操作；证书状态需单独读取。</string>
-    <string name="workspace_credentialsUnread">凭据列表尚未读取；先读取 RP，再读取凭据。</string>
     <string name="workspace_enrollmentFlow">生成 CSR → CA 签发 → 验证证书 → 导入并读回</string>
     <string name="signing_cmsRequirements">需要有效的文档签名证书，且证书公钥与所选槽位一致。</string>
     <string name="signing_cmsVerified">CMS 签名验证：通过</string>
@@ -125,11 +118,9 @@
     <string name="ssh_publicKeyScope">已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。本操作不验证 SSH 登录。</string>
     <string name="ssh_publicKeyExported">已导出 SSH 公钥。</string>
     <string name="certificate_dateScope">仅检查证书有效期，未验证信任链、吊销状态或与槽位公钥的匹配关系。</string>
-    <string name="workspace_disconnected">当前连接 · 未选择 USB 读卡器</string>
     <string name="workspace_objects">返回列表</string>
     <string name="workspace_selectedObject">当前选择</string>
     <string name="workspace_selectedSlot">槽位 · %1$s</string>
-    <string name="workspace_selectionOnly">选择对象或任务不会发送卡片指令。</string>
     <string name="workspace_authenticator">认证器</string>
     <string name="workspace_pivSecurity">PIV 状态与安全设置</string>
     <string name="workspace_slotCatalog">槽位目录</string>
@@ -138,17 +129,11 @@
     <string name="workspace_slotManagement">密钥管理</string>
     <string name="workspace_slotCardAuthentication">卡片验证</string>
     <string name="workspace_slotRetired">退役密钥</string>
-    <string name="workspace_credentials">凭据</string>
-    <string name="workspace_credentialReadRequired">选择 RP 后，明确执行“凭据 · 读取”。当前列表不代表卡片没有凭据。</string>
     <string name="workspace_tasks">选择任务</string>
     <string name="workspace_receipt">任务结果</string>
-    <string name="workspace_receiptOwner">以下结果属于本次任务记录的对象。改变当前选择不会改变结果中的对象。</string>
     <string name="workspace_pivReaderRequired">当前读卡器使用 CTAP，只能访问 FIDO。PIV 和证书申请需要 NFC 或支持 APDU 的 USB 读卡器。</string>
     <string name="workspace_outputFile">本次导出文件</string>
-    <string name="workspace_readFidoFirst">先执行“FIDO2 · 读取”，识别认证器后再输入 PIN 或扩展数据。读取记录不代表卡片持续在场。</string>
-    <string name="workspace_readPivFirst">先执行“PIV · 读取”，识别卡片后再输入 PIN、PUK 或管理密钥。读取记录不代表卡片持续在场。</string>
-    <string name="workspace_readRecognition">读取卡片信息</string>
-    <string name="navigation_device">设备</string>
+    <string name="navigation_device">卡片</string>
     <string name="navigation_passkeys">通行密钥</string>
     <string name="navigation_certificates">证书</string>
     <string name="navigation_settings">设置</string>
@@ -163,7 +148,7 @@
     <string name="provider_confirm_fido">FIDO PIN 输入错误会减少重试次数。确认继续？</string>
     <string name="workspace_sites">网站与通行密钥</string>
     <string name="workspace_security">安全设置</string>
-    <string name="workspace_fidoPin">设置或更改 FIDO PIN</string>
+    <string name="workspace_fidoPin">更改 FIDO PIN</string>
     <string name="workspace_createOnWebsite">新通行密钥由网站发起创建。这里可查看支持驻留的凭据。</string>
     <string name="workspace_readSites">查看通行密钥</string>
     <string name="inventory_unread">输入 FIDO PIN 后继续，再连接卡片。</string>
@@ -171,6 +156,8 @@
     <string name="inventory_failed">通行密钥未能读取。请重新发起读取。</string>
     <string name="inventory_empty">这张卡没有可列出的通行密钥。</string>
     <string name="inventory_loaded">选择账户以修改用户名或删除通行密钥。</string>
+    <string name="credential_deleted">通行密钥已删除。重新读取可查看最新列表。</string>
+    <string name="credential_updated">用户名已更新。重新读取可查看最新列表。</string>
     <string name="confirm_fidoLastRetry">FIDO PIN 仅剩一次尝试。输入错误将锁定 PIN，可能需要重置设备并重新绑定账户。仅验证一次？</string>
     <string name="error_pinSetupRequired">此卡尚未设置 FIDO PIN。请先选择“设置 FIDO PIN”。本次未验证 PIN。</string>
     <string name="error_pinChangeRequired">此卡要求更改 FIDO PIN。请先选择“更改 FIDO PIN”。本次未验证 PIN。</string>

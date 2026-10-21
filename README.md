@@ -16,7 +16,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. CI uses public Ubu
 
 ## Management workflows
 
-- FIDO2: authenticator information, retries, credential capacity, PIN set/change, resident RP and credential selection, PIN-authenticated signature proof using the enumerated public key, credential deletion/user updates, always-UV, minimum PIN length, and provisioned enterprise-attestation activation.
+- Passkeys: enter the FIDO PIN before connecting the card, then read capacity, websites and all resident credentials in one authorized session. Rename or delete the selected account with a fresh PIN; known completed changes require an explicit new inventory read. PIN setup/change are named tasks. Policy controls and controlled diagnostics are under advanced settings.
 - Selected-credential Large Blob: explicit proof, one-use blob key, fresh same-session proof before each read/write, bounded file input and confirmed decrypted export. [Selected credential workflow](docs/manager-fido.md)
 - Diagnostics: CTAP registration/assertion and U2F signature verification; `credProtect`, `credBlob`, `hmac-secret`, `minPinLength`, `largeBlobKey`, and bounded encrypted large-blob access.
 - PIV: information, slot metadata, public keys and certificates; PIN/PUK changes and unblock; 3DES/AES management authentication and key changes; RSA-2048/P-256/P-384 generation; verified card-signed CSR export; matching certificate import/readback; bounded raw-file signing with independent verification and `signature.bin` export; ECDH and RSA-decryption checks. [File-signing scope](docs/PIV-FILE-SIGNING.md)
@@ -27,7 +27,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. CI uses public Ubu
 
 The CardKey PIV slot profile is 9A, 9C, 9D, 9E and 82–8C; 9B remains the management-key reference. Valid empty-slot metadata retains the returned PIN policy, touch policy and origin without inventing an algorithm or public key. Private-key operations reject empty slots before PIN verification or management authentication.
 
-Management actions use the approved Chinese confirmation and result messages. PIN/PUK-sensitive PIV operations read live retry counts before verification; a last attempt that could erase keys requires an additional confirmation and a second check of those facts in the same session. Unknown writes block further mutations. For HID, routine inspection cannot resolve an unknown write because a USB route does not establish card identity. These controls do not replace physical device acceptance. [Copy scope](docs/COPY-PROPOSAL.md)
+Management actions use the reviewed Chinese confirmation and result messages. [Consumer copy review](docs/CONSUMER-COPY-REVIEW.md) PIN/PUK-sensitive PIV operations read live retry counts before verification; a last attempt that could erase keys requires an additional confirmation and a second check of those facts in the same session. Unknown writes block further mutations. For HID, routine inspection cannot resolve an unknown write because a USB route does not establish card identity. These controls do not replace physical device acceptance. [Copy scope](docs/COPY-PROPOSAL.md)
 
 ## Card and session rules
 

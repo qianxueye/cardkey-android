@@ -99,7 +99,7 @@ class ManagerViewModelTest {
             override fun close() { released.countDown(); delegate.close() }
             override fun cancel() = close()
         }
-        val input = OperationInput(ManagerOperation.FIDO_DELETE, pin = "9999".toCharArray(), text = "01")
+        val input = OperationInput(ManagerOperation.FIDO_CAPACITY, pin = "9999".toCharArray())
         val run = ManagerViewModel::class.java.getDeclaredMethod("run", OperationInput::class.java, Function0::class.java)
         run.isAccessible = true
         run.invoke(model, input, { channel })

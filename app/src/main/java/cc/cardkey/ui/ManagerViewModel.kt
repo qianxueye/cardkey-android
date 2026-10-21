@@ -745,7 +745,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                                                 mutable.update { state -> state.copy(fidoFinalAttempt = false) }
                                             }
                                             input.inventoryRequest?.requireCurrent()
-                                            approved && !cancelled
+                                            approved && !cancelled && !mutable.value.permissionPending &&
+                                                observationLifecycle == recognitionLifecycle &&
+                                                if (reader == null) NfcAdapter.getDefaultAdapter(getApplication())?.isEnabled == true
+                                                else mutable.value.selectedReader?.routeKey == reader.routeKey &&
+                                                    UsbAuthenticatorReader.isCurrent(usb, reader) && usb.hasPermission(reader.device)
                                         }
                                     } }.also { outcome ->
                                         writeAccepted = session.hasAcceptedWrite
@@ -806,7 +810,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 result.value.enrollmentCsr?.let { enrollment.settleCsr(enrollmentOwner, it) }
                 if (input.operation == ManagerOperation.PIV_ENROLL_IMPORT) enrollment.imported(enrollmentOwner)
             }
-            if (result is OperationResult.Failed) input.inventoryRequest?.let(inventory::failed)
+            if (result is OperationResult.Failed) {
+                input.inventoryRequest?.let(inventory::failed)
+                if (input.operation in setOf(ManagerOperation.FIDO_DELETE, ManagerOperation.FIDO_UPDATE) &&
+                    (result.effect == Effect.UNKNOWN || result.writeAccepted)) inventory.retire()
+            }
             finish(if (retired && result is OperationResult.Completed)
                 OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result)
         }

@@ -5,6 +5,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -30,9 +31,11 @@ class ConsumerManagerTest {
     @Test fun coldLaunchAcceptsPinBeforeCardAndNeverRequiresManualRead() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         var submitted: OperationInput? = null
+        var submissions = 0
+        val state = mutableStateOf(ManagerState())
         activity.get().setContent {
             MaterialTheme { Box(Modifier.requiredSize(800.dp, 800.dp)) {
-                ManagerScreen(ManagerState(), 0, {}, {}, { submitted = it }, {}, {}, null, {}, {}, {}, {},
+                ManagerScreen(state.value, 0, {}, {}, { submissions++; submitted = it }, {}, {}, null, {}, {}, {}, {},
                     EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
                     InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
@@ -49,6 +52,18 @@ class ConsumerManagerTest {
                 assertArrayEquals("1234".toCharArray(), submitted?.pin)
             }
             compose.onNodeWithText("RP SHA-256 · HEX").assertDoesNotExist()
+            compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
+            compose.onNodeWithTag("task-FIDO_CHANGE_PIN").performScrollTo().performClick()
+            compose.runOnIdle {
+                state.value = ManagerState(operation = ManagerOperation.FIDO_DELETE,
+                    result = OperationResult.Completed(ManagerReport(emptyList()), Effect.APPLIED))
+            }
+            compose.waitForIdle()
+            compose.onNodeWithText("通行密钥已删除。重新读取可查看最新列表。").assertExists()
+            compose.onNodeWithText("新 FIDO PIN").assertDoesNotExist()
+            compose.onNodeWithTag("manager-run").assertIsNotEnabled()
+            compose.runOnIdle { assertEquals(1, submissions) }
+
         } finally { submitted?.close(); activity.pause().stop().destroy() }
     }
     @Test fun loadedEmptyFailedAndStaleTargetRemainDistinct() {
@@ -58,7 +73,7 @@ class ConsumerManagerTest {
         assertEquals(InventoryLoad.LOADING, inventory.state.value.load)
         inventory.settle(request, ManagerReport(emptyList(), inventory = CredentialInventory(CredentialCapacity(0, 8), emptyList())))
         assertEquals(InventoryLoad.LOADED, inventory.state.value.load)
-        assertTrue(inventory.state.value.allCredentials.isEmpty())
+        assertTrue(inventory.state.value.credentials.isEmpty())
         inventory.failedCurrent()
         assertEquals(InventoryLoad.LOADED, inventory.state.value.load)
         inventory.retire()

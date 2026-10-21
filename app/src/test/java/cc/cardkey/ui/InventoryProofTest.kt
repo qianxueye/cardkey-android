@@ -16,6 +16,7 @@ internal class InventoryCard(val rp: String = "login.example.test", val id: Byte
         -2 to fixed32(ec.w.affineX).cbor(), -3 to fixed32(ec.w.affineY).cbor())
     val relyingParty get() = RelyingParty(rp, "Synthetic RP", sha256(rp.toByteArray()))
     val credential get() = Credential(id, FidoUser(byteArrayOf(7), "alice", "Alice"), publicKey, 3)
+    var remainingAttempts = 8
     var counter = 0
     var flags = 5
     var returnedId = id
@@ -37,9 +38,11 @@ internal class InventoryCard(val rp: String = "login.example.test", val id: Byte
     fun channel(wire: CardWire = CardWire.CTAP) = ManagerTestChannel(wire) { code, parameters -> when (code) {
         4 -> success(info(mapOf("pinUvAuthToken" to true, "clientPin" to true, "credMgmt" to true, "alwaysUv" to true, "largeBlobs" to true),
             extensions = listOf("largeBlobKey"), extra = cborMap(11 to 4096.cbor())))
-        6 -> if (pinError && parameters!![2].number() == 9L) byteArrayOf(0x31) else server.respond(parameters!!,
+        6 -> if (parameters!![2].number() == 1L) success(cborMap(3 to remainingAttempts.cbor(), 4 to false.cbor()))
+            else if (pinError && parameters[2].number() == 9L) byteArrayOf(0x31) else server.respond(parameters!!,
             parameters[9]?.number()?.toInt() ?: 2, if (parameters[9]?.number() in listOf(4L, 16L)) null else rp)
         10 -> when (parameters!![1].number()) {
+            1L -> success(cborMap(1 to 1.cbor(), 2 to 8.cbor()))
             2L -> success(cborMap(3 to textMap("id" to rp.cbor(), "name" to "Synthetic RP".cbor()), 4 to relyingParty.idHash.cbor(), 5 to 1.cbor()))
             4L -> { assertArrayEquals(relyingParty.idHash, parameters[2].map()[1].bytes()); success(cborMap(6 to credential.user.encode(), 7 to descriptor(id), 8 to publicKey, 9 to 1.cbor(), 10 to 3.cbor())) }
             else -> error("Unexpected CM")
@@ -219,7 +222,7 @@ class InventoryProofTest {
             OperationInput(operation, pin = "1234".toCharArray(),
                 assertionExtensions = AssertionExtensions(credentialBlob = true, hmacSalts = ByteArray(32))).use {
                 val messages = ConfirmationPolicy.messages(it)
-                assertTrue(messages.contains(cc.cardkey.R.string.confirm_authenticate))
+                assertEquals(if (operation == ManagerOperation.FIDO_ASSERT) 1 else 0, messages.size)
                 assertEquals(operation == ManagerOperation.FIDO_ASSERT, messages.contains(cc.cardkey.R.string.confirm_secretRead))
             }
         }

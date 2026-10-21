@@ -79,10 +79,12 @@ class PlexoWorkspaceTest {
     @Config(qualifiers = "w400dp-h800dp-mdpi")
     fun taskNavigationKeepsDeviceAndSettingsPassive() {
         render(400, 800, initial = ManagerState(nfc = false), openPasskeys = false) { activity, _, _ ->
+            compose.onNode(hasText("卡片") and hasClickAction()).performClick()
             compose.onNodeWithText("通用卡片示意图").assertIsDisplayed()
             savePreview("device", activity)
             compose.onNodeWithText("刷新读卡器").performScrollTo().assertIsDisplayed()
             compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            compose.onNodeWithTag("workspace-object-back").performClick()
             compose.onNodeWithTag("object-overview").assertIsDisplayed()
             savePreview("passkeys", activity)
             compose.onNode(hasText("设置") and hasClickAction()).performClick()
@@ -102,6 +104,7 @@ class PlexoWorkspaceTest {
 
     @Test fun compactObjectSelectionAndSystemBackPreserveSlotWithoutDispatch() {
         render(360, 640, 1.5f) { activity, _, action ->
+            compose.onNodeWithTag("workspace-object-back").performClick()
             compose.onNodeWithTag("workspace-objects").assertExists()
             compose.onNodeWithTag("workspace-detail").assertDoesNotExist()
             compose.onNode(hasText("证书") and hasClickAction()).performClick()
@@ -195,9 +198,12 @@ class PlexoWorkspaceTest {
     }
 
     private fun chooseTask(operation: ManagerOperation) {
-        if (operation.piv) compose.onNode(hasText("证书") and hasClickAction()).performClick()
-        else compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
-        compose.onNodeWithTag("object-overview").performScrollTo().performClick()
+        if (operation == ManagerOperation.PIV_ADMIN || operation == ManagerOperation.FIDO_ALWAYS_UV) {
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNodeWithText(if (operation.piv) "高级 PIV 管理与诊断" else "高级 FIDO 设置与诊断").performScrollTo().performClick()
+        } else {
+            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+        }
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
         compose.onNodeWithTag("task-${operation.name}").performScrollTo().performClick()
         compose.waitForIdle()
@@ -208,69 +214,35 @@ class PlexoWorkspaceTest {
             .config[SemanticsProperties.EditableText].text)
     }
 
-    @Test fun readerDescriptorAndWrongFamilyCannotExposeFidoSecretsOrBypassPermission() {
+    @Test fun pinPreparationNeedsNoPriorReadButPermissionRetiresSecrets() {
         val selected = reader("recognition-fido")
         val descriptor = ManagerState(nfc = false, selectedReader = selected)
-        render(360, 640, initial = ManagerState(nfc = false)) { _, update, _ ->
+        render(360, 640, initial = descriptor) { _, update, _ ->
             chooseTask(ManagerOperation.FIDO_CHANGE_PIN)
-            compose.onNodeWithText("当前 FIDO PIN", substring = false).assertDoesNotExist()
+            compose.onNodeWithText("FIDO PIN", substring = false).performScrollTo().assertIsEnabled().performTextInput("123456")
+            compose.onNodeWithTag("recognition-task").assertDoesNotExist()
+            update(descriptor.copy(permissionPending = true))
+            compose.onNodeWithText("FIDO PIN", substring = false).assertDoesNotExist()
             compose.onNodeWithText("新 FIDO PIN", substring = false).assertDoesNotExist()
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             update(descriptor)
-            compose.onNodeWithText("当前 FIDO PIN", substring = false).assertDoesNotExist()
-            for (family in listOf(CardFamily.U2F, CardFamily.PIV)) {
-                update(descriptor.copy(recognition = CardRecognition(selected.routeKey, 1, family)))
-                compose.onNodeWithText("当前 FIDO PIN", substring = false).assertDoesNotExist()
-                compose.onNodeWithText("新 FIDO PIN", substring = false).assertDoesNotExist()
-                compose.onNodeWithTag("manager-run").assertIsNotEnabled()
-            }
-            val recognized = descriptor.copy(recognition = CardRecognition(selected.routeKey, 2, CardFamily.FIDO2))
-            update(recognized)
-            compose.onNodeWithText("当前 FIDO PIN", substring = false).performScrollTo().assertIsEnabled().performTextInput("123456")
-            compose.onNodeWithText("新 FIDO PIN", substring = false).performScrollTo().assertIsEnabled()
-            update(recognized.copy(permissionPending = true))
-            compose.onNodeWithText("当前 FIDO PIN", substring = false).assertDoesNotExist()
-            compose.onNodeWithText("新 FIDO PIN", substring = false).assertDoesNotExist()
-            compose.onNodeWithTag("manager-run").assertIsNotEnabled()
-            update(recognized)
-            assertEmptyInput("当前 FIDO PIN")
+            assertEmptyInput("FIDO PIN")
             assertEmptyInput("新 FIDO PIN")
         }
     }
 
-    @Test fun explicitPublicNfcProbePreservesProspectiveTaskAndSlotUntilRecognition() {
+    @Test fun advancedPivPreparationDoesNotDispatchOrRequirePublicProbe() {
         val reads = mutableListOf<OperationInput>()
         try {
-            render(360, 640, onSubmit = { reads += it }) { _, update, action ->
-                compose.onNode(hasText("证书") and hasClickAction()).performClick()
-                compose.onNodeWithTag("object-slot-9D").performScrollTo().performClick()
-                compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
-                compose.onNodeWithTag("task-PIV_ADMIN").performScrollTo().performClick()
-                compose.waitForIdle()
-                assertTrue(reads.isEmpty())
-                assertEquals(ManagerOperation.PIV_ADMIN to 0x9d, action())
-                compose.onNodeWithText("管理密钥 · HEX", substring = false).assertDoesNotExist()
-                compose.onNodeWithText("新管理密钥 · HEX", substring = false).assertDoesNotExist()
-                compose.onNodeWithTag("recognition-task").performScrollTo().performClick()
-                compose.waitForIdle()
-                val read = reads.single()
-                assertEquals(ManagerOperation.PIV_INFO, read.operation)
-                assertEquals(0x9d, read.slot)
-                assertEquals(0L, read.inventoryGeneration)
-                assertTrue(read.pin.isEmpty() && read.newPin.isEmpty())
-                assertTrue(read.adminKey.isEmpty() && read.newAdminKey.isEmpty() && read.bytes.isEmpty())
-                assertNull(read.signingFileGeneration)
-                assertNull(read.enrollmentImport)
-                assertEquals(ManagerOperation.PIV_ADMIN to 0x9d, action())
-                compose.onNodeWithTag("manager-run").assertIsDisplayed().assertIsNotEnabled()
-                compose.onNodeWithText("管理密钥 · HEX", substring = false).assertDoesNotExist()
-                update(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
-                compose.onNodeWithText("管理密钥 · HEX", substring = false).assertDoesNotExist()
-                update(ManagerState(recognition = CardRecognition("nfc", 2, CardFamily.PIV)))
+            render(360, 640, onSubmit = { reads += it }) { _, _, action ->
+                compose.onNode(hasText("设置") and hasClickAction()).performClick()
+                compose.onNodeWithText("高级 PIV 管理与诊断").performScrollTo().performClick()
+                chooseTask(ManagerOperation.PIV_ADMIN)
+                compose.onNodeWithTag("recognition-task").assertDoesNotExist()
                 compose.onNodeWithText("管理密钥 · HEX", substring = false).performScrollTo().assertIsEnabled()
                 compose.onNodeWithText("新管理密钥 · HEX", substring = false).performScrollTo().assertIsEnabled()
-                assertEquals(ManagerOperation.PIV_ADMIN to 0x9d, action())
-                assertEquals(1, reads.size)
+                assertEquals(ManagerOperation.PIV_ADMIN to 0x9a, action())
+                assertTrue(reads.isEmpty())
             }
         } finally { reads.forEach(OperationInput::close) }
     }
@@ -281,23 +253,24 @@ class PlexoWorkspaceTest {
             recognition = CardRecognition(original.routeKey, 1, CardFamily.FIDO2))
         render(360, 640, initial = initial) { _, update, _ ->
             chooseTask(ManagerOperation.FIDO_CHANGE_PIN)
-            compose.onNodeWithText("当前 FIDO PIN", substring = false).performScrollTo().performTextInput("123456")
+            compose.onNodeWithText("FIDO PIN", substring = false).performScrollTo().performTextInput("123456")
             val newer = initial.copy(recognition = CardRecognition(original.routeKey, 2, CardFamily.FIDO2))
             update(newer)
-            assertEmptyInput("当前 FIDO PIN")
-            compose.onNodeWithText("当前 FIDO PIN", substring = false).performScrollTo().performTextInput("123456")
+            assertEmptyInput("FIDO PIN")
+            compose.onNodeWithText("FIDO PIN", substring = false).performScrollTo().performTextInput("123456")
             compose.onNodeWithText("新 FIDO PIN", substring = false).performScrollTo().performTextInput("654321")
+            chooseTask(ManagerOperation.FIDO_ALWAYS_UV)
+            assertEmptyInput("FIDO PIN")
+            compose.onNodeWithText("FIDO PIN", substring = false).performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("manager-run").performClick()
             compose.onNodeWithText("确认", substring = false).assertExists()
             val replacement = reader("recognition-replacement")
             update(newer.copy(selectedReader = replacement,
                 recognition = CardRecognition(replacement.routeKey, 3, CardFamily.FIDO2)))
             compose.onNodeWithText("确认", substring = false).assertDoesNotExist()
-            assertEmptyInput("当前 FIDO PIN")
-            assertEmptyInput("新 FIDO PIN")
+            assertEmptyInput("FIDO PIN")
             update(ManagerState(nfc = false, selectedReader = replacement))
-            compose.onNodeWithText("当前 FIDO PIN", substring = false).assertDoesNotExist()
-            compose.onNodeWithText("新 FIDO PIN", substring = false).assertDoesNotExist()
+            assertEmptyInput("FIDO PIN")
         }
     }
 
@@ -310,15 +283,15 @@ class PlexoWorkspaceTest {
             compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("enrollment-cn").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsEnabled()
-            compose.onNodeWithTag("enrollment-pin").assertDoesNotExist()
-            compose.onNodeWithTag("enrollment-create-csr").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-pin").assertExists()
+            compose.onNodeWithTag("enrollment-create-csr").assertExists()
             compose.onNodeWithTag("enrollment-admin").assertDoesNotExist()
             val recognized = descriptor.copy(recognition = CardRecognition(selected.routeKey, 1, CardFamily.PIV))
             update(recognized)
             compose.onNodeWithTag("enrollment-pin").performScrollTo().assertIsEnabled().performTextInput("123456")
             update(descriptor)
-            compose.onNodeWithTag("enrollment-pin").assertDoesNotExist()
-            compose.onNodeWithTag("enrollment-create-csr").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-pin").assertExists()
+            compose.onNodeWithTag("enrollment-create-csr").assertExists()
             compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsEnabled()
             update(recognized.copy(recognition = CardRecognition(selected.routeKey, 2, CardFamily.PIV)))
             assertEquals("", compose.onNodeWithTag("enrollment-pin").fetchSemanticsNode()
@@ -337,8 +310,8 @@ class PlexoWorkspaceTest {
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithTag("tls-endpoint").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("tls-root").performScrollTo().assertIsEnabled()
-            compose.onNodeWithTag("tls-pin").assertDoesNotExist()
-            compose.onNodeWithTag("tls-start").assertDoesNotExist()
+            compose.onNodeWithTag("tls-pin").assertExists()
+            compose.onNodeWithTag("tls-start").assertExists()
             val recognized = descriptor.copy(recognition = CardRecognition(selected.routeKey, 1, CardFamily.PIV))
             update(recognized)
             compose.onNodeWithTag("tls-pin").performScrollTo().assertIsEnabled().performTextInput("123456")
@@ -346,8 +319,8 @@ class PlexoWorkspaceTest {
             assertEquals("", compose.onNodeWithTag("tls-pin").fetchSemanticsNode()
                 .config[SemanticsProperties.EditableText].text)
             update(descriptor)
-            compose.onNodeWithTag("tls-pin").assertDoesNotExist()
-            compose.onNodeWithTag("tls-start").assertDoesNotExist()
+            compose.onNodeWithTag("tls-pin").assertExists()
+            compose.onNodeWithTag("tls-start").assertExists()
             compose.onNodeWithTag("tls-root").performScrollTo().assertIsEnabled()
         }
     }

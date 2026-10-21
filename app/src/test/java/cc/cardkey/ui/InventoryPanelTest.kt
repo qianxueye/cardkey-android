@@ -56,7 +56,7 @@ class InventoryPanelTest {
         try { compose.waitForIdle(); test(controller.get()) { controller.pause().resume(); compose.waitForIdle() } }
         finally { submitted?.close(); controller.pause().stop().destroy() }
     }
-    private fun pin() = compose.onNode(hasText("当前 FIDO PIN") and hasSetTextAction())
+    private fun pin() = compose.onNode(hasText("FIDO PIN") and hasSetTextAction())
     private fun composeRoot(view: View): ViewRootForTest? = if (view is ViewRootForTest) view else (view as? ViewGroup)?.let {
         (0 until it.childCount).firstNotNullOfOrNull { index -> composeRoot(it.getChildAt(index)) }
     }
@@ -64,10 +64,11 @@ class InventoryPanelTest {
         render(360, 480) { _, _ ->
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             compose.onNodeWithText("RP SHA-256 · HEX").assertDoesNotExist()
+            compose.onNode(isToggleable()).performScrollTo().performClick()
             pin().performScrollTo().performTextInput("1234")
             compose.onNodeWithTag("manager-run").assertIsEnabled().performClick()
-            compose.onNodeWithText("RP · login.example.test").assertIsDisplayed()
-            compose.onNodeWithText("凭据 ID · 15").assertIsDisplayed()
+            compose.onNodeWithText("网站 · login.example.test").assertIsDisplayed()
+            compose.onNodeWithText("账户 · alice").assertIsDisplayed()
             compose.onNodeWithText("确认").performClick()
             assertEquals(ManagerOperation.FIDO_VERIFY_CREDENTIAL, submitted!!.operation)
             assertEquals(inventory.state.value.generation, submitted!!.inventoryGeneration)
@@ -79,6 +80,7 @@ class InventoryPanelTest {
         render(800, 480) { activity, pause ->
             compose.runOnIdle { requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
                 .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 240)).setVisible(WindowInsets.Type.ime(), true).build()) }
+            compose.onNode(isToggleable()).performScrollTo().performClick()
             pin().performScrollTo().performTextInput("1234")
             compose.onNodeWithTag("manager-run").performClick()
             compose.onNodeWithText("确认").assertIsDisplayed()
@@ -92,7 +94,7 @@ class InventoryPanelTest {
             pin().performScrollTo().performTextInput("1234")
             compose.runOnIdle { manager.value = manager.value.copy(busy = true) }
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
-            compose.onNode(hasText("RP") and hasClickAction()).performScrollTo().assertIsNotEnabled()
+            compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().assertIsNotEnabled()
             compose.runOnIdle { manager.value = manager.value.copy(busy = false, requiresInspection = true,
                 result = OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN, dispatch = Dispatch.RESPONSE_UNAVAILABLE)) }
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()

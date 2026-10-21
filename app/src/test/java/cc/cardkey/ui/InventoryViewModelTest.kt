@@ -83,6 +83,55 @@ class InventoryViewModelTest {
         await { !model.state.value.busy }
         return input
     }
+    @Test fun completeInventoryOwnsOneLeaseAndRetiresPinAfterFreshConnection() {
+        val card = InventoryCard()
+        val input = dispatch(card, ManagerOperation.FIDO_INVENTORY)
+        assertTrue(model.state.value.result is OperationResult.Completed)
+        assertEquals(InventoryLoad.LOADED, model.inventory.state.value.load)
+        assertEquals(card.rp, model.inventory.state.value.credentials.single().rp.id)
+        assertEquals(1, card.server.tokenRequests)
+        assertArrayEquals(CharArray(4), input.pin)
+        requireNotNull(CardOperationGate.tryAcquire()).close()
+    }
+    @Test fun finalAttemptHoldsLeaseAndDeclineOrBackgroundNeverAuthenticates() {
+        for (retirement in listOf("decline", "background", "permission")) {
+            val card = InventoryCard().apply { remainingAttempts = 1 }
+            val input = input(ManagerOperation.FIDO_INVENTORY)
+            model.submit(input)
+            InventoryIsoDepShadow.channel = card.channel(CardWire.APDU)
+            model.onTag(Shadow.newInstanceOf(Tag::class.java), requireNotNull(model.pendingNfcOwner))
+            await { model.state.value.fidoFinalAttempt }
+            assertNull(CardOperationGate.tryAcquire())
+            assertEquals(0, card.server.tokenRequests)
+            when (retirement) {
+                "background" -> model.pauseForActivity(false)
+                "permission" -> { model.permissionPending(true); model.approveLastRetry(true) }
+                else -> model.approveLastRetry(false)
+            }
+            await { !model.state.value.busy }
+            assertEquals(0, card.server.tokenRequests)
+            assertArrayEquals(CharArray(4), input.pin)
+            assertFalse(model.inventory.state.value.load == InventoryLoad.LOADED)
+            requireNotNull(CardOperationGate.tryAcquire()).close()
+        }
+    }
+    @Test fun finalAttemptApprovalPermitsOneAuthAndLateDocumentResultCannotPublish() {
+        val card = InventoryCard().apply { remainingAttempts = 1 }
+        val input = input(ManagerOperation.FIDO_INVENTORY)
+        model.submit(input)
+        InventoryIsoDepShadow.channel = card.channel(CardWire.APDU)
+        model.onTag(Shadow.newInstanceOf(Tag::class.java), requireNotNull(model.pendingNfcOwner))
+        await { model.state.value.fidoFinalAttempt }
+        model.approveLastRetry(true)
+        await { !model.state.value.busy }
+        assertEquals(1, card.server.tokenRequests)
+        assertEquals(InventoryLoad.LOADED, model.inventory.state.value.load)
+        assertArrayEquals(CharArray(4), input.pin)
+        val document = model.beginDocument()
+        model.cancel()
+        model.documentResult(document, cc.cardkey.R.string.document_saved)
+        assertNull(model.state.value.documentMessage)
+    }
     @Test fun actualPendingNfcUsesEnumeratedTupleAndFreshProofRejectsSubstitutedCard() {
         val card = InventoryCard()
         dispatch(card, ManagerOperation.FIDO_RPS)

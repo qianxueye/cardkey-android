@@ -265,10 +265,12 @@ class FidoClient(private val session: CardSession) {
     fun updateUser(pin: CharArray, id: ByteArray, name: String?, displayName: String?, expected: Pair<RelyingParty, Credential>? = null) = managed(pin) { token ->
         val (rp, existing) = credential(token, id)
         requireTarget(rp, existing, expected)
-        val user = existing.user.copy(name = name, displayName = displayName)
+        val user = existing.user.copy(name = name, displayName = if (expected != null) existing.user.displayName else displayName)
         management(7, cborMap(2 to descriptor(id), 3 to user.encode()), token, true)
-        val updated = credentials(token, rp.idHash).singleOrNull { it.id.contentEquals(id) }?.user
-        if (updated == null || !updated.id.contentEquals(user.id) || updated.name.orEmpty() != user.name.orEmpty() || updated.displayName.orEmpty() != user.displayName.orEmpty())
+        val updated = credentials(token, rp.idHash).singleOrNull { it.id.contentEquals(id) }
+        if (updated == null || !updated.user.id.contentEquals(user.id) || updated.user.name.orEmpty() != user.name.orEmpty() ||
+            updated.user.displayName.orEmpty() != user.displayName.orEmpty() || updated.publicKey != existing.publicKey ||
+            updated.protection != existing.protection)
             throw CardFailure(FailureCode.RECOVERY_REQUIRED)
     }
 

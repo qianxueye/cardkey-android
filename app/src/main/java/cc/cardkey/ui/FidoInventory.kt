@@ -36,7 +36,7 @@ enum class InventoryLoad { UNREAD, LOADING, LOADED, FAILED }
 data class InventoryState(val generation: Long = 0, val rps: List<InventoryRp> = emptyList(),
     val rp: InventoryRp? = null, val credentials: List<InventoryCredential> = emptyList(),
     val credential: InventoryCredential? = null, val blobReady: Boolean = false, val fileSize: Int? = null, val action: ManagerOperation? = null,
-    val load: InventoryLoad = InventoryLoad.UNREAD, val allCredentials: List<InventoryCredential> = emptyList())
+    val load: InventoryLoad = InventoryLoad.UNREAD)
 
 /** The operation owns transferred keys; retirement never wipes a worker's active input. */
 class InventoryRequest internal constructor(private val owner: FidoInventory, val generation: Long,
@@ -103,7 +103,7 @@ class FidoInventory {
             rp = rp, credentials = emptyList(), credential = null, blobReady = false)
     }
     @Synchronized fun selectCredential(credential: InventoryCredential) {
-        if (credential !in mutable.value.credentials && credential !in mutable.value.allCredentials) return
+        if (credential !in mutable.value.credentials) return
         clearKey(); clearFile()
         mutable.value = mutable.value.copy(generation = mutable.value.generation + 1,
             credential = credential, rp = credential.rp, blobReady = false)
@@ -123,7 +123,7 @@ class FidoInventory {
         }
         if (selected && input.inventorySelection != null && input.inventorySelection != before.credential)
             throw CardFailure(FailureCode.CANCELLED)
-        if (mutation && input.inventorySelection != before.credential) throw CardFailure(FailureCode.CANCELLED)
+        if (mutation && input.inventorySelection !== before.credential) throw CardFailure(FailureCode.CANCELLED)
         if (blob && key == null) throw CardFailure(FailureCode.INVALID_INPUT)
         val transferred = if (blob) key.also { key = null } else null
         clearKey()
@@ -137,7 +137,7 @@ class FidoInventory {
         val generation = before.generation + 1
         mutable.value = mutable.value.copy(generation = generation, blobReady = false,
             load = if (input.operation == ManagerOperation.FIDO_INVENTORY) InventoryLoad.LOADING else before.load,
-            allCredentials = if (input.operation == ManagerOperation.FIDO_INVENTORY) emptyList() else before.allCredentials)
+            credentials = if (input.operation == ManagerOperation.FIDO_INVENTORY) emptyList() else before.credentials)
         return InventoryRequest(this, generation, before.rp, before.credential.takeIf { selected },
             before.credential.takeIf { selected }?.let { counters[it.counterIdentity] }, transferred)
     }
@@ -155,7 +155,7 @@ class FidoInventory {
             val sites = inventory.sites.map { site -> InventoryRp(site.rp) to site.credentials }
             val entries = sites.flatMap { (rp, credentials) -> credentials.map { InventoryCredential(rp, it) } }
             mutable.value = mutable.value.copy(rps = sites.map { it.first }, rp = null,
-                credentials = emptyList(), credential = null, allCredentials = entries, load = InventoryLoad.LOADED)
+                credentials = entries, credential = null, load = InventoryLoad.LOADED)
         }
         report.relyingParties?.let { rps ->
             mutable.value = mutable.value.copy(rps = rps.map(::InventoryRp), rp = null,
@@ -169,12 +169,12 @@ class FidoInventory {
     @Synchronized fun failedCurrent() {
         if (mutable.value.load == InventoryLoad.LOADING)
             mutable.value = mutable.value.copy(load = InventoryLoad.FAILED, rps = emptyList(),
-                credentials = emptyList(), allCredentials = emptyList(), rp = null, credential = null)
+                credentials = emptyList(), rp = null, credential = null)
     }
     @Synchronized fun failed(request: InventoryRequest) {
         if (current(request) && mutable.value.load == InventoryLoad.LOADING)
             mutable.value = mutable.value.copy(load = InventoryLoad.FAILED, rps = emptyList(),
-                credentials = emptyList(), allCredentials = emptyList(), rp = null, credential = null)
+                credentials = emptyList(), rp = null, credential = null)
     }
     @Synchronized fun retire() {
         clearKey(); clearFile(); counters.clear()
