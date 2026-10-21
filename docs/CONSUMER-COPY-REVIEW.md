@@ -443,3 +443,10 @@ Final verification evidence: the initial complete suite passed 868 tests (zero f
 Fresh inventory power-cycle recovery follows the actual transport: APDU/NFC asks for removal and reconnection; direct CTAP keeps the existing all-power-removal instruction. Both stop before PIN authentication. Legacy provider/status mappings are unchanged.
 
 The bounded power-cycle correction passed 51 relevant protocol/confirmation/inventory-lifecycle tests with zero failures/errors/skips, plus APK and instrumentation compilation and lint (0 errors, 10 retained protocol/dependency warnings).
+
+
+### Signing-panel regression correction
+
+The first remote CI run executed 872 tests and found four signing-panel fixtures still expecting the removed routine PIN confirmation. The runtime had already adopted explicit task submission. The fixtures now verify one submission of the captured file generation/slot/format/PIN after the named action, with no duplicate dialog. Background retirement is tested before submission and still requires an empty secure field, zero dispatches and a reachable IME-constrained scroll area. Existing unknown-export, card-recovery and CMS trust assertions remain.
+
+The relevant signing-panel, signing-activity and confirmation suites passed all 49 tests in the bounded local rerun (28 seconds). This correction changes tests and this evidence record only; application source and the preserved debug APK are unchanged. Remote CI must pass on the final candidate before merge.
