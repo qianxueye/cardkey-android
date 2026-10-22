@@ -238,4 +238,206 @@ class FramedHidWorkflowTest(input: Int, output: Int, inputId: Int, outputId: Int
         assertTrue(peer.closed)
         result.value.export?.fill(0)
     }
+
+    @Test fun managerEnumeratesUpdatesAndDeletesAuthenticatedCredentialsWithReadback() {
+        for (operation in listOf(ManagerOperation.FIDO_UPDATE, ManagerOperation.FIDO_DELETE)) {
+            val server = FidoClientTest.PinServer(2)
+            val rpHash = sha256("cardkey.example".toByteArray())
+            var user = FidoUser(byteArrayOf(8, 9), "old", "display")
+            var deleted = false
+            val subcommands = mutableListOf<Int>()
+            var mutations = 0
+            val respond: (Int, Cbor.Map?) -> ByteArray = { code, parameters -> when (code) {
+                4 -> success(info(mapOf("pinUvAuthToken" to true, "credMgmt" to true)))
+                6 -> server.respond(parameters!!, 4, null)
+                10 -> {
+                    val params = parameters!!
+                    val sub = params[1].number().toInt()
+                    subcommands += sub
+                    val message = byteArrayOf(sub.toByte()) + (params[2]?.map()?.let(CborCodec::encode) ?: byteArrayOf())
+                    assertEquals(2L, params[3].number())
+                    assertArrayEquals(PinProtocol.authenticate(2, server.token, message), params[4].bytes())
+                    when (sub) {
+                        2 -> success(cborMap(3 to textMap("id" to "cardkey.example".cbor()),
+                            4 to rpHash.cbor(), 5 to 1.cbor()))
+                        4 -> {
+                            assertArrayEquals(rpHash, params[2].map()[1].bytes())
+                            if (deleted) byteArrayOf(0x2e) else success(cborMap(6 to user.encode(),
+                                7 to descriptor(credential), 8 to key, 9 to 1.cbor()))
+                        }
+                        6, 7 -> {
+                            assertArrayEquals(credential, parseDescriptor(params[2].map()[2]))
+                            mutations++
+                            if (sub == 6) deleted = true else {
+                                val next = params[2].map()[3].map()
+                                assertArrayEquals(user.id, next["id"].bytes())
+                                assertEquals("updated", next["name"].text())
+                                assertEquals("display", next["displayName"].text())
+                                user = FidoUser(user.id, next["name"].text(), next["displayName"].text())
+                            }
+                            success()
+                        }
+                        else -> error("Unexpected credential command $sub")
+                    }
+                }
+                else -> error("Unexpected CTAP command $code")
+            } }
+            val inventory = FidoInventory()
+            val peers = mutableListOf<SyntheticHidPeer>()
+            fun execute(input: OperationInput): ManagerReport = input.use {
+                input.inventoryRequest = inventory.begin(input)
+                val native = peer(respond).also { peers += it }
+                val result = run(native, input) as OperationResult.Completed
+                inventory.settle(input.inventoryRequest!!, result.value)
+                result.value
+            }
+            execute(OperationInput(ManagerOperation.FIDO_RPS, pin = "1234".toCharArray()))
+            inventory.selectRp(inventory.state.value.rps.single())
+            val enumerated = execute(OperationInput(ManagerOperation.FIDO_CREDENTIALS, pin = "1234".toCharArray()))
+            assertArrayEquals(credential, enumerated.credentials!!.single().id)
+            inventory.selectCredential(inventory.state.value.credentials.single())
+            execute(OperationInput(operation, pin = "1234".toCharArray(), secondary = "updated",
+                inventoryGeneration = inventory.state.value.generation,
+                inventorySelection = inventory.state.value.credential))
+            assertEquals(listOf(2, 4, 2, 4, if (operation == ManagerOperation.FIDO_DELETE) 6 else 7, 4), subcommands)
+            assertEquals(1, mutations)
+            assertEquals(3, server.tokenRequests)
+            assertEquals(operation == ManagerOperation.FIDO_DELETE, deleted)
+            if (!deleted) assertEquals("updated", user.name)
+            assertTrue(peers.all { it.initializationCount == 1 && it.closed })
+            assertTrue(peers.all { native -> native.native.buffers.all { buffer ->
+                (0 until buffer.capacity()).all { buffer.get(it) == 0.toByte() }
+            } })
+        }
+    }
+
+    @Test fun authenticatedBlobWriteReadAndDeleteVerifySignedProofAndStoredReadback() {
+        assertTrue(register() is OperationResult.Completed)
+        val server = FidoClientTest.PinServer(2)
+        val otherKey = ByteArray(32) { 44 }
+        val other = LargeBlobs.encrypt(otherKey, byteArrayOf(7, 8))
+        var stored = LargeBlobs.encode(listOf(other))
+        var staged = byteArrayOf()
+        var total = 0
+        var writes = 0
+        var readsAfterWrite = 0
+        var counter = 0
+        var permission = 2
+        val plaintext = ByteArray(900).also { java.util.Random(42).nextBytes(it) }
+        val respond: (Int, Cbor.Map?) -> ByteArray = { code, parameters -> when (code) {
+            4 -> success(info(mapOf("largeBlobs" to true, "uv" to true, "clientPin" to true,
+                "pinUvAuthToken" to true), extensions = listOf("largeBlobKey"),
+                extra = cborMap(5 to 512.cbor(), 11 to 4096.cbor())))
+            6 -> server.respond(parameters!!, permission, if (permission == 2) "cardkey.example" else null)
+            2 -> {
+                val params = parameters!!
+                assertArrayEquals(credential, parseDescriptor(params[3].array().single()))
+                assertArrayEquals(PinProtocol.authenticate(2, server.token, params[2].bytes()), params[6].bytes())
+                assertFalse(params[5].map()["up"].bool())
+                assertTrue(params[4].map()["largeBlobKey"].bool())
+                val auth = sha256("cardkey.example".toByteArray()) + byteArrayOf(4, 0, 0, 0, (++counter).toByte())
+                permission = 16
+                success(cborMap(1 to descriptor(credential), 2 to auth.cbor(),
+                    3 to sign(auth + params[2].bytes()).cbor(), 7 to blobKey.cbor()))
+            }
+            12 -> {
+                val params = parameters!!
+                val offset = params[3].count()
+                if (params[1] != null) {
+                    if (writes > 0) readsAfterWrite++
+                    success(cborMap(1 to stored.copyOfRange(minOf(offset, stored.size),
+                        minOf(offset + params[1].count(), stored.size)).cbor()))
+                } else {
+                    val fragment = params[2].bytes()
+                    assertTrue(fragment.size <= 448)
+                    if (offset == 0) { total = params[4].count(); staged = byteArrayOf() }
+                    else assertNull(params[4])
+                    assertEquals(staged.size, offset)
+                    val message = ByteArray(32) { 0xff.toByte() } + byteArrayOf(12, 0) +
+                        ByteArray(4) { (offset ushr (it * 8)).toByte() } + sha256(fragment)
+                    assertEquals(2L, params[6].number())
+                    assertArrayEquals(PinProtocol.authenticate(2, server.token, message), params[5].bytes())
+                    staged += fragment
+                    writes++
+                    if (staged.size == total) stored = staged
+                    success()
+                }
+            }
+            else -> error("Unexpected blob command $code")
+        } }
+        val peers = mutableListOf<SyntheticHidPeer>()
+        fun execute(input: OperationInput): OperationResult.Completed<ManagerReport> {
+            permission = 2
+            val native = peer(respond).also { peers += it }
+            return run(native, input) as OperationResult.Completed
+        }
+        val bytes = plaintext.copyOf()
+        val written = execute(OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "1234".toCharArray(), bytes = bytes))
+        assertEquals(Effect.APPLIED, written.effect)
+        assertTrue(writes > 1)
+        assertTrue(readsAfterWrite > 0)
+        assertArrayEquals(ByteArray(bytes.size), bytes)
+        val entries = LargeBlobs.decode(stored)
+        assertEquals(other, entries.first())
+        assertArrayEquals(plaintext, LargeBlobs.decrypt(blobKey, entries.last()))
+        val read = execute(OperationInput(ManagerOperation.FIDO_BLOB_READ, pin = "1234".toCharArray()))
+        assertArrayEquals(plaintext, read.value.export)
+        assertTrue(read.value.protectedExport)
+        read.value.export?.fill(0)
+        val beforeDelete = writes
+        val beforeReadback = readsAfterWrite
+        execute(OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "1234".toCharArray(), deleteBlob = true))
+        assertTrue(writes > beforeDelete)
+        assertTrue(readsAfterWrite > beforeReadback)
+        assertEquals(listOf(other), LargeBlobs.decode(stored))
+        val absent = execute(OperationInput(ManagerOperation.FIDO_BLOB_READ, pin = "1234".toCharArray()))
+        assertNull(absent.value.export)
+        assertEquals(6, server.tokenRequests)
+        assertEquals(4, counter)
+        assertTrue(peers.all { it.initializationCount == 1 && it.closed })
+    }
+
+    @Test fun lostAuthenticatedBlobMutationResponseRemainsUnknownWithoutReplay() {
+        assertTrue(register() is OperationResult.Completed)
+        val server = FidoClientTest.PinServer(2)
+        var permission = 2
+        var writes = 0
+        val initial = LargeBlobs.encode(emptyList())
+        val native = peer { code, parameters -> when (code) {
+            4 -> success(info(mapOf("largeBlobs" to true, "uv" to true, "clientPin" to true,
+                "pinUvAuthToken" to true), extensions = listOf("largeBlobKey"),
+                extra = cborMap(5 to 512.cbor(), 11 to 4096.cbor())))
+            6 -> server.respond(parameters!!, permission, if (permission == 2) "cardkey.example" else null)
+            2 -> {
+                val params = parameters!!
+                assertArrayEquals(PinProtocol.authenticate(2, server.token, params[2].bytes()), params[6].bytes())
+                val auth = sha256("cardkey.example".toByteArray()) + byteArrayOf(4, 0, 0, 0, 1)
+                permission = 16
+                success(cborMap(1 to descriptor(credential), 2 to auth.cbor(),
+                    3 to sign(auth + params[2].bytes()).cbor(), 7 to blobKey.cbor()))
+            }
+            12 -> if (parameters!![1] != null) success(cborMap(1 to initial.cbor())) else {
+                val fragment = parameters[2].bytes()
+                assertEquals(0L, parameters[3].number())
+                val message = ByteArray(32) { 0xff.toByte() } + byteArrayOf(12, 0) + ByteArray(4) + sha256(fragment)
+                assertArrayEquals(PinProtocol.authenticate(2, server.token, message), parameters[5].bytes())
+                writes++
+                throw java.io.IOException("Synthetic USB disconnect after mutation dispatch")
+            }
+            else -> error("Unexpected blob command $code")
+        } }
+        val input = OperationInput(ManagerOperation.FIDO_BLOB_WRITE, pin = "1234".toCharArray(), bytes = ByteArray(250) { it.toByte() })
+        val result = run(native, input) as OperationResult.Failed
+        assertEquals(FailureCode.TRANSPORT_FAILURE, result.code)
+        assertEquals(Effect.UNKNOWN, result.effect)
+        assertEquals(Dispatch.RESPONSE_UNAVAILABLE, result.dispatch)
+        assertEquals(1, writes)
+        assertEquals(2, server.tokenRequests)
+        assertEquals(1, native.initializationCount)
+        assertTrue(native.closed)
+        assertArrayEquals(CharArray(4), input.pin)
+        assertArrayEquals(ByteArray(250), input.bytes)
+        assertTrue(native.native.buffers.all { buffer -> (0 until buffer.capacity()).all { buffer.get(it) == 0.toByte() } })
+    }
+
 }
