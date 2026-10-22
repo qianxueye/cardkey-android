@@ -58,6 +58,7 @@ Dynamic values are public issuer identity/fingerprint, selected file metadata, p
 
 | Screen/key | Before | After | Reason and activation scope |
 | --- | --- | --- | --- |
+| Protected signing file metadata | `文件：file · ${state.fileSize ?: 0} 字节` | `文件：$it · ${state.fileSize ?: 0} 字节`, where `$it` is the selected provider's `DISPLAY_NAME`, limited to 255 characters with control characters removed; omit this row if no nonblank name is available | Let the user distinguish the actual selected file, including same-size files. Preserve the existing format and actual byte count; do not invent a generic filename or use the document URI as a filename. Protected signing panel only. |
 | Protected slot selector | `槽位` | `受保护槽位` | Distinguishes the protected selection from the ordinary PIV form on the same screen. Uses every existing supported PIV slot. |
 | Protected final retry | `PIN 仅剩 1 次机会。再次输错将锁定 NFC PIN 验证，需通过接触式连接恢复。` | `PIN 仅剩 1 次机会。再次输错可能锁定 PIN；恢复需要接触式连接。` | The dedicated path also supports known contact; avoid describing all attempts as NFC. |
 | Protected confirmation retry | `仅剩 1 次机会；输错后需通过接触式连接恢复。` | `仅剩 1 次机会；输错后可能需要恢复 PIN。` | Preserve the retry risk without misclassifying current transport. |

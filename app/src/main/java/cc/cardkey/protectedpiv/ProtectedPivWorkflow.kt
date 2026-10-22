@@ -84,7 +84,7 @@ class ProtectedPivWorkflow {
             ProtectedPivDocument.SIGNING_FILE -> {
                 require(bytes.size in 1..PivClient.MAX_SIGNING_FILE_BYTES)
                 file = bytes.copyOf()
-                mutable.value = mutable.value.copy(fileName = name ?: "file", fileSize = bytes.size)
+                mutable.value = mutable.value.copy(fileName = name, fileSize = bytes.size)
             }
         }
         return true

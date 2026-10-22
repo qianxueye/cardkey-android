@@ -17,6 +17,16 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
+import android.content.ContentProvider
+import android.content.ContentValues
+import android.database.Cursor
+import android.database.MatrixCursor
+import android.net.Uri
+import android.provider.OpenableColumns
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowContentResolver
+import java.io.ByteArrayInputStream
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -92,4 +102,33 @@ class ProtectedPivViewModelTest {
             assertEquals(operation, model.state.value.operation)
         }
     }
+    @Test fun signingPickerPublishesCleanActualNameAndOmitsUnavailableName() {
+        val provider = ProtectedSigningNameProvider()
+        ShadowContentResolver.registerProviderInternal("protected-signing-name", provider)
+        val model = model()
+        model.resumeProtectedPiv()
+        for ((index, name) in listOf("contract-A.pdf", "contract-B.pdf", "a\n" + "b".repeat(300), null, "\n\t").withIndex()) {
+            provider.name = name
+            val uri = Uri.parse("content://protected-signing-name/$index")
+            shadowOf(RuntimeEnvironment.getApplication().contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf(1, 2, 3)))
+            val request = model.requestProtectedPivDocument(ProtectedPivDocument.SIGNING_FILE)!!
+            model.receiveProtectedPivDocument(request, uri)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8)
+            while (model.protectedPiv.value.fileSize == null && System.nanoTime() < deadline) Thread.sleep(5)
+            assertEquals(3, model.protectedPiv.value.fileSize)
+            assertEquals(name?.take(255)?.filterNot { it.isISOControl() }?.takeIf { it.isNotBlank() }, model.protectedPiv.value.fileName)
+            assertNotEquals("file", model.protectedPiv.value.fileName)
+        }
+    }
+}
+
+class ProtectedSigningNameProvider : ContentProvider() {
+    var name: String? = null
+    override fun onCreate() = true
+    override fun getType(uri: Uri) = "application/octet-stream"
+    override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor =
+        MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME)).apply { name?.let { addRow(arrayOf(it)) } }
+    override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
+    override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
 }

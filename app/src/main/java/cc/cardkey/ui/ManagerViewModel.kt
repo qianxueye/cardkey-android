@@ -103,18 +103,25 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val generation = protectedPiv.value.generation
         viewModelScope.launch {
             var bytes: ByteArray? = null
+            var name: String? = null
             try {
                 bytes = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
                     val limit = when (kind) {
                         ProtectedPivDocument.ISSUER -> 32768
                         ProtectedPivDocument.PROFILE -> 4096
                         ProtectedPivDocument.SIGNING_FILE -> PivClient.MAX_SIGNING_FILE_BYTES
                     }
-                    getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readNBytes(limit + 1) }
+                    if (kind == ProtectedPivDocument.SIGNING_FILE) {
+                        name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0) else null
+                        }?.take(255)?.filterNot { it.isISOControl() }?.takeIf { it.isNotBlank() }
+                    }
+                    resolver.openInputStream(uri)?.use { it.readNBytes(limit + 1) }
                 }
                 if (protectedActive && protectedWorkflow.documentKind(id) != null) {
                     require(bytes != null)
-                    protectedWorkflow.receiveDocument(id, bytes)
+                    protectedWorkflow.receiveDocument(id, bytes, name)
                 }
             } catch (_: Exception) {
                 if (protectedWorkflow.documentKind(id) != null || protectedPiv.value.generation == generation) {
@@ -398,6 +405,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         inProgress = true
         operationRoute = reader.routeKey
         operationWire = CardWire.APDU
+        operationProtectedIdentity = null
         operations.clearSession()
         inventory.retire()
         retireInventoryExport()

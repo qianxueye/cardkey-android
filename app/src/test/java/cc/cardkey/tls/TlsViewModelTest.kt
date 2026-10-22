@@ -107,6 +107,7 @@ class TlsViewModelTest {
     @Test fun cancelledPinResponseRetainsUnknownAndBlocksManagerUntilCleanup() {
         val f = TlsFixture()
         val model = model(f)
+        ReflectionHelpers.setField(model, "operationProtectedIdentity", "previous-guid:issuer-fingerprint")
         val entered = CountDownLatch(1); val release = CountDownLatch(1)
         val channel = object : CardChannel by f.card {
             override fun transmit(command: ByteArray): ByteArray {
@@ -133,6 +134,18 @@ class TlsViewModelTest {
             assertEquals(Effect.UNKNOWN, failure.effect)
             assertEquals(Dispatch.RESPONSE_UNAVAILABLE, failure.dispatch)
             assertTrue(model.state.value.requiresInspection)
+            assertNull(ReflectionHelpers.getField<String?>(model, "recoveryProtectedIdentity"))
+            val finish = ManagerViewModel::class.java.getDeclaredMethod("finish", OperationResult::class.java).apply { isAccessible = true }
+            val mutable = ReflectionHelpers.getField<kotlinx.coroutines.flow.MutableStateFlow<ManagerState>>(model, "mutable")
+            val route = model.state.value.selectedReader!!.routeKey
+            mutable.value = mutable.value.copy(operation = ManagerOperation.PIV_INFO)
+            ReflectionHelpers.setField(model, "operationRoute", "previous-protected-reader")
+            finish.invoke(model, OperationResult.Completed(ManagerReport(emptyList(),
+                protectedPivIdentity = "previous-guid:issuer-fingerprint"), Effect.NONE))
+            assertTrue(model.state.value.requiresInspection)
+            ReflectionHelpers.setField(model, "operationRoute", route)
+            finish.invoke(model, OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE))
+            assertFalse(model.state.value.requiresInspection)
             assertEquals(PivTlsOutcome.CANCELLED, model.tls.value.result?.outcome)
             assertEquals(0, f.card.commands.count { it.ins == 0x87 })
         }
