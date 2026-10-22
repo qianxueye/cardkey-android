@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="zh">
     <string name="protectedPiv_title">受保护的 PIV</string>
     <string name="protectedPiv_introduction">先选择公开签发者证书；如需签名，再选择文件；最后选择私有配置。配置仅保存在内存中，离开应用后清除。</string>
     <string name="protectedPiv_chooseIssuer">选择签发者证书</string>

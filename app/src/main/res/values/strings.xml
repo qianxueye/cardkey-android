@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="protectedPiv_ordinaryInspection">上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。</string>
     <string name="app_name" translatable="false">CardKey</string>
     <string name="operation_completed" formatted="false">操作已完成。</string>
@@ -17,153 +17,153 @@
     <string name="error_transport" formatted="false">卡片连接失败。</string>
     <string name="error_cancelled" formatted="false">操作已取消。</string>
     <string name="reader_nfc" formatted="false">选择操作后，将卡片贴近手机。</string>
-    <string name="reader_usbPermission">请在系统提示中允许 %1$s 访问此 USB 读卡器。</string>
-    <string name="reader_empty" formatted="false">未连接受支持的 USB 读卡器。</string>
-    <string name="confirm_lastRetryErasesKeys" formatted="false">{当前验证项} 仅剩一次重试，{另一项} 已锁定。此次验证失败将清除 PIV 私钥。确认继续？</string>
-    <string name="confirm_adminChange" formatted="false">更换后，后续管理操作需要新管理密钥。请先妥善保存新密钥。确认更换？</string>
-    <string name="confirm_credentialDelete" formatted="false">删除所选凭据后，无法再用它登录已绑定的账户。此操作不可撤销。确认删除？</string>
-    <string name="confirm_alwaysUvEnable" formatted="false">开启后，创建凭据和登录验证始终要求用户验证，U2F 将不可用。确认开启？</string>
-    <string name="confirm_alwaysUvDisable" formatted="false">关闭后，创建凭据和登录验证按卡片和凭据各自的策略要求用户验证。确认关闭？</string>
-    <string name="confirm_minPin" formatted="false">最短 PIN 长度不能降低。提高长度后，卡片可能要求修改 PIN；选择强制修改时，须先修改 PIN 才能再次进行 PIN 验证。同时替换最短 PIN 长度的披露名单。确认应用？</string>
-    <string name="confirm_enterprise" formatted="false">按卡内既有策略开启企业证明，允许的服务可能据此识别这张卡。确认开启？</string>
-    <string name="confirm_keyGenerate" formatted="false">生成新密钥将覆盖所选槽位的现有私钥，原证书可能不再匹配。此操作不可撤销。确认生成？</string>
-    <string name="confirm_certificateImport" formatted="false">公钥匹配验证通过后，将替换所选槽位的证书。确认导入？</string>
-    <string name="confirm_registration" formatted="false">将为 cardkey.example 创建测试凭据；驻留凭据会占用卡内存储。确认创建？</string>
-    <string name="confirm_pivReset" formatted="false">仅在 PIN 和 PUK 均已锁定时重置 PIV。PIV 私钥此前已清除；重置将清除 PIV 数据，并恢复默认 PIN、PUK 和管理密钥。FIDO 凭据保留。确认重置？</string>
-    <string name="restriction_fidoReset" formatted="false">此卡不提供 CTAP 重置。重装 FIDO applet 需在桌面初始化流程中执行，现有 FIDO 凭据将失效。</string>
+    <string name="reader_usbPermission" tools:ignore="MissingTranslation">请在系统提示中允许 %1$s 访问此 USB 读卡器。</string>
+    <string name="reader_empty" tools:ignore="MissingTranslation" formatted="false">未连接受支持的 USB 读卡器。</string>
+    <string name="confirm_lastRetryErasesKeys" tools:ignore="MissingTranslation" formatted="false">{当前验证项} 仅剩一次重试，{另一项} 已锁定。此次验证失败将清除 PIV 私钥。确认继续？</string>
+    <string name="confirm_adminChange" tools:ignore="MissingTranslation" formatted="false">更换后，后续管理操作需要新管理密钥。请先妥善保存新密钥。确认更换？</string>
+    <string name="confirm_credentialDelete" tools:ignore="MissingTranslation" formatted="false">删除所选凭据后，无法再用它登录已绑定的账户。此操作不可撤销。确认删除？</string>
+    <string name="confirm_alwaysUvEnable" tools:ignore="MissingTranslation" formatted="false">开启后，创建凭据和登录验证始终要求用户验证，U2F 将不可用。确认开启？</string>
+    <string name="confirm_alwaysUvDisable" tools:ignore="MissingTranslation" formatted="false">关闭后，创建凭据和登录验证按卡片和凭据各自的策略要求用户验证。确认关闭？</string>
+    <string name="confirm_minPin" tools:ignore="MissingTranslation" formatted="false">最短 PIN 长度不能降低。提高长度后，卡片可能要求修改 PIN；选择强制修改时，须先修改 PIN 才能再次进行 PIN 验证。同时替换最短 PIN 长度的披露名单。确认应用？</string>
+    <string name="confirm_enterprise" tools:ignore="MissingTranslation" formatted="false">按卡内既有策略开启企业证明，允许的服务可能据此识别这张卡。确认开启？</string>
+    <string name="confirm_keyGenerate" tools:ignore="MissingTranslation" formatted="false">生成新密钥将覆盖所选槽位的现有私钥，原证书可能不再匹配。此操作不可撤销。确认生成？</string>
+    <string name="confirm_certificateImport" tools:ignore="MissingTranslation" formatted="false">公钥匹配验证通过后，将替换所选槽位的证书。确认导入？</string>
+    <string name="confirm_registration" tools:ignore="MissingTranslation" formatted="false">将为 cardkey.example 创建测试凭据；驻留凭据会占用卡内存储。确认创建？</string>
+    <string name="confirm_pivReset" tools:ignore="MissingTranslation" formatted="false">仅在 PIN 和 PUK 均已锁定时重置 PIV。PIV 私钥此前已清除；重置将清除 PIV 数据，并恢复默认 PIN、PUK 和管理密钥。FIDO 凭据保留。确认重置？</string>
+    <string name="restriction_fidoReset" tools:ignore="MissingTranslation" formatted="false">此卡不提供 CTAP 重置。重装 FIDO applet 需在桌面初始化流程中执行，现有 FIDO 凭据将失效。</string>
     <string name="status_verification" formatted="false">此结果仅验证卡片返回的密码运算、CSR 或签名，不代表证书受信任或外部账户接受。</string>
-    <string name="provider_settings">在 Android 设置中选择并启用 %1$s，然后返回。</string>
-    <string name="provider_attestation_none">本次创建不发送卡片证明证书，并隐藏设备类型标识。</string>
-    <string name="provider_attestation_direct">该网站请求卡片证明，响应可能包含可识别这张卡的证书。</string>
-    <string name="provider_choose_account">选择用于登录 %1$s 的账户。</string>
-    <string name="provider_request_rejected">无法验证请求应用或请求内容，未向卡片发送指令。</string>
-    <string name="minPin_rps" formatted="false">披露最短 PIN 长度的 RP ID（每行一个，最多 2 个）</string>
-    <string name="minPin_rpsHelp" formatted="false">仅这些 RP 可读取最短 PIN 长度。留空将清空名单；名单保存在卡内，客户端无法回读。</string>
-    <string name="enterprise_mode" formatted="false">企业证明模式</string>
-    <string name="user_updateHelp" formatted="false">此卡仅支持修改用户名，不支持修改显示名称。</string>
-    <string name="confirm_secretRead" formatted="false">将读取凭据的秘密输出。它不会显示在普通结果中，也不会自动导出。确认读取？</string>
-    <string name="secret_view" formatted="false">查看秘密输出</string>
-    <string name="confirm_secretShow" formatted="false">秘密输出可用于派生密钥，请勿分享或粘贴到日志。确认显示？</string>
-    <string name="blob_help" formatted="false">Large Blob 按所选凭据加密。读取或写入前，请先验证该凭据并读取 largeBlobKey；密钥仅供下一次操作使用。</string>
-    <string name="confirm_blobExport" formatted="false">将导出此凭据解密后的 Large Blob 内容。请保存在受保护的位置。确认导出？</string>
-    <string name="confirm_blobWrite" formatted="false">将写入此凭据的 Large Blob。若共享数据已损坏，写入会重建存储，其他凭据的 Large Blob 数据可能丢失。确认写入？</string>
+    <string name="provider_settings" tools:ignore="MissingTranslation">在 Android 设置中选择并启用 %1$s，然后返回。</string>
+    <string name="provider_attestation_none" tools:ignore="MissingTranslation">本次创建不发送卡片证明证书，并隐藏设备类型标识。</string>
+    <string name="provider_attestation_direct" tools:ignore="MissingTranslation">该网站请求卡片证明，响应可能包含可识别这张卡的证书。</string>
+    <string name="provider_choose_account" tools:ignore="MissingTranslation">选择用于登录 %1$s 的账户。</string>
+    <string name="provider_request_rejected" tools:ignore="MissingTranslation">无法验证请求应用或请求内容，未向卡片发送指令。</string>
+    <string name="minPin_rps" tools:ignore="MissingTranslation" formatted="false">披露最短 PIN 长度的 RP ID（每行一个，最多 2 个）</string>
+    <string name="minPin_rpsHelp" tools:ignore="MissingTranslation" formatted="false">仅这些 RP 可读取最短 PIN 长度。留空将清空名单；名单保存在卡内，客户端无法回读。</string>
+    <string name="enterprise_mode" tools:ignore="MissingTranslation" formatted="false">企业证明模式</string>
+    <string name="user_updateHelp" tools:ignore="MissingTranslation" formatted="false">此卡仅支持修改用户名，不支持修改显示名称。</string>
+    <string name="confirm_secretRead" tools:ignore="MissingTranslation" formatted="false">将读取凭据的秘密输出。它不会显示在普通结果中，也不会自动导出。确认读取？</string>
+    <string name="secret_view" tools:ignore="MissingTranslation" formatted="false">查看秘密输出</string>
+    <string name="confirm_secretShow" tools:ignore="MissingTranslation" formatted="false">秘密输出可用于派生密钥，请勿分享或粘贴到日志。确认显示？</string>
+    <string name="blob_help" tools:ignore="MissingTranslation" formatted="false">Large Blob 按所选凭据加密。读取或写入前，请先验证该凭据并读取 largeBlobKey；密钥仅供下一次操作使用。</string>
+    <string name="confirm_blobExport" tools:ignore="MissingTranslation" formatted="false">将导出此凭据解密后的 Large Blob 内容。请保存在受保护的位置。确认导出？</string>
+    <string name="confirm_blobWrite" tools:ignore="MissingTranslation" formatted="false">将写入此凭据的 Large Blob。若共享数据已损坏，写入会重建存储，其他凭据的 Large Blob 数据可能丢失。确认写入？</string>
     <string name="error_nfcUnavailable" formatted="false">此设备不支持 NFC。请连接受支持的 USB 读卡器。</string>
     <string name="error_nfcDisabled" formatted="false">NFC 未开启。请开启 NFC，或连接受支持的 USB 读卡器。</string>
     <string name="error_capacityExceeded" formatted="false">卡片存储空间不足，或已达到此操作的数量或大小限制。</string>
     <string name="error_recoveryRequired" formatted="false">卡片状态与预期不符。请先读取卡片状态，勿重复提交更改。</string>
     <string name="error_cardRejected" formatted="false">卡片拒绝了此操作。请检查卡片状态及操作前提。</string>
-    <string name="status_hidUserPresenceRequired" formatted="false">请触摸安全密钥或按下按键。</string>
-    <string name="error_hidPhysicalActionRequired" formatted="false">请重新发起操作，再触摸安全密钥或按下按键。</string>
-    <string name="error_hidPowerCycleRequired" formatted="false">PIN 验证暂时锁定。请断开安全密钥的所有电源，再重新连接。</string>
-    <string name="confirm_fidoReset" formatted="false">重置会使此设备上的全部 FIDO2／U2F 凭据失效，清除 FIDO PIN、相关数据和设置，无法撤销。之后需重新绑定账户。其他功能和证明配置是否保留，取决于设备。请按设备要求完成物理确认。确认重置？</string>
-    <string name="operation_fidoResetReadback" formatted="false">设备已接受 FIDO 重置，当前状态已读取。</string>
-    <string name="enrollment_title">PIV／PKI</string>
-    <string name="enrollment_address">CA 地址（HTTPS）</string>
-    <string name="enrollment_chooseRoot">选择 CA 根证书</string>
-    <string name="enrollment_cn">通用名称（CN）</string>
-    <string name="enrollment_purpose">客户端认证（TLS）</string>
-    <string name="enrollment_document">文档签名</string>
-    <string name="enrollment_documentScope">使用所选槽位的现有密钥申请文档签名证书。不会生成或替换密钥。</string>
-    <string name="enrollment_document9a">导入后将替换 9A 的现有证书，该文档签名证书不能用于 TLS 客户端认证。</string>
-    <string name="enrollment_token">一次性授权令牌</string>
-    <string name="enrollment_createCsr">生成 CSR</string>
-    <string name="enrollment_exportCsr">导出 CSR</string>
-    <string name="enrollment_issue">申请证书</string>
-    <string name="enrollment_steps">先生成并导出 CSR，再获取 CA 管理员提供的一次性授权令牌。</string>
-    <string name="enrollment_scope">令牌必须绑定此 CSR，并由 CA 管理员按所选用途授权。槽位仅决定本地导入位置。</string>
-    <string name="enrollment_csrReady">CSR 已生成，可导出后交给 CA 管理员。</string>
-    <string name="enrollment_issuing">正在向所选 CA 申请证书。</string>
-    <string name="enrollment_verified">CA 已签发证书，证书链、用途、身份和公钥验证通过。证书尚未写入卡片。</string>
-    <string name="enrollment_unknown">未确认签发结果。请先向 CA 管理员核实，勿重复提交。</string>
-    <string name="enrollment_rejected">CA 拒绝了申请，未写入卡片。</string>
-    <string name="enrollment_invalid">证书未通过验证，未写入卡片。</string>
-    <string name="enrollment_confirmImport">将已验证的证书写入所选 PIV 槽位，替换该槽位的现有证书。私钥不变。确认导入？</string>
-    <string name="enrollment_imported">证书已写入所选槽位，并完成回读。</string>
-    <string name="tls_title">验证 TLS 连接</string>
-    <string name="tls_scope">在本 App 内验证所选证书到指定服务器的连接。</string>
-    <string name="tls_endpoint">服务器地址</string>
-    <string name="tls_endpointHelp">填写 HTTPS 域名地址，不带查询参数或片段。服务器须支持 TLS 1.3，证书包含完整域名，测试接口返回无正文的 HTTP 204。</string>
-    <string name="tls_serverRoot">服务器根证书</string>
-    <string name="tls_chooseServerRoot">选择服务器根证书</string>
-    <string name="tls_serverRootReady">已选择服务器根证书。</string>
-    <string name="tls_serverRootHelp">用所选根证书验证服务器，仅用于本次测试。</string>
-    <string name="tls_identity">使用证书</string>
-    <string name="tls_validUntil">有效期至</string>
-    <string name="tls_start">验证连接</string>
-    <string name="tls_confirm">将向 %1$s 发送所选证书，并使用卡内私钥进行一次认证签名。PIN 输入错误会减少剩余重试次数。确认继续？</string>
-    <string name="tls_running">正在验证连接…</string>
-    <string name="tls_success">已完成 TLS 握手，服务器返回 HTTP 204。请在服务器记录中核对证书与账户。</string>
-    <string name="tls_failed">连接验证未完成。</string>
-    <string name="tls_cancelled">已取消连接验证。</string>
-    <string name="tls_timeout">连接验证已超时。</string>
-    <string name="tls_mayHaveSubmitted">认证可能已提交，请核对服务器记录。</string>
-    <string name="tls_unknown">未确认认证结果。请先核对服务器记录，勿重复提交。</string>
-    <string name="signing_chooseFile">选择文件</string>
-    <string name="signing_limit">选择非空文件，最大 1 MiB。</string>
-    <string name="signing_selectedFile">%1$s · %2$d 字节</string>
+    <string name="status_hidUserPresenceRequired" tools:ignore="MissingTranslation" formatted="false">请触摸安全密钥或按下按键。</string>
+    <string name="error_hidPhysicalActionRequired" tools:ignore="MissingTranslation" formatted="false">请重新发起操作，再触摸安全密钥或按下按键。</string>
+    <string name="error_hidPowerCycleRequired" tools:ignore="MissingTranslation" formatted="false">PIN 验证暂时锁定。请断开安全密钥的所有电源，再重新连接。</string>
+    <string name="confirm_fidoReset" tools:ignore="MissingTranslation" formatted="false">重置会使此设备上的全部 FIDO2／U2F 凭据失效，清除 FIDO PIN、相关数据和设置，无法撤销。之后需重新绑定账户。其他功能和证明配置是否保留，取决于设备。请按设备要求完成物理确认。确认重置？</string>
+    <string name="operation_fidoResetReadback" tools:ignore="MissingTranslation" formatted="false">设备已接受 FIDO 重置，当前状态已读取。</string>
+    <string name="enrollment_title" tools:ignore="MissingTranslation">PIV／PKI</string>
+    <string name="enrollment_address" tools:ignore="MissingTranslation">CA 地址（HTTPS）</string>
+    <string name="enrollment_chooseRoot" tools:ignore="MissingTranslation">选择 CA 根证书</string>
+    <string name="enrollment_cn" tools:ignore="MissingTranslation">通用名称（CN）</string>
+    <string name="enrollment_purpose" tools:ignore="MissingTranslation">客户端认证（TLS）</string>
+    <string name="enrollment_document" tools:ignore="MissingTranslation">文档签名</string>
+    <string name="enrollment_documentScope" tools:ignore="MissingTranslation">使用所选槽位的现有密钥申请文档签名证书。不会生成或替换密钥。</string>
+    <string name="enrollment_document9a" tools:ignore="MissingTranslation">导入后将替换 9A 的现有证书，该文档签名证书不能用于 TLS 客户端认证。</string>
+    <string name="enrollment_token" tools:ignore="MissingTranslation">一次性授权令牌</string>
+    <string name="enrollment_createCsr" tools:ignore="MissingTranslation">生成 CSR</string>
+    <string name="enrollment_exportCsr" tools:ignore="MissingTranslation">导出 CSR</string>
+    <string name="enrollment_issue" tools:ignore="MissingTranslation">申请证书</string>
+    <string name="enrollment_steps" tools:ignore="MissingTranslation">先生成并导出 CSR，再获取 CA 管理员提供的一次性授权令牌。</string>
+    <string name="enrollment_scope" tools:ignore="MissingTranslation">令牌必须绑定此 CSR，并由 CA 管理员按所选用途授权。槽位仅决定本地导入位置。</string>
+    <string name="enrollment_csrReady" tools:ignore="MissingTranslation">CSR 已生成，可导出后交给 CA 管理员。</string>
+    <string name="enrollment_issuing" tools:ignore="MissingTranslation">正在向所选 CA 申请证书。</string>
+    <string name="enrollment_verified" tools:ignore="MissingTranslation">CA 已签发证书，证书链、用途、身份和公钥验证通过。证书尚未写入卡片。</string>
+    <string name="enrollment_unknown" tools:ignore="MissingTranslation">未确认签发结果。请先向 CA 管理员核实，勿重复提交。</string>
+    <string name="enrollment_rejected" tools:ignore="MissingTranslation">CA 拒绝了申请，未写入卡片。</string>
+    <string name="enrollment_invalid" tools:ignore="MissingTranslation">证书未通过验证，未写入卡片。</string>
+    <string name="enrollment_confirmImport" tools:ignore="MissingTranslation">将已验证的证书写入所选 PIV 槽位，替换该槽位的现有证书。私钥不变。确认导入？</string>
+    <string name="enrollment_imported" tools:ignore="MissingTranslation">证书已写入所选槽位，并完成回读。</string>
+    <string name="tls_title" tools:ignore="MissingTranslation">验证 TLS 连接</string>
+    <string name="tls_scope" tools:ignore="MissingTranslation">在本 App 内验证所选证书到指定服务器的连接。</string>
+    <string name="tls_endpoint" tools:ignore="MissingTranslation">服务器地址</string>
+    <string name="tls_endpointHelp" tools:ignore="MissingTranslation">填写 HTTPS 域名地址，不带查询参数或片段。服务器须支持 TLS 1.3，证书包含完整域名，测试接口返回无正文的 HTTP 204。</string>
+    <string name="tls_serverRoot" tools:ignore="MissingTranslation">服务器根证书</string>
+    <string name="tls_chooseServerRoot" tools:ignore="MissingTranslation">选择服务器根证书</string>
+    <string name="tls_serverRootReady" tools:ignore="MissingTranslation">已选择服务器根证书。</string>
+    <string name="tls_serverRootHelp" tools:ignore="MissingTranslation">用所选根证书验证服务器，仅用于本次测试。</string>
+    <string name="tls_identity" tools:ignore="MissingTranslation">使用证书</string>
+    <string name="tls_validUntil" tools:ignore="MissingTranslation">有效期至</string>
+    <string name="tls_start" tools:ignore="MissingTranslation">验证连接</string>
+    <string name="tls_confirm" tools:ignore="MissingTranslation">将向 %1$s 发送所选证书，并使用卡内私钥进行一次认证签名。PIN 输入错误会减少剩余重试次数。确认继续？</string>
+    <string name="tls_running" tools:ignore="MissingTranslation">正在验证连接…</string>
+    <string name="tls_success" tools:ignore="MissingTranslation">已完成 TLS 握手，服务器返回 HTTP 204。请在服务器记录中核对证书与账户。</string>
+    <string name="tls_failed" tools:ignore="MissingTranslation">连接验证未完成。</string>
+    <string name="tls_cancelled" tools:ignore="MissingTranslation">已取消连接验证。</string>
+    <string name="tls_timeout" tools:ignore="MissingTranslation">连接验证已超时。</string>
+    <string name="tls_mayHaveSubmitted" tools:ignore="MissingTranslation">认证可能已提交，请核对服务器记录。</string>
+    <string name="tls_unknown" tools:ignore="MissingTranslation">未确认认证结果。请先核对服务器记录，勿重复提交。</string>
+    <string name="signing_chooseFile" tools:ignore="MissingTranslation">选择文件</string>
+    <string name="signing_limit" tools:ignore="MissingTranslation">选择非空文件，最大 1 MiB。</string>
+    <string name="signing_selectedFile" tools:ignore="MissingTranslation">%1$s · %2$d 字节</string>
     <string name="signing_verified">签名验证：通过</string>
     <string name="signing_exportScope">导出的是所选文件的独立签名；原文件保持不变。</string>
     <string name="signing_exported">已导出签名。</string>
     <string name="signing_exportCancelled">已取消导出。</string>
     <string name="signing_exportUnknown">未确认导出结果。请检查所选文件。</string>
-    <string name="workspace_inspection">结果待核实；请先读取卡片状态</string>
-    <string name="workspace_common">常用任务</string>
-    <string name="workspace_advanced">高级与协议诊断</string>
+    <string name="workspace_inspection" tools:ignore="MissingTranslation">结果待核实；请先读取卡片状态</string>
+    <string name="workspace_common" tools:ignore="MissingTranslation">常用任务</string>
+    <string name="workspace_advanced" tools:ignore="MissingTranslation">高级与协议诊断</string>
     <string name="workspace_details">技术详情</string>
-    <string name="workspace_slotContext">槽位选择用于本次操作；证书状态需单独读取。</string>
-    <string name="workspace_enrollmentFlow">生成 CSR → CA 签发 → 验证证书 → 导入并读回</string>
-    <string name="signing_cmsRequirements">需要有效的文档签名证书，且证书公钥与所选槽位一致。</string>
-    <string name="signing_cmsVerified">CMS 签名验证：通过</string>
-    <string name="signing_cmsScope">导出 .p7s 独立签名，包含签名证书；验证时还需原文件。原文件保持不变。</string>
-    <string name="signing_cmsTrust">未验证证书信任链、吊销状态或可信时间。</string>
+    <string name="workspace_slotContext" tools:ignore="MissingTranslation">槽位选择用于本次操作；证书状态需单独读取。</string>
+    <string name="workspace_enrollmentFlow" tools:ignore="MissingTranslation">生成 CSR → CA 签发 → 验证证书 → 导入并读回</string>
+    <string name="signing_cmsRequirements" tools:ignore="MissingTranslation">需要有效的文档签名证书，且证书公钥与所选槽位一致。</string>
+    <string name="signing_cmsVerified" tools:ignore="MissingTranslation">CMS 签名验证：通过</string>
+    <string name="signing_cmsScope" tools:ignore="MissingTranslation">导出 .p7s 独立签名，包含签名证书；验证时还需原文件。原文件保持不变。</string>
+    <string name="signing_cmsTrust" tools:ignore="MissingTranslation">未验证证书信任链、吊销状态或可信时间。</string>
     <string name="ssh_publicKeyScope">已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。本操作不验证 SSH 登录。</string>
     <string name="ssh_publicKeyExported">已导出 SSH 公钥。</string>
     <string name="certificate_dateScope">仅检查证书有效期，未验证信任链、吊销状态或与槽位公钥的匹配关系。</string>
-    <string name="workspace_objects">返回列表</string>
-    <string name="workspace_selectedObject">当前选择</string>
-    <string name="workspace_selectedSlot">槽位 · %1$s</string>
-    <string name="workspace_authenticator">认证器</string>
-    <string name="workspace_pivSecurity">PIV 状态与安全设置</string>
-    <string name="workspace_slotCatalog">槽位目录</string>
-    <string name="workspace_slotAuthentication">身份验证</string>
-    <string name="workspace_slotSignature">数字签名</string>
-    <string name="workspace_slotManagement">密钥管理</string>
-    <string name="workspace_slotCardAuthentication">卡片验证</string>
-    <string name="workspace_slotRetired">退役密钥</string>
-    <string name="workspace_tasks">选择任务</string>
+    <string name="workspace_objects" tools:ignore="MissingTranslation">返回列表</string>
+    <string name="workspace_selectedObject" tools:ignore="MissingTranslation">当前选择</string>
+    <string name="workspace_selectedSlot" tools:ignore="MissingTranslation">槽位 · %1$s</string>
+    <string name="workspace_authenticator" tools:ignore="MissingTranslation">认证器</string>
+    <string name="workspace_pivSecurity" tools:ignore="MissingTranslation">PIV 状态与安全设置</string>
+    <string name="workspace_slotCatalog" tools:ignore="MissingTranslation">槽位目录</string>
+    <string name="workspace_slotAuthentication" tools:ignore="MissingTranslation">身份验证</string>
+    <string name="workspace_slotSignature" tools:ignore="MissingTranslation">数字签名</string>
+    <string name="workspace_slotManagement" tools:ignore="MissingTranslation">密钥管理</string>
+    <string name="workspace_slotCardAuthentication" tools:ignore="MissingTranslation">卡片验证</string>
+    <string name="workspace_slotRetired" tools:ignore="MissingTranslation">退役密钥</string>
+    <string name="workspace_tasks" tools:ignore="MissingTranslation">选择任务</string>
     <string name="workspace_receipt">任务结果</string>
-    <string name="workspace_pivReaderRequired">当前读卡器使用 CTAP，只能访问 FIDO。PIV 和证书申请需要 NFC 或支持 APDU 的 USB 读卡器。</string>
+    <string name="workspace_pivReaderRequired" tools:ignore="MissingTranslation">当前读卡器使用 CTAP，只能访问 FIDO。PIV 和证书申请需要 NFC 或支持 APDU 的 USB 读卡器。</string>
     <string name="workspace_outputFile">本次导出文件</string>
-    <string name="navigation_device">卡片</string>
-    <string name="navigation_passkeys">通行密钥</string>
-    <string name="navigation_certificates">证书</string>
-    <string name="navigation_settings">设置</string>
-    <string name="device_reader">连接方式与读卡器</string>
-    <string name="settings_services">系统与证书服务</string>
-    <string name="settings_provider">凭据提供者设置</string>
-    <string name="settings_enrollment">申请 PIV 证书</string>
-    <string name="artwork_generic">通用卡片示意图</string>
-    <string name="artwork_loading">正在加载卡片图片…</string>
-    <string name="artwork_failed">卡片图片加载失败，仍可使用卡片功能。</string>
-    <string name="artwork_retry">重试图片</string>
-    <string name="workspace_sites">网站与通行密钥</string>
-    <string name="workspace_security">安全设置</string>
-    <string name="workspace_fidoPin">更改 FIDO PIN</string>
-    <string name="workspace_createOnWebsite">新通行密钥由网站发起创建。这里可查看支持驻留的凭据。</string>
-    <string name="workspace_readSites">查看通行密钥</string>
-    <string name="inventory_unread">输入 FIDO PIN 后继续，再连接卡片。</string>
-    <string name="inventory_loading">正在读取通行密钥…</string>
-    <string name="inventory_failed">通行密钥未能读取。请重新发起读取。</string>
-    <string name="inventory_empty">这张卡没有可列出的通行密钥。</string>
-    <string name="inventory_loaded">选择账户以修改用户名或删除通行密钥。</string>
-    <string name="credential_deleted">通行密钥已删除。重新读取可查看最新列表。</string>
-    <string name="credential_updated">用户名已更新。重新读取可查看最新列表。</string>
-    <string name="confirm_fidoLastRetry">FIDO PIN 仅剩一次尝试。输入错误将锁定 PIN，可能需要重置设备并重新绑定账户。仅验证一次？</string>
-    <string name="error_pinSetupRequired">此卡尚未设置 FIDO PIN。请先选择“设置 FIDO PIN”。本次未验证 PIN。</string>
-    <string name="error_pinChangeRequired">此卡要求更改 FIDO PIN。请先选择“更改 FIDO PIN”。本次未验证 PIN。</string>
-    <string name="document_readFailed">文件未能读取，请重新选择文件。</string>
+    <string name="navigation_device" tools:ignore="MissingTranslation">卡片</string>
+    <string name="navigation_passkeys" tools:ignore="MissingTranslation">通行密钥</string>
+    <string name="navigation_certificates" tools:ignore="MissingTranslation">证书</string>
+    <string name="navigation_settings" tools:ignore="MissingTranslation">设置</string>
+    <string name="device_reader" tools:ignore="MissingTranslation">连接方式与读卡器</string>
+    <string name="settings_services" tools:ignore="MissingTranslation">系统与证书服务</string>
+    <string name="settings_provider" tools:ignore="MissingTranslation">凭据提供者设置</string>
+    <string name="settings_enrollment" tools:ignore="MissingTranslation">申请 PIV 证书</string>
+    <string name="artwork_generic" tools:ignore="MissingTranslation">通用卡片示意图</string>
+    <string name="artwork_loading" tools:ignore="MissingTranslation">正在加载卡片图片…</string>
+    <string name="artwork_failed" tools:ignore="MissingTranslation">卡片图片加载失败，仍可使用卡片功能。</string>
+    <string name="artwork_retry" tools:ignore="MissingTranslation">重试图片</string>
+    <string name="workspace_sites" tools:ignore="MissingTranslation">网站与通行密钥</string>
+    <string name="workspace_security" tools:ignore="MissingTranslation">安全设置</string>
+    <string name="workspace_fidoPin" tools:ignore="MissingTranslation">更改 FIDO PIN</string>
+    <string name="workspace_createOnWebsite" tools:ignore="MissingTranslation">新通行密钥由网站发起创建。这里可查看支持驻留的凭据。</string>
+    <string name="workspace_readSites" tools:ignore="MissingTranslation">查看通行密钥</string>
+    <string name="inventory_unread" tools:ignore="MissingTranslation">输入 FIDO PIN 后继续，再连接卡片。</string>
+    <string name="inventory_loading" tools:ignore="MissingTranslation">正在读取通行密钥…</string>
+    <string name="inventory_failed" tools:ignore="MissingTranslation">通行密钥未能读取。请重新发起读取。</string>
+    <string name="inventory_empty" tools:ignore="MissingTranslation">这张卡没有可列出的通行密钥。</string>
+    <string name="inventory_loaded" tools:ignore="MissingTranslation">选择账户以修改用户名或删除通行密钥。</string>
+    <string name="credential_deleted" tools:ignore="MissingTranslation">通行密钥已删除。重新读取可查看最新列表。</string>
+    <string name="credential_updated" tools:ignore="MissingTranslation">用户名已更新。重新读取可查看最新列表。</string>
+    <string name="confirm_fidoLastRetry" tools:ignore="MissingTranslation">FIDO PIN 仅剩一次尝试。输入错误将锁定 PIN，可能需要重置设备并重新绑定账户。仅验证一次？</string>
+    <string name="error_pinSetupRequired" tools:ignore="MissingTranslation">此卡尚未设置 FIDO PIN。请先选择“设置 FIDO PIN”。本次未验证 PIN。</string>
+    <string name="error_pinChangeRequired" tools:ignore="MissingTranslation">此卡要求更改 FIDO PIN。请先选择“更改 FIDO PIN”。本次未验证 PIN。</string>
+    <string name="document_readFailed" tools:ignore="MissingTranslation">文件未能读取，请重新选择文件。</string>
     <string name="document_saved">文件已保存。</string>
-    <string name="document_cancelled">已取消文件操作。</string>
-    <string name="document_unknown">未确认文件保存结果。请检查所选位置，勿重复提交卡片操作。</string>
-    <string name="reader_permissionDenied">未获 USB 读卡器访问授权。请重新选择读卡器，或改用 NFC。</string>
+    <string name="document_cancelled" tools:ignore="MissingTranslation">已取消文件操作。</string>
+    <string name="document_unknown" tools:ignore="MissingTranslation">未确认文件保存结果。请检查所选位置，勿重复提交卡片操作。</string>
+    <string name="reader_permissionDenied" tools:ignore="MissingTranslation">未获 USB 读卡器访问授权。请重新选择读卡器，或改用 NFC。</string>
 </resources>

@@ -245,9 +245,113 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_operationEcdh" to "ECDH · 验证",
             "protectedPiv_operationRsa" to "RSA · 验证",
             "protectedPiv_export" to "导出",
+            "certificate_dateScope" to "仅检查证书有效期，未验证信任链、吊销状态或与槽位公钥的匹配关系。",
+            "document_saved" to "文件已保存。",
+            "error_authorization" to "卡片未授权此操作。",
+            "error_cancelled" to "操作已取消。",
+            "error_capacityExceeded" to "卡片存储空间不足，或已达到此操作的数量或大小限制。",
+            "error_cardRejected" to "卡片拒绝了此操作。请检查卡片状态及操作前提。",
+            "error_contactRequired" to "此操作需要接触式读卡器。NFC 目前仅支持读取 PIV 公开信息。",
+            "error_invalidInput" to "输入格式有误，请检查所填内容。",
+            "error_keyMismatch" to "证书公钥与所选槽位不匹配，未导入证书。",
+            "error_malformed" to "卡片响应无效。",
+            "error_nfcDisabled" to "NFC 未开启。请开启 NFC，或连接受支持的 USB 读卡器。",
+            "error_nfcUnavailable" to "此设备不支持 NFC。请连接受支持的 USB 读卡器。",
+            "error_physicalActionRequired" to "请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。",
+            "error_pinBlocked" to "PIN 或 PUK 已锁定。",
+            "error_pinInvalid" to "PIN 或 PUK 不正确。请确认后重新发起操作。",
+            "error_recoveryRequired" to "卡片状态与预期不符。请先读取卡片状态，勿重复提交更改。",
+            "error_transport" to "卡片连接失败。",
+            "error_unsupported" to "此卡片或读卡器不支持这项操作。",
+            "operation_appliedReadbackFailed" to "卡片已接受更改，但回读未完成。请读取卡片状态，勿重复提交更改。",
+            "operation_completed" to "操作已完成。",
+            "operation_notDispatched" to "指令未发送到卡片。",
+            "operation_unknown" to "指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。",
+            "protectedPiv_ordinaryInspection" to "上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。",
+            "reader_nfc" to "选择操作后，将卡片贴近手机。",
+            "signing_exportCancelled" to "已取消导出。",
+            "signing_exportScope" to "导出的是所选文件的独立签名；原文件保持不变。",
+            "signing_exportUnknown" to "未确认导出结果。请检查所选文件。",
+            "signing_exported" to "已导出签名。",
+            "signing_verified" to "签名验证：通过",
+            "ssh_publicKeyExported" to "已导出 SSH 公钥。",
+            "ssh_publicKeyScope" to "已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。本操作不验证 SSH 登录。",
+            "status_verification" to "此结果仅验证卡片返回的密码运算、CSR 或签名，不代表证书受信任或外部账户接受。",
+            "workspace_details" to "技术详情",
+            "workspace_outputFile" to "本次导出文件",
+            "workspace_receipt" to "任务结果",
         )
         val placeholders = Regex("%[0-9]+\\$[sd]")
+        fun entries(file: File): Map<String, org.w3c.dom.Element> {
+            val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            val document = factory.newDocumentBuilder().parse(file)
+            assertFalse(file.path, document.documentElement.getAttributeNS("http://schemas.android.com/tools", "ignore")
+                .split(',').contains("MissingTranslation"))
+            val nodes = document.getElementsByTagName("string")
+            return (0 until nodes.length).associate { index ->
+                val node = nodes.item(index) as org.w3c.dom.Element
+                node.getAttribute("name") to node
+            }
+        }
+        val englishEntries = entries(File("src/main/res/values-en/protected_piv.xml"))
+        assertEquals(expected.keys, englishEntries.keys)
+        val defaults = requireNotNull(File("src/main/res/values").listFiles()).filter { it.extension == "xml" }
+            .flatMap { entries(it).entries }.associate { it.key to it.value }
+        val expectedFallbackKeys = setOf(
+            "artwork_failed", "artwork_generic", "artwork_loading", "artwork_retry",
+            "blob_help", "confirm_adminChange", "confirm_alwaysUvDisable", "confirm_alwaysUvEnable",
+            "confirm_blobExport", "confirm_blobWrite", "confirm_certificateImport", "confirm_credentialDelete",
+            "confirm_enterprise", "confirm_fidoLastRetry", "confirm_fidoReset", "confirm_keyGenerate",
+            "confirm_lastRetryErasesKeys", "confirm_minPin", "confirm_pivReset", "confirm_registration",
+            "confirm_secretRead", "confirm_secretShow", "credential_deleted", "credential_updated",
+            "device_reader", "document_cancelled", "document_readFailed", "document_unknown",
+            "enrollment_address", "enrollment_chooseRoot", "enrollment_cn", "enrollment_confirmImport",
+            "enrollment_createCsr", "enrollment_csrReady", "enrollment_document", "enrollment_document9a",
+            "enrollment_documentScope", "enrollment_exportCsr", "enrollment_imported", "enrollment_invalid",
+            "enrollment_issue", "enrollment_issuing", "enrollment_purpose", "enrollment_rejected",
+            "enrollment_scope", "enrollment_steps", "enrollment_title", "enrollment_token",
+            "enrollment_unknown", "enrollment_verified", "enterprise_mode", "error_hidPhysicalActionRequired",
+            "error_hidPowerCycleRequired", "error_pinChangeRequired", "error_pinSetupRequired", "inventory_empty",
+            "inventory_failed", "inventory_loaded", "inventory_loading", "inventory_unread",
+            "minPin_rps", "minPin_rpsHelp", "navigation_certificates", "navigation_device",
+            "navigation_passkeys", "navigation_settings", "operation_fidoResetReadback", "plexo_ca_csr",
+            "plexo_ca_currentRequest", "plexo_ca_documentIdentity", "plexo_ca_exportChain", "plexo_ca_identity",
+            "plexo_ca_importExport", "plexo_ca_importReview", "plexo_ca_issue", "plexo_ca_prepare",
+            "plexo_ca_purpose", "plexo_ca_root", "plexo_ca_rootReady", "plexo_ca_service",
+            "plexo_ca_slotAlgorithm", "plexo_ca_tlsIdentity", "plexo_ca_unknownRequest", "plexo_provider_account",
+            "plexo_provider_accounts", "plexo_provider_caller", "plexo_provider_cancel", "plexo_provider_close",
+            "plexo_provider_create_consequence", "plexo_provider_create_title", "plexo_provider_executing", "plexo_provider_get_consequence",
+            "plexo_provider_get_title", "plexo_provider_keep_nfc", "plexo_provider_permission", "plexo_provider_permission_prompt",
+            "plexo_provider_reader", "plexo_provider_recognition_nfc", "plexo_provider_recognizing", "plexo_provider_rejected",
+            "plexo_provider_result", "plexo_provider_rp", "plexo_provider_verified", "plexo_provider_verifying",
+            "plexo_tls_certificate", "plexo_tls_result", "plexo_tls_service", "provider_accountNumber",
+            "provider_attestation_direct", "provider_attestation_none", "provider_choose_account", "provider_createAction",
+            "provider_credentialId", "provider_finalAttemptCreate", "provider_finalAttemptGet", "provider_getAction",
+            "provider_pin", "provider_pinChange", "provider_pinSetup", "provider_remainingAttempts",
+            "provider_request_rejected", "provider_settings", "provider_unlock", "provider_userId",
+            "provider_username", "reader_empty", "reader_permissionDenied", "reader_usbPermission",
+            "restriction_fidoReset", "secret_view", "settings_enrollment", "settings_provider",
+            "settings_services", "signing_chooseFile", "signing_cmsRequirements", "signing_cmsScope",
+            "signing_cmsTrust", "signing_cmsVerified", "signing_limit", "signing_selectedFile",
+            "status_hidUserPresenceRequired", "tls_cancelled", "tls_chooseServerRoot", "tls_confirm",
+            "tls_endpoint", "tls_endpointHelp", "tls_failed", "tls_identity",
+            "tls_mayHaveSubmitted", "tls_running", "tls_scope", "tls_serverRoot",
+            "tls_serverRootHelp", "tls_serverRootReady", "tls_start", "tls_success",
+            "tls_timeout", "tls_title", "tls_unknown", "tls_validUntil",
+            "user_updateHelp", "workspace_advanced", "workspace_authenticator", "workspace_common",
+            "workspace_createOnWebsite", "workspace_enrollmentFlow", "workspace_fidoPin", "workspace_inspection",
+            "workspace_objects", "workspace_pivReaderRequired", "workspace_pivSecurity", "workspace_readSites",
+            "workspace_security", "workspace_selectedObject", "workspace_selectedSlot", "workspace_sites",
+            "workspace_slotAuthentication", "workspace_slotCardAuthentication", "workspace_slotCatalog", "workspace_slotContext",
+            "workspace_slotManagement", "workspace_slotRetired", "workspace_slotSignature", "workspace_tasks",
+        )
+        val fallbackKeys = defaults.filterValues { it.getAttributeNS("http://schemas.android.com/tools", "ignore")
+            .split(',').contains("MissingTranslation") }.keys
+        assertEquals(expectedFallbackKeys, fallbackKeys)
+        assertTrue(expected.keys.intersect(fallbackKeys).isEmpty())
         for ((key, value) in expected) {
+            assertFalse(key, requireNotNull(defaults[key]).getAttributeNS("http://schemas.android.com/tools", "ignore")
+                .split(',').contains("MissingTranslation"))
             val id = chinese.getIdentifier(key, "string", app.packageName)
             assertNotEquals(key, 0, id)
             assertEquals(key, value, chinese.getString(id))
