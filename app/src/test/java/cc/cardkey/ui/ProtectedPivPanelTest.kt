@@ -27,6 +27,30 @@ import org.robolectric.annotation.*
 class ProtectedPivPanelTest {
     @get:Rule val compose = createEmptyComposeRule()
 
+    @Test fun issuerLineIsOmittedWhenDisplayFilteringLeavesNoText() {
+        val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        val rawSubject = "\u202e\u200d\u200c\n"
+        val state = ProtectedPivState(issuerSubject = rawSubject, issuerFingerprint = "012345abcdef")
+        host.get().setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ProtectedPivPanel(state, false, false, 0, {}, {}, { _, _, _ -> }, {})
+                }
+            }
+        }
+        try {
+            compose.onNodeWithText("签发者：").assertDoesNotExist()
+            compose.onNodeWithText("证书指纹（SHA-256）：012345abcdef").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("protected-piv-profile").assertIsEnabled()
+            assertEquals(rawSubject, state.issuerSubject)
+        } finally { host.pause().stop().destroy() }
+    }
+
+    @Test fun publicDisplayRemovesJoinersWithoutRemovingLettersOrCombiningMarks() {
+        assertEquals("👩🔬 میرویم e\u0301\u2028\u2029",
+            protectedPivDisplayText("👩\u200d🔬 می\u200cرویم e\u0301\u2028\u2029"))
+    }
+
     @Test fun issuerDisplayRemovesFormatControlsAndKeepsSupplementaryBoundaryWithoutChangingIdentity() {
         val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val symbol = String(Character.toChars(0x1f512))
