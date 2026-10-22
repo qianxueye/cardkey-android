@@ -361,7 +361,7 @@ class ManagerScreenLayoutTest {
             for (text in listOf("日期状态", "有效期内", "签发者", "CN=Lifecycle issuer",
                     "证书序列号（十六进制）", "80FF", "生效时间（UTC）", "2026-01-01T00:00:00Z",
                     "到期时间（UTC）", "2026-01-02T00:00:00Z", "检查时间（设备时钟，UTC）",
-                    "2026-01-01T00:00:00.001Z", activity.getString(R.string.certificate_dateScope))) {
+                    "2026-01-01T00:00:00.001Z")) {
                 compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
             }
             compose.onNode(hasText("槽位") and hasClickAction()).performScrollTo().performClick()

@@ -49,7 +49,7 @@ class CertificateLifecycleTest {
             assertEquals(Instant.ofEpochMilli(dates.second).toString(), rows["piv_not_after"])
             assertEquals(Instant.ofEpochMilli(dates.third).toString(), rows["piv_assessed_at"])
             assertEquals(Base64.getEncoder().encodeToString(fixture.card.keyPair.public.encoded), rows["piv_public_key"])
-            assertEquals(listOf(R.string.certificate_dateScope), report.messages)
+            assertEquals(emptyList<Int>(), report.messages)
             assertArrayEquals(fixture.der, report.export)
             assertEquals("piv-9d.cer", report.fileName)
             assertEquals(Effect.NONE, result.effect)
@@ -114,7 +114,7 @@ class CertificateLifecycleTest {
                     assertFalse(rows.containsKey("piv_public_key"))
                     assertFalse(rows.containsKey("piv_algorithm"))
                     assertArrayEquals(fixture.der, report.export)
-                    assertEquals(listOf(R.string.certificate_dateScope), report.messages)
+                    assertEquals(emptyList<Int>(), report.messages)
                 }
             }
             assertEquals(listOf(0xa4, 0xf7, 0xcb), fixture.card.commands.map { it.ins })

@@ -38,7 +38,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
     DisposableEffect(Unit) { onDispose { pending?.close() } }
     pending?.let { operation ->
         AlertDialog(onDismissRequest = { operation.close(); pending = null },
-            title = { Text(operation.operation.title) },
+            title = { Text(confirmationOperationTitleResource(operation.operation)?.let { stringResource(it) } ?: operation.operation.title) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 operation.messages.forEach { Text(stringResource(it)) }
             } },

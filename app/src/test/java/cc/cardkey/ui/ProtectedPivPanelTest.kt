@@ -113,7 +113,7 @@ class ProtectedPivPanelTest {
             compose.onNodeWithTag("protected-piv-pin").performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("protected-piv-execute").performScrollTo().performClick()
             compose.runOnIdle { assertEquals(0, executions) }
-            compose.onNodeWithText("仅剩 1 次机会；输错后可能需要恢复 PIN。").assertIsDisplayed()
+            compose.onNodeWithText("仅剩 1 次机会；输错后可能需要恢复 PIN。").assertDoesNotExist()
             compose.onAllNodesWithText("PIN 仅剩一次重试，PUK 已锁定。此次验证失败将清除 PIV 私钥。确认继续？").assertCountEquals(2)
             compose.runOnIdle { host.pause() }
             compose.onNodeWithText("开始第二次扫描").assertDoesNotExist()

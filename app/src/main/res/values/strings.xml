@@ -5,7 +5,7 @@
     <string name="operation_notDispatched" formatted="false">指令未发送到卡片。</string>
     <string name="operation_unknown" formatted="false">指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。</string>
     <string name="operation_appliedReadbackFailed" formatted="false">卡片已接受更改，但回读未完成。请读取卡片状态，勿重复提交更改。</string>
-    <string name="error_contactRequired" formatted="false">此操作需要接触式读卡器。NFC 目前仅支持读取 PIV 公开信息。</string>
+    <string name="error_contactRequired" formatted="false">此操作需要接触式读卡器。</string>
     <string name="error_physicalActionRequired" formatted="false">请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。</string>
     <string name="error_pinInvalid" formatted="false">PIN 或 PUK 不正确。请确认后重新发起操作。</string>
     <string name="error_pinBlocked" formatted="false">PIN 或 PUK 已锁定。</string>
@@ -31,17 +31,15 @@
     <string name="confirm_registration" tools:ignore="MissingTranslation" formatted="false">将为 cardkey.example 创建测试凭据；驻留凭据会占用卡内存储。确认创建？</string>
     <string name="confirm_pivReset" tools:ignore="MissingTranslation" formatted="false">仅在 PIN 和 PUK 均已锁定时重置 PIV。PIV 私钥此前已清除；重置将清除 PIV 数据，并恢复默认 PIN、PUK 和管理密钥。FIDO 凭据保留。确认重置？</string>
     <string name="restriction_fidoReset" tools:ignore="MissingTranslation" formatted="false">此卡不提供 CTAP 重置。重装 FIDO applet 需在桌面初始化流程中执行，现有 FIDO 凭据将失效。</string>
-    <string name="status_verification" formatted="false">此结果仅验证卡片返回的密码运算、CSR 或签名，不代表证书受信任或外部账户接受。</string>
     <string name="provider_settings" tools:ignore="MissingTranslation">在 Android 设置中选择并启用 %1$s，然后返回。</string>
     <string name="provider_attestation_none" tools:ignore="MissingTranslation">本次创建不发送卡片证明证书，并隐藏设备类型标识。</string>
     <string name="provider_attestation_direct" tools:ignore="MissingTranslation">该网站请求卡片证明，响应可能包含可识别这张卡的证书。</string>
     <string name="provider_choose_account" tools:ignore="MissingTranslation">选择用于登录 %1$s 的账户。</string>
     <string name="provider_request_rejected" tools:ignore="MissingTranslation">无法验证请求应用或请求内容，未向卡片发送指令。</string>
     <string name="minPin_rps" tools:ignore="MissingTranslation" formatted="false">披露最短 PIN 长度的 RP ID（每行一个，最多 2 个）</string>
-    <string name="minPin_rpsHelp" tools:ignore="MissingTranslation" formatted="false">仅这些 RP 可读取最短 PIN 长度。留空将清空名单；名单保存在卡内，客户端无法回读。</string>
+    <string name="minPin_rpsHelp" tools:ignore="MissingTranslation" formatted="false">仅这些 RP 可读取最短 PIN 长度。留空将清空名单。</string>
     <string name="enterprise_mode" tools:ignore="MissingTranslation" formatted="false">企业证明模式</string>
-    <string name="user_updateHelp" tools:ignore="MissingTranslation" formatted="false">此卡仅支持修改用户名，不支持修改显示名称。</string>
-    <string name="confirm_secretRead" tools:ignore="MissingTranslation" formatted="false">将读取凭据的秘密输出。它不会显示在普通结果中，也不会自动导出。确认读取？</string>
+    <string name="confirm_secretRead" tools:ignore="MissingTranslation" formatted="false">将读取凭据的秘密输出。确认读取？</string>
     <string name="secret_view" tools:ignore="MissingTranslation" formatted="false">查看秘密输出</string>
     <string name="confirm_secretShow" tools:ignore="MissingTranslation" formatted="false">秘密输出可用于派生密钥，请勿分享或粘贴到日志。确认显示？</string>
     <string name="blob_help" tools:ignore="MissingTranslation" formatted="false">Large Blob 按所选凭据加密。读取或写入前，请先验证该凭据并读取 largeBlobKey；密钥仅供下一次操作使用。</string>
@@ -63,14 +61,14 @@
     <string name="enrollment_cn" tools:ignore="MissingTranslation">通用名称（CN）</string>
     <string name="enrollment_purpose" tools:ignore="MissingTranslation">客户端认证（TLS）</string>
     <string name="enrollment_document" tools:ignore="MissingTranslation">文档签名</string>
-    <string name="enrollment_documentScope" tools:ignore="MissingTranslation">使用所选槽位的现有密钥申请文档签名证书。不会生成或替换密钥。</string>
+    <string name="enrollment_documentScope" tools:ignore="MissingTranslation">使用所选槽位的现有密钥申请文档签名证书。</string>
     <string name="enrollment_document9a" tools:ignore="MissingTranslation">导入后将替换 9A 的现有证书，该文档签名证书不能用于 TLS 客户端认证。</string>
     <string name="enrollment_token" tools:ignore="MissingTranslation">一次性授权令牌</string>
     <string name="enrollment_createCsr" tools:ignore="MissingTranslation">生成 CSR</string>
     <string name="enrollment_exportCsr" tools:ignore="MissingTranslation">导出 CSR</string>
     <string name="enrollment_issue" tools:ignore="MissingTranslation">申请证书</string>
     <string name="enrollment_steps" tools:ignore="MissingTranslation">先生成并导出 CSR，再获取 CA 管理员提供的一次性授权令牌。</string>
-    <string name="enrollment_scope" tools:ignore="MissingTranslation">令牌必须绑定此 CSR，并由 CA 管理员按所选用途授权。槽位仅决定本地导入位置。</string>
+    <string name="enrollment_scope" tools:ignore="MissingTranslation">令牌必须绑定此 CSR，并由 CA 管理员按所选用途授权。</string>
     <string name="enrollment_csrReady" tools:ignore="MissingTranslation">CSR 已生成，可导出后交给 CA 管理员。</string>
     <string name="enrollment_issuing" tools:ignore="MissingTranslation">正在向所选 CA 申请证书。</string>
     <string name="enrollment_verified" tools:ignore="MissingTranslation">CA 已签发证书，证书链、用途、身份和公钥验证通过。证书尚未写入卡片。</string>
@@ -80,13 +78,11 @@
     <string name="enrollment_confirmImport" tools:ignore="MissingTranslation">将已验证的证书写入所选 PIV 槽位，替换该槽位的现有证书。私钥不变。确认导入？</string>
     <string name="enrollment_imported" tools:ignore="MissingTranslation">证书已写入所选槽位，并完成回读。</string>
     <string name="tls_title" tools:ignore="MissingTranslation">验证 TLS 连接</string>
-    <string name="tls_scope" tools:ignore="MissingTranslation">在本 App 内验证所选证书到指定服务器的连接。</string>
     <string name="tls_endpoint" tools:ignore="MissingTranslation">服务器地址</string>
     <string name="tls_endpointHelp" tools:ignore="MissingTranslation">填写 HTTPS 域名地址，不带查询参数或片段。服务器须支持 TLS 1.3，证书包含完整域名，测试接口返回无正文的 HTTP 204。</string>
     <string name="tls_serverRoot" tools:ignore="MissingTranslation">服务器根证书</string>
     <string name="tls_chooseServerRoot" tools:ignore="MissingTranslation">选择服务器根证书</string>
     <string name="tls_serverRootReady" tools:ignore="MissingTranslation">已选择服务器根证书。</string>
-    <string name="tls_serverRootHelp" tools:ignore="MissingTranslation">用所选根证书验证服务器，仅用于本次测试。</string>
     <string name="tls_identity" tools:ignore="MissingTranslation">使用证书</string>
     <string name="tls_validUntil" tools:ignore="MissingTranslation">有效期至</string>
     <string name="tls_start" tools:ignore="MissingTranslation">验证连接</string>
@@ -102,7 +98,7 @@
     <string name="signing_limit" tools:ignore="MissingTranslation">选择非空文件，最大 1 MiB。</string>
     <string name="signing_selectedFile" tools:ignore="MissingTranslation">%1$s · %2$d 字节</string>
     <string name="signing_verified">签名验证：通过</string>
-    <string name="signing_exportScope">导出的是所选文件的独立签名；原文件保持不变。</string>
+    <string name="signing_exportScope">导出的是所选文件的独立签名。</string>
     <string name="signing_exported">已导出签名。</string>
     <string name="signing_exportCancelled">已取消导出。</string>
     <string name="signing_exportUnknown">未确认导出结果。请检查所选文件。</string>
@@ -110,15 +106,12 @@
     <string name="workspace_common" tools:ignore="MissingTranslation">常用任务</string>
     <string name="workspace_advanced" tools:ignore="MissingTranslation">高级与协议诊断</string>
     <string name="workspace_details">技术详情</string>
-    <string name="workspace_slotContext" tools:ignore="MissingTranslation">槽位选择用于本次操作；证书状态需单独读取。</string>
     <string name="workspace_enrollmentFlow" tools:ignore="MissingTranslation">生成 CSR → CA 签发 → 验证证书 → 导入并读回</string>
     <string name="signing_cmsRequirements" tools:ignore="MissingTranslation">需要有效的文档签名证书，且证书公钥与所选槽位一致。</string>
     <string name="signing_cmsVerified" tools:ignore="MissingTranslation">CMS 签名验证：通过</string>
-    <string name="signing_cmsScope" tools:ignore="MissingTranslation">导出 .p7s 独立签名，包含签名证书；验证时还需原文件。原文件保持不变。</string>
-    <string name="signing_cmsTrust" tools:ignore="MissingTranslation">未验证证书信任链、吊销状态或可信时间。</string>
-    <string name="ssh_publicKeyScope">已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。本操作不验证 SSH 登录。</string>
+    <string name="signing_cmsScope" tools:ignore="MissingTranslation">导出 .p7s 独立签名，包含签名证书；验证时还需原文件。</string>
+    <string name="ssh_publicKeyScope">已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。</string>
     <string name="ssh_publicKeyExported">已导出 SSH 公钥。</string>
-    <string name="certificate_dateScope">仅检查证书有效期，未验证信任链、吊销状态或与槽位公钥的匹配关系。</string>
     <string name="workspace_objects" tools:ignore="MissingTranslation">返回列表</string>
     <string name="workspace_selectedObject" tools:ignore="MissingTranslation">当前选择</string>
     <string name="workspace_selectedSlot" tools:ignore="MissingTranslation">槽位 · %1$s</string>

@@ -61,7 +61,6 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
     Column(Modifier.fillMaxWidth().testTag("tls-panel"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(stringResource(R.string.tls_title), style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.semantics { heading() })
-        Text(stringResource(R.string.tls_scope), style = MaterialTheme.typography.bodyMedium)
         state.result?.let { result ->
             PlexoSection(stringResource(R.string.plexo_tls_result), Modifier.testTag("tls-result")) {
                 PlexoFactRow(stringResource(R.string.tls_endpoint), state.address)
@@ -95,7 +94,6 @@ fun TlsQualificationPanel(state: TlsQualificationState, enrollment: EnrollmentSt
                 Text(stringResource(R.string.tls_serverRootReady))
                 PlexoFactRow(stringResource(R.string.tls_serverRoot), it)
             }
-            Text(stringResource(R.string.tls_serverRootHelp), style = MaterialTheme.typography.bodyMedium)
             if (canUseCard) {
                 OutlinedTextField(pin, { pin = it }, enabled = !busy, label = { Text("当前 PIV PIN") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("tls-pin"))
