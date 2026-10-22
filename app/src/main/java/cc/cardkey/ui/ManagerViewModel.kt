@@ -1015,7 +1015,6 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             (mutable.value.result as? OperationResult.Completed)?.value?.let {
                 it.protectedPivSlot != null || mutable.value.operation?.isOwnedExport == true && (it.signatureFormat != null || it.sshPublicKey)
             } == true
-        tlsAttempt.get()?.close()
         networkCall.getAndSet(null)?.let { attempt ->
             if (!attempt.cancel()) enrollment.unsubmitted(attempt.owner)
             mutable.update { it.copy(busy = false) }
@@ -1027,6 +1026,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (!preserveInventoryDocument) inventory.retire()
         if (!preserveSignatureResult) retireResult()
         mutable.value = mutable.value.copy(result = mutable.value.result.takeIf { preserveSignatureResult }, userPresenceRequired = false)
+        // Closing DNS can let the TLS owner publish its result before close returns.
+        tlsAttempt.get()?.close()
         retryApproval?.complete(false)
         presenceWatch?.cancel()
         pendingNfcOwner = null
