@@ -76,3 +76,13 @@ Reviewed with plain-language-iso-24495 before application. The labels and trust 
 | Protected PIV / issuer display | Raw issuer subject in `签发者：$it`, without a code-point display limit. | Apply the same removal and 255-code-point limit only when rendering the subject. Template unchanged: `签发者：$it`. | Bound the displayed public name and remove invisible direction/format controls while preserving ordinary non-ASCII letters and symbols. The stored subject, issuer key/identifier and certificate fingerprint remain unchanged. |
 
 Example: a provider name containing `contract` + U+202E + U+2066 + U+2069 + U+200B + U+061C + a newline + `.pdf` displays as `contract.pdf`. A name with 254 `a` code points followed by U+1F512 retains the complete supplementary character as its 255th code point. Combining marks and ordinary right-to-left letters are retained; the limit counts code points, not grapheme clusters.
+
+## Empty issuer display and joiners
+
+Reviewed with plain-language-iso-24495 before application. These display rules apply when this source is built and installed; they do not establish installation or physical-card acceptance.
+
+| Screen / key | Before | Exact after | Reason / activation scope |
+| --- | --- | --- | --- |
+| Protected PIV / issuer subject filtered to empty or blank | A non-null subject could leave the label alone: “签发者：”. | Omit the issuer-subject row when its cleaned display value is blank. Nonblank subjects keep “签发者：$it”. | Match the existing filename display rule without inventing a name. The stored issuer subject, certificate fingerprint and operation eligibility are unchanged. |
+
+The existing format-character filter removes ZWJ (U+200D) and ZWNJ (U+200C). Joined emoji can therefore appear as separate emoji, and joining controls used in scripts such as Persian and Hindi are lost in these public display values. For example, “👩” + U+200D + “🔬” displays as “👩🔬”. Ordinary letters and combining marks remain. Line separator U+2028 and paragraph separator U+2029 remain outside this filter. These are display-only changes; the underlying subject, file bytes and authenticated identity are unchanged.
