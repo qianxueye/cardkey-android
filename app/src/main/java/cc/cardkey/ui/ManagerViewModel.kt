@@ -958,7 +958,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             result is OperationResult.Completed && recoveryWire != CardWire.CTAP &&
                 previous.operation?.let(ConfirmationPolicy::canInspect) == true &&
                 (if (recoveryProtectedIdentity != null) result.value.protectedPivIdentity == recoveryProtectedIdentity
-                 else recoveryRoute == operationRoute) -> false
+                 else result.value.protectedPivIdentity == null && recoveryRoute == operationRoute) -> false
             else -> previous.requiresInspection
         }
         if (!requiresInspection) { recoveryRoute = null; recoveryWire = null; recoveryProtectedIdentity = null }

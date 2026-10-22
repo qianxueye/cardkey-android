@@ -55,6 +55,24 @@ class ProtectedPivViewModelTest {
         outcome(model, OperationResult.Completed(ManagerReport(emptyList(), protectedPivIdentity = "original-guid:issuer-fingerprint"), Effect.NONE), "contact-reader")
         assertFalse(model.state.value.requiresInspection)
     }
+    @Test fun protectedStatusCannotClearOrdinaryUnknownOnSharedNfcRoute() {
+        protectedStatusCannotClearOrdinaryUnknown("nfc")
+    }
+    @Test fun protectedStatusCannotClearOrdinaryUnknownOnSharedContactRoute() {
+        protectedStatusCannotClearOrdinaryUnknown("contact-reader")
+    }
+    private fun protectedStatusCannotClearOrdinaryUnknown(route: String) {
+        val model = model()
+        outcome(model, OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN), route)
+        assertTrue(model.state.value.requiresInspection)
+        ReflectionHelpers.setField(model, "operationProtectedIdentity", "other-guid:issuer-fingerprint")
+        outcome(model, OperationResult.Completed(ManagerReport(emptyList(),
+            protectedPivIdentity = "other-guid:issuer-fingerprint"), Effect.NONE), route)
+        assertTrue(model.state.value.requiresInspection)
+        ReflectionHelpers.setField(model, "operationProtectedIdentity", null)
+        outcome(model, OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE), route)
+        assertFalse(model.state.value.requiresInspection)
+    }
     @Test fun profilePickerOwnerSurvivesItsPauseButClearAndOrdinaryBackgroundRetireIt() {
         val model = model()
         val request = model.requestProtectedPivDocument(ProtectedPivDocument.ISSUER)!!
