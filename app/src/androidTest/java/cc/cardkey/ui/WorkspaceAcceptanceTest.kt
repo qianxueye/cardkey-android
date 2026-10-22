@@ -61,6 +61,9 @@ class WorkspaceAcceptanceTest {
                                 onSigningFile = {}, inventory = InventoryState(),
                                 onInventoryRp = { _, _ -> }, onInventoryCredential = { _, _ -> },
                                 onInventoryFile = {}, onInventoryAction = {},
+                                protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
+                                onProtectedPivDocument = {}, onProtectedPivClear = {},
+                                onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') },
                             )
                         }
                     }

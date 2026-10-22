@@ -52,7 +52,9 @@ class InventoryPanelTest {
                 ManagerScreen(manager.value, 0, {}, {}, { submitted = it }, { cancelled++; inventory.retire() }, {}, null, {}, {}, {}, {},
                     EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
-                    presentedInventory.value ?: state, { _, rp -> inventory.selectRp(rp) }, { _, credential -> inventory.selectCredential(credential) }, {}, inventory::action)
+                    presentedInventory.value ?: state, { _, rp -> inventory.selectRp(rp) }, { _, credential -> inventory.selectCredential(credential) }, {}, inventory::action, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
+                            onProtectedPivDocument = {}, onProtectedPivClear = {},
+                            onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
             } }
         }
         try { compose.waitForIdle(); test(controller.get()) { controller.pause().resume(); compose.waitForIdle() } }

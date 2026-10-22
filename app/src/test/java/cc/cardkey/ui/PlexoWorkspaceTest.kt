@@ -63,7 +63,9 @@ class PlexoWorkspaceTest {
                             enrollment, { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
                             TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(),
                             { operation, slot -> action = operation to slot }, {}, InventoryState(),
-                            { _, _ -> }, { _, _ -> }, {}, {})
+                            { _, _ -> }, { _, _ -> }, {}, {}, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
+                            onProtectedPivDocument = {}, onProtectedPivClear = {},
+                            onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
                     }
                 }
             }

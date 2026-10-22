@@ -57,12 +57,14 @@ class OperationInput(
     val inventoryGeneration: Long? = null,
     val inventorySelection: InventoryCredential? = null,
 ) : AutoCloseable {
+    internal var protectedScan: cc.cardkey.protectedpiv.ProtectedPivScan? = null
     internal var inventoryRequest: InventoryRequest? = null
     internal var inventoryBytes: ByteArray? = null
     val makeExtensions = if (operation == ManagerOperation.FIDO_REGISTER)
         makeExtensions.copy(largeBlobKey = enabled && makeExtensions.largeBlobKey) else makeExtensions
 
     override fun close() {
+        protectedScan?.close()
         inventoryRequest?.close()
         inventoryBytes?.fill(0)
         pin.fill('\u0000'); newPin.fill('\u0000'); adminKey.fill(0); newAdminKey.fill(0)
@@ -78,7 +80,7 @@ class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob:
 data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = null, val fileName: String? = null,
     val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null,
     val relyingParties: List<RelyingParty>? = null, val credentials: List<Credential>? = null,
-    val inventoryGeneration: Long? = null, val signatureFormat: SignatureFormat? = null, val sshPublicKey: Boolean = false,
+    val inventoryGeneration: Long? = null, val protectedPivIdentity: String? = null, val signatureFormat: SignatureFormat? = null, val sshPublicKey: Boolean = false,
     val inventory: CredentialInventory? = null) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
@@ -130,13 +132,17 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
     }
 
     fun execute(session: CardSession, input: OperationInput, approveFinalAttempt: () -> Boolean = { false }): ManagerReport {
+        input.protectedScan?.let { scan -> return scan.execute(session, input) { piv -> executeWithPiv(session, input, piv, approveFinalAttempt) } }
+        return executeWithPiv(session, input, PivClient(session), approveFinalAttempt)
+    }
+
+    private fun executeWithPiv(session: CardSession, input: OperationInput, piv: PivClient, approveFinalAttempt: () -> Boolean): ManagerReport {
         input.inventoryRequest?.requireCurrent()
         if (input.operation == ManagerOperation.FIDO_RESET && (session.wire != CardWire.CTAP || !session.supportsCtap2))
             throw CardFailure(FailureCode.UNSUPPORTED)
         if (input.operation !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) clearSecrets()
         if (input.operation.piv && session.wire == CardWire.CTAP) throw CardFailure(FailureCode.UNSUPPORTED)
         val fido = FidoClient(session)
-        val piv = PivClient(session)
         if (!input.operation.piv && input.operation !in setOf(ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT)) fido.select()
         fun empty() = ManagerReport(emptyList())
         return when (input.operation) {

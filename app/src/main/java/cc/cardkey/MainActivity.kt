@@ -27,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import cc.cardkey.ui.*
+import cc.cardkey.protectedpiv.ProtectedPivDocument
 import cc.cardkey.protocol.FailureCode
 import cc.cardkey.protocol.OperationResult
 import cc.cardkey.transport.UsbReaderDescriptor
@@ -99,6 +100,20 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
     }
     private fun chooseSigningFile() {
         if (model.requestSigningFile()) signingFilePicker(requireNotNull(model.signingFileRequestId)).launch(arrayOf("*/*"))
+    }
+    private val protectedPivPickers = mutableMapOf<String, ActivityResultLauncher<Array<String>>>()
+    private fun protectedPivPicker(id: String): ActivityResultLauncher<Array<String>> {
+        protectedPivPickers[id]?.let { return it }
+        val launcher = activityResultRegistry.register("protected-piv-document:$id", ActivityResultContracts.OpenDocument()) { uri ->
+            model.receiveProtectedPivDocument(id, uri)
+            protectedPivPickers.remove(id)?.unregister()
+        }
+        protectedPivPickers[id] = launcher
+        if (model.protectedPiv.value.documentId != id) { protectedPivPickers.remove(id); launcher.unregister() }
+        return launcher
+    }
+    private fun chooseProtectedPivDocument(kind: ProtectedPivDocument) {
+        model.requestProtectedPivDocument(kind)?.let { protectedPivPicker(it).launch(arrayOf("*/*")) }
     }
     private val tlsRootImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> model.receiveTlsRoot(uri) }
     private fun chooseTlsRoot() { model.requestTlsRoot(); tlsRootImporter.launch(arrayOf("*/*")) }
@@ -192,12 +207,14 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         model.inventory.fileRequestId?.let(::inventoryFilePicker)
         model.signingFileRequestId?.let(::signingFilePicker)
         model.signatureSaveRequestId?.let(::signatureExporter)
+        model.protectedPiv.value.documentId?.let(::protectedPivPicker)
         setContent {
             val state by model.state.collectAsState()
             val enrollment by model.enrollment.state.collectAsState()
             val tls by model.tls.collectAsState()
             val signingFiles by model.signingFiles.state.collectAsState()
             val inventory by model.inventory.state.collectAsState()
+            val protectedPiv by model.protectedPiv.collectAsState()
             LaunchedEffect(state.result) {
                 val failure = state.result as? OperationResult.Failed
                 if (state.nfc && failure?.code == FailureCode.PHYSICAL_ACTION_REQUIRED) {
@@ -225,7 +242,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     model::submitEnrollment, model::issueEnrollment, model::abandonEnrollment,
                     tls, model::tlsSettings, ::chooseTlsRoot, model::submitTls,
                     signingFiles, model::fileSigningAction, ::chooseSigningFile,
-                    inventory, model::selectInventoryRp, model::selectInventoryCredential, ::chooseInventoryFile, model::inventoryAction, model::enrollmentSelection)
+                    inventory, model::selectInventoryRp, model::selectInventoryCredential, ::chooseInventoryFile, model::inventoryAction, model::enrollmentSelection,
+                    protectedPiv, ::chooseProtectedPivDocument, model::clearProtectedPiv, model::recognizeProtectedPiv, model::executeProtectedPiv)
                 if (showProviderSettings) AlertDialog(
                     onDismissRequest = { showProviderSettings = false },
                     title = { Text("凭据提供者") },
@@ -257,6 +275,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         super.onResume()
         enableNfcReader()
         model.refreshReaders()
+        model.resumeProtectedPiv()
     }
 
     private fun enableNfcReader() {
@@ -285,6 +304,8 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         signingFilePickers.clear()
         signatureExporters.values.toList().forEach { it.unregister() }
         signatureExporters.clear()
+        protectedPivPickers.values.toList().forEach { it.unregister() }
+        protectedPivPickers.clear()
         if (export?.protectedExport == true) export?.export?.fill(0)
         export = null
         unregisterReceiver(receiver); super.onDestroy()
