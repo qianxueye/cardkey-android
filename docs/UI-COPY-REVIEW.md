@@ -595,3 +595,16 @@ This partial English package leaves exactly 184 existing default keys outside th
 All 119 English-scope keys remain subject to lint. The locale test reads the actual English XML, requires the explicit 119-key declaration set and matching placeholders, freezes the exact approved 184-key fallback set, and rejects any overlap or root-level suppression. New keys remain unsuppressed by default. The new Chinese catalog declares `tools:locale="zh"`, so its language is identified correctly rather than interpreted as English for plural suggestions.
 
 The item exception applies to the `MissingTranslation` issue for that key across locales; it is not limited to English. Adding another locale requires reviewing these 184 exceptions and the translated scope again. This boundary preserves the requested partial translation without claiming whole-app English coverage. Tool metadata has no runtime effect, as documented in the [Android tools-attribute reference](https://developer.android.com/studio/write/tool-attributes).
+
+## Chinese-first locale-list selection
+
+Reviewed with plain-language-iso-24495 before application. The application now declares `values-zh/protected_piv.xml` for exactly the same 119 keys as its English catalog. Every Chinese value and formatting attribute is copied exactly from its existing default declaration; defaults, English wording, placeholders and the 184 intentional-fallback exceptions are unchanged. The exact 119-string table above remains the copy record. This changes resource qualification only and activates in a subsequently built/installed application, not an already installed build.
+
+| Screen / selection rule | Before | After | Reason / scope |
+| --- | --- | --- | --- |
+| Application-owned catalog / `zh-CN,en-US` | Only English had a language-qualified catalog; Android `LocaleList.getFirstMatch` over the declared application catalog tags selected `en-US`. | The explicit Chinese catalog makes the same Android API select `zh-CN`; all 119 qualified values equal the Chinese defaults. | Honor Chinese-first preference without depending on library locales. No language is forced by UI or workflow code. |
+| Packaged resources and panel / Chinese-first | Existing tests already showed Chinese because merged AndroidX resources supplied Chinese locale availability. | Chinese remains selected, including exact retry/erasure warnings and blank-issuer omission. | Packaged behavior is verified separately; the pre-fix catalog-level failure is not described as an observed full-APK English regression. |
+| English-only and English-first lists | English | English | Keep existing selection and exact English text. |
+| Observed other-language lists | `fr-FR`, `fr-FR,en-US`, `de-DE`, `de-DE,en-US`, and `fr-FR,zh-CN,en-US` use Chinese defaults for these keys; `en-US,fr-FR` uses English. | Same choices | Preserve the measured merged-package fallback, which can differ from matching only the application-owned catalogs. No new translations or locale override. |
+
+The tests use actual Android `Configuration.setLocales(LocaleList)` resource contexts and real Compose panel rendering. Separate declaration/placeholder/default-parity and real `LocaleList.getFirstMatch` tests protect application-owned coverage independently of merged libraries. No new lint suppression is introduced.
