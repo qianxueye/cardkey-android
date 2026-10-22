@@ -48,12 +48,16 @@ class ProtectedPivViewModelTest {
         ReflectionHelpers.setField(model, "operationProtectedIdentity", "original-guid:issuer-fingerprint")
         outcome(model, OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN))
         assertTrue(model.state.value.requiresInspection)
+        assertTrue(model.state.value.requiresProtectedInspection)
         outcome(model, OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE))
         assertTrue(model.state.value.requiresInspection)
+        assertTrue(model.state.value.requiresProtectedInspection)
         outcome(model, OperationResult.Completed(ManagerReport(emptyList(), protectedPivIdentity = "other-guid:issuer-fingerprint"), Effect.NONE))
         assertTrue(model.state.value.requiresInspection)
+        assertTrue(model.state.value.requiresProtectedInspection)
         outcome(model, OperationResult.Completed(ManagerReport(emptyList(), protectedPivIdentity = "original-guid:issuer-fingerprint"), Effect.NONE), "contact-reader")
         assertFalse(model.state.value.requiresInspection)
+        assertFalse(model.state.value.requiresProtectedInspection)
     }
     @Test fun protectedStatusCannotClearOrdinaryUnknownOnSharedNfcRoute() {
         protectedStatusCannotClearOrdinaryUnknown("nfc")
@@ -65,13 +69,16 @@ class ProtectedPivViewModelTest {
         val model = model()
         outcome(model, OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN), route)
         assertTrue(model.state.value.requiresInspection)
+        assertFalse(model.state.value.requiresProtectedInspection)
         ReflectionHelpers.setField(model, "operationProtectedIdentity", "other-guid:issuer-fingerprint")
         outcome(model, OperationResult.Completed(ManagerReport(emptyList(),
             protectedPivIdentity = "other-guid:issuer-fingerprint"), Effect.NONE), route)
         assertTrue(model.state.value.requiresInspection)
+        assertFalse(model.state.value.requiresProtectedInspection)
         ReflectionHelpers.setField(model, "operationProtectedIdentity", null)
         outcome(model, OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE), route)
         assertFalse(model.state.value.requiresInspection)
+        assertFalse(model.state.value.requiresProtectedInspection)
     }
     @Test fun profilePickerOwnerSurvivesItsPauseButClearAndOrdinaryBackgroundRetireIt() {
         val model = model()

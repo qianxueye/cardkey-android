@@ -97,6 +97,23 @@ class ProtectedPivPanelTest {
             compose.onNodeWithTag("protected-piv-issuer").performScrollTo().assertIsNotEnabled()
         } finally { host.pause().stop().destroy() }
     }
+    @Test fun ordinaryUnknownGuidesOriginalManagementStatusInsteadOfProtectedProfile() {
+        val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        host.get().setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ProtectedPivPanel(ProtectedPivState(), false, true, 0,
+                        {}, {}, { _, _, _ -> }, { fail("Unknown operation was replayed") })
+                }
+            }
+        }
+        try {
+            compose.onNodeWithText("上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。").assertDoesNotExist()
+            compose.onNodeWithText("上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。")
+                .performScrollTo().assertIsDisplayed()
+        } finally { host.pause().stop().destroy() }
+    }
+
     @Test fun unknownOutcomeAllowsOnlyStatusRecognitionAndKeepsOriginalOperationWarning() {
         val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         var recognized: ProtectedPivAction? = null
@@ -104,7 +121,8 @@ class ProtectedPivPanelTest {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     ProtectedPivPanel(ProtectedPivState(profileReady = true), false, true, 0,
-                        {}, {}, { action, _, _ -> recognized = action }, { fail("Unknown operation was replayed") })
+                        {}, {}, { action, _, _ -> recognized = action }, { fail("Unknown operation was replayed") },
+                        protectedInspectionRequired = true)
                 }
             }
         }

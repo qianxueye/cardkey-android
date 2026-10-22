@@ -38,6 +38,7 @@ data class ManagerState(
     val fidoFinalAttempt: Boolean = false,
     val documentMessage: Int? = null,
     val requiresInspection: Boolean = false,
+    val requiresProtectedInspection: Boolean = false,
     val operation: ManagerOperation? = null,
     val permissionPending: Boolean = false,
     val resultWire: CardWire = CardWire.APDU,
@@ -964,7 +965,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (!requiresInspection) { recoveryRoute = null; recoveryWire = null; recoveryProtectedIdentity = null }
         retireResult(result)
         mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null, fidoFinalAttempt = false, userPresenceRequired = false,
-            result = result, requiresInspection = requiresInspection)
+            result = result, requiresInspection = requiresInspection,
+            requiresProtectedInspection = recoveryProtectedIdentity != null)
     }
 
     fun approveLastRetry(approved: Boolean) { retryApproval?.complete(approved) }
