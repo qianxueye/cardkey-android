@@ -135,4 +135,5 @@
     <string name="confirmTitle_PIV_CHANGE_PUK">Change PUK</string>
     <string name="confirmTitle_PIV_UNBLOCK">Unblock PIV PIN</string>
     <string name="confirmTitle_PIV_CMS_SIGN">CMS file signing</string>
+    <string name="user_updateHelp" formatted="false">On this card, you can change the username but not the display name.</string>
 </resources>

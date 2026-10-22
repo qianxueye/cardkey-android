@@ -152,3 +152,13 @@ The following table is the exact current change record; earlier tables describe 
 The locale matrix no longer asserts `fr-FR,en-US` or `de-DE,en-US` fallback, because the prior result came from Robolectric and was not measured on a device. Remaining fallback cases are explicitly Robolectric resource regression checks, not device qualification. Chinese-first and English-first Configuration/LocaleList checks, application-owned language matching, exact qualified catalog parity, and real Compose panel tests remain.
 
 Critical notices remain for unknown writes and no replay, accepted writes with failed readback, PIN/PUK last-attempt erasure or lockout, credential deletion/reset/key overwrite, Large Blob data loss, secret disclosure/export, empty RP-list clearing, pairing/profile clearing, required connection/input steps and CA/TLS submission uncertainty. The four specifically required protected-PIV risk/recovery keys retain their meaning. Strong erasure wording replaces weaker repeated last-retry recovery text only in the erasure case.
+
+## Username and display-name edit guidance
+
+The Owner-approved review correction restores one necessary instruction on the actual FIDO username update form. It prevents a user from expecting a username edit to change the display name, so it satisfies the existing wrong-action necessity rule. This supersedes only the earlier `user_updateHelp` removal decision; other pruning and risk conditions remain unchanged. Reviewed with plain-language-iso-24495 before application.
+
+| Screen / key | Chinese before | Chinese after | English before | English after | Reason / activation |
+| --- | --- | --- | --- | --- | --- |
+| FIDO credential username update form / `user_updateHelp` | removed | `此卡仅支持修改用户名，不支持修改显示名称。` | removed | `On this card, you can change the username but not the display name.` | Prevent confusing the editable username with the separate display name. Show only for `FIDO_UPDATE`, immediately before the new-username field, in a future application build/install. |
+
+The same key is declared in default Chinese, qualified Chinese and English. Both qualified catalog key sets intentionally grow from 136 to 137; the fixed catalog/default/placeholder checks cover the addition. The exact 179 existing fallback exceptions are unchanged and exclude this translated key. No runtime/card operation, target binding, PIN rule, unknown-write guidance or other notice changes. No installed build is activated by this source change.

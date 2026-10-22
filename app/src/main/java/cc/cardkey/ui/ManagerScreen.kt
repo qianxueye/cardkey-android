@@ -588,6 +588,7 @@ fun ManagerScreen(
                                     Text(stringResource(R.string.minPin_rpsHelp))
                                 }
                                 if (op == ManagerOperation.FIDO_UPDATE) {
+                                    Text(stringResource(R.string.user_updateHelp))
                                     OutlinedTextField(secondary, { secondary = it }, label = { Text("新用户名") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
                                 }
                                 if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {

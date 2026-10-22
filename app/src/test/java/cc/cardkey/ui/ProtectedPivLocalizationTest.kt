@@ -173,6 +173,7 @@ class ProtectedPivLocalizationTest {
         val chinese = resources("zh-CN")
         val english = resources("en-US")
         val expected = mapOf(
+            "user_updateHelp" to "此卡仅支持修改用户名，不支持修改显示名称。",
             "confirmTitle_FIDO_DELETE" to "删除通行密钥",
             "confirmTitle_FIDO_ALWAYS_UV" to "始终验证用户",
             "confirmTitle_FIDO_MIN_PIN" to "PIN · 最短长度",
