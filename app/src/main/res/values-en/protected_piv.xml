@@ -115,7 +115,7 @@
     <string name="certificate_dateScope">Only the certificate validity period is checked. The trust chain, revocation status and match to the slot public key are not verified.</string>
     <string name="workspace_receipt">Task result</string>
     <string name="workspace_details">Technical details</string>
-    <string name="workspace_outputFile">Exported file</string>
+    <string name="workspace_outputFile">Output file</string>
     <string name="document_saved">The file was saved.</string>
     <string name="reader_nfc">After selecting an operation, hold the card near the phone.</string>
 </resources>

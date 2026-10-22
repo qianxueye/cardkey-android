@@ -432,9 +432,7 @@ fun ManagerScreen(
                             color = MaterialTheme.colorScheme.surfaceContainer) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 state.operation?.let {
-                                    val titleResource = protectedPivOperationTitleResource(it).takeIf {
-                                        protectedPiv.action != null || report?.protectedPivIdentity != null
-                                    }
+                                    val titleResource = protectedPivOperationTitleResource(it)
                                     Text(titleResource?.let { resource -> stringResource(resource) } ?: it.title,
                                         style = MaterialTheme.typography.titleMedium)
                                 }

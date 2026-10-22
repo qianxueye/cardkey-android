@@ -164,15 +164,15 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_title" to "受保护的 PIV",
             "protectedPiv_introduction" to "先选择公开签发者证书；如需签名，再选择文件；最后选择私有配置。配置仅保存在内存中，离开应用后清除。",
             "protectedPiv_chooseIssuer" to "选择签发者证书",
-            "protectedPiv_issuer" to "签发者：%1$s",
-            "protectedPiv_fingerprint" to "证书指纹（SHA-256）：%1$s",
+            "protectedPiv_issuer" to "签发者：%1\$s",
+            "protectedPiv_fingerprint" to "证书指纹（SHA-256）：%1\$s",
             "protectedPiv_issuerScope" to "此证书提供已登记的公钥和标识；不会验证证书链、有效期或吊销状态，也不会加入系统信任。",
             "protectedPiv_chooseFile" to "选择原始签名文件",
-            "protectedPiv_file" to "文件：%1$s · %2$d 字节",
+            "protectedPiv_file" to "文件：%1\$s · %2\$d 字节",
             "protectedPiv_chooseProfile" to "选择私有配置 JSON",
             "protectedPiv_pickerScope" to "打开任何文件选择器都会清除现有私有配置。不要分享私有配置或配对码。",
             "protectedPiv_ready" to "配置已就绪；尚不能据此确认当前卡片身份。",
-            "protectedPiv_guid" to "配置中的卡片 GUID：%1$s",
+            "protectedPiv_guid" to "配置中的卡片 GUID：%1\$s",
             "protectedPiv_inspection" to "上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。",
             "protectedPiv_operation" to "受保护操作",
             "protectedPiv_slot" to "受保护槽位",
@@ -180,8 +180,8 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_recognitionScope" to "首次扫描只核对卡片身份、槽位和 PIN 剩余次数，不会发送 PIN。",
             "protectedPiv_recognize" to "识别卡片并读取",
             "protectedPiv_recognized" to "首次扫描已完成。请先移开卡片，再输入 PIN 并确认第二次扫描。",
-            "protectedPiv_pending" to "待执行：%1$s · 槽位 %2$s",
-            "protectedPiv_retries" to "PIN 剩余次数：%1$d",
+            "protectedPiv_pending" to "待执行：%1\$s · 槽位 %2\$s",
+            "protectedPiv_retries" to "PIN 剩余次数：%1\$d",
             "protectedPiv_erasure" to "PIN 仅剩一次重试，PUK 已锁定。此次验证失败将清除 PIV 私钥。确认继续？",
             "protectedPiv_lastRetry" to "PIN 仅剩 1 次机会。再次输错可能锁定 PIN；恢复需要接触式连接。",
             "protectedPiv_pin" to "PIN",
@@ -190,7 +190,7 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_clear" to "清除配置并取消待执行操作",
             "protectedPiv_contactScope" to "修改 PIN／PUK、管理密钥、生成或导入密钥、重置、CA 证书导入、CMS 和 TLS 仍需接触式连接。",
             "protectedPiv_confirmTitle" to "确认第二次扫描",
-            "protectedPiv_confirmOperation" to "执行 %1$s，槽位 %2$s。再次扫描同一张卡；身份、槽位或剩余次数有变化时会停止。",
+            "protectedPiv_confirmOperation" to "执行 %1\$s，槽位 %2\$s。再次扫描同一张卡；身份、槽位或剩余次数有变化时会停止。",
             "protectedPiv_confirmRisk" to "这次会发送 PIN。输错会减少剩余次数；连接中断可能使结果无法确认。不要自动重试。",
             "protectedPiv_confirmLastRetry" to "仅剩 1 次机会；输错后可能需要恢复 PIN。",
             "protectedPiv_scanAgain" to "开始第二次扫描",
@@ -208,12 +208,12 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_verified" to "当前会话已验证",
             "protectedPiv_unverified" to "尚未验证",
             "protectedPiv_authenticatedRetries" to "本次认证读取的 PIN 剩余重试次数",
-            "protectedPiv_count" to "%1$d 次",
+            "protectedPiv_count" to "%1\$d 次",
             "protectedPiv_rowVersion" to "版本",
             "protectedPiv_rowSerial" to "序列号",
             "protectedPiv_rowPinRetries" to "PIN 剩余重试次数",
             "protectedPiv_rowPukRetries" to "PUK 剩余重试次数",
-            "protectedPiv_rowRetries" to "剩余 %1$d 次（共 %2$d 次）",
+            "protectedPiv_rowRetries" to "剩余 %1\$d 次（共 %2\$d 次）",
             "protectedPiv_rowManagementKey" to "管理密钥",
             "protectedPiv_rowSlot" to "槽位",
             "protectedPiv_rowCertificate" to "证书",
@@ -248,7 +248,7 @@ class ProtectedPivLocalizationTest {
         )
         val placeholders = Regex("%[0-9]+\\$[sd]")
         for ((key, value) in expected) {
-            val id = chinese.getIdentifier(key, "string", "cc.cardkey")
+            val id = chinese.getIdentifier(key, "string", app.packageName)
             assertNotEquals(key, 0, id)
             assertEquals(key, value, chinese.getString(id))
             assertEquals(key, placeholders.findAll(value).map { it.value }.toList(),
