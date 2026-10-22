@@ -1,5 +1,6 @@
 package cc.cardkey.protectedpiv
 
+import cc.cardkey.R
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.piv.*
 import cc.cardkey.ui.*
@@ -192,11 +193,12 @@ internal class ProtectedPivScan(
                 piv.verifyPin(input.pin)
                 ManagerReport(emptyList(), protectedPivIdentity = identityLabel)
             } else run(piv).let { report ->
-                val statusRows = if (action == ProtectedPivAction.STATUS) listOf(ResultRow("PIN 状态", when {
-                    pin.contactRequired -> "需要接触式连接恢复"
-                    pin.verified -> "当前会话已验证"
-                    else -> "尚未验证"
-                })) + listOfNotNull(pin.retriesRemaining?.let { ResultRow("本次认证读取的 PIN 剩余重试次数", "$it 次") }) else emptyList()
+                val statusRows = if (action == ProtectedPivAction.STATUS) listOf(ResultRow("protected_pin_status", "", R.string.protectedPiv_pinStatus, when {
+                    pin.contactRequired -> R.string.protectedPiv_contactRequired
+                    pin.verified -> R.string.protectedPiv_verified
+                    else -> R.string.protectedPiv_unverified
+                })) + listOfNotNull(pin.retriesRemaining?.let { ResultRow("authenticated_pin_retries", it.toString(),
+                    R.string.protectedPiv_authenticatedRetries, R.string.protectedPiv_count, listOf(it)) }) else emptyList()
                 report.copy(rows = report.rows + statusRows, protectedPivSlot = input.slot.takeIf { report.export != null },
                     protectedPivIdentity = identityLabel)
             }

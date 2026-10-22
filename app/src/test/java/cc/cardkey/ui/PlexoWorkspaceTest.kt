@@ -39,7 +39,7 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.LooperMode
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w1200dp-h1000dp-mdpi")
+@Config(sdk = [34], qualifiers = "zh-rCN-w1200dp-h1000dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PlexoWorkspaceTest {
@@ -78,7 +78,7 @@ class PlexoWorkspaceTest {
     }
 
     @Test
-    @Config(qualifiers = "w400dp-h800dp-mdpi")
+    @Config(qualifiers = "zh-rCN-w400dp-h800dp-mdpi")
     fun taskNavigationKeepsDeviceAndSettingsPassive() {
         render(400, 800, initial = ManagerState(nfc = false), openPasskeys = false) { activity, _, _ ->
             compose.onNode(hasText("卡片") and hasClickAction()).performClick()

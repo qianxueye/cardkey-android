@@ -9,8 +9,8 @@ import org.junit.Test
 
 class ManagerOperationsTest {
     @Test fun pivSlotReportsActualPoliciesForEmptyAndPopulatedMetadata() {
-        val pins = listOf("无需 PIN", "会话内验证一次", "每次操作验证")
-        val touches = listOf("无需触摸", "每次操作触摸", "允许缓存触摸确认")
+        val pins = listOf("none", "once", "always")
+        val touches = listOf("none", "always", "cached")
         for (empty in listOf(true, false)) for (pin in 1..3) for (touch in 1..3) {
             val card = EnrollmentCard().apply {
                 val policy = PivTlv.encode(2, byteArrayOf(pin.toByte(), touch.toByte()))
@@ -23,10 +23,10 @@ class ManagerOperationsTest {
                 ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SLOT, slot = 0x9c))
             } as OperationResult.Completed
             val rows = result.value.rows.associate { it.label to it.value }
-            assertEquals(pins[pin - 1], rows["PIN 验证策略"])
-            assertEquals(touches[touch - 1], rows["触摸确认策略"])
-            assertEquals(if (empty) null else "P256", rows["算法"])
-            assertEquals(!empty, rows.containsKey("公钥"))
+            assertEquals(pins[pin - 1], rows["piv_pin_policy"])
+            assertEquals(touches[touch - 1], rows["piv_touch_policy"])
+            assertEquals(if (empty) null else "P256", rows["piv_algorithm"])
+            assertEquals(!empty, rows.containsKey("piv_public_key"))
             assertEquals(Effect.NONE, result.effect)
             assertTrue(card.commands.all { it.ins in listOf(0xa4, 0xf7, 0xcb) })
         }
@@ -68,7 +68,8 @@ class ManagerOperationsTest {
         val result = CardSession(card).run {
             ManagerOperations().execute(it, OperationInput(ManagerOperation.PIV_SLOT))
         } as OperationResult.Completed
-        assertEquals(listOf(ResultRow("槽位", "9A"), ResultRow("证书", "未存储证书")), result.value.rows)
+        assertEquals(listOf(ResultRow("piv_slot", "9A", cc.cardkey.R.string.protectedPiv_rowSlot),
+            ResultRow("piv_certificate", "absent", cc.cardkey.R.string.protectedPiv_rowCertificate, cc.cardkey.R.string.protectedPiv_rowNoCertificate)), result.value.rows)
         assertEquals(listOf(0xa4, 0xf7, 0xcb), commands)
     }
 

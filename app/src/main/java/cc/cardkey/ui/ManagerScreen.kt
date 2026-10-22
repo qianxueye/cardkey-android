@@ -431,7 +431,11 @@ fun ManagerScreen(
                         Surface(Modifier.fillMaxWidth().bringIntoViewRequester(feedbackRequester), shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceContainer) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                state.operation?.let { Text(it.title, style = MaterialTheme.typography.titleMedium) }
+                                state.operation?.let {
+                                    val titleResource = protectedPivOperationTitleResource(it)
+                                    Text(titleResource?.let { resource -> stringResource(resource) } ?: it.title,
+                                        style = MaterialTheme.typography.titleMedium)
+                                }
                                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                                 if (state.busy && state.nfc) Text(stringResource(R.string.reader_nfc))
                                 state.presenceMessage?.let { Text(stringResource(it)) }
@@ -457,7 +461,7 @@ fun ManagerScreen(
                                         }
                                         if (result.value.export != null) OutlinedButton(onClick = {
                                             if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
-                                        }, enabled = (!result.value.sshPublicKey && result.value.signatureFormat == null && result.value.protectedPivSlot == null) || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
+                                        }, enabled = (!result.value.sshPublicKey && result.value.signatureFormat == null && result.value.protectedPivSlot == null) || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text(stringResource(R.string.protectedPiv_export)) }
                                         if (signingFiles.exportOwner === result.value) when (signingFiles.exportStatus) {
                                             SignatureExportStatus.SAVED -> Text(stringResource(when {
                                                 result.value.sshPublicKey -> R.string.ssh_publicKeyExported
@@ -474,10 +478,10 @@ fun ManagerScreen(
                                         }
                                         val technicalLabels = setOf("公钥", "RP SHA-256", "用户 ID", "证明", "计数",
                                             "支持的协议", "支持的扩展", "PIN · 协议", "算法", "版本", "序列号",
-                                            "credProtect", "credBlob", "用户验证方法")
+                                            "credProtect", "credBlob", "用户验证方法", "piv_public_key", "piv_algorithm", "piv_version", "piv_serial")
                                         val technicalRows = result.value.rows.filter { it.label in technicalLabels }
                                         result.value.rows.filterNot { it.label in technicalLabels }.forEach { row ->
-                                            PlexoFactRow(row.label, row.value)
+                                            ResultFactRow(row)
                                         }
                                         var detailsExpanded by remember(result.value) { mutableStateOf(false) }
                                         if (technicalRows.isNotEmpty() || result.value.sshPublicKey && result.value.export != null) {
@@ -491,7 +495,7 @@ fun ManagerScreen(
                                                 }
                                                 technicalRows.forEach { row ->
                                                     HorizontalDivider()
-                                                    PlexoFactRow(row.label, row.value)
+                                                    ResultFactRow(row)
                                                 }
                                             }
                                         }

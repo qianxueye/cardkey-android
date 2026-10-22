@@ -41,7 +41,7 @@ import org.robolectric.annotation.LooperMode
 
 @OptIn(ExperimentalComposeUiApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w800dp-h800dp-mdpi")
+@Config(sdk = [34], qualifiers = "zh-rCN-w800dp-h800dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ManagerScreenLayoutTest {
