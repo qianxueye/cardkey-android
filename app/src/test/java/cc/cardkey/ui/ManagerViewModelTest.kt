@@ -157,7 +157,7 @@ class ManagerViewModelTest {
         val captured = result.value
         model.selectReader(reader("certificate-next", CardWire.APDU))
         assertNull(model.state.value.result)
-        assertEquals("9D", captured.rows.single { it.label == "槽位" }.value)
+        assertEquals("9D", captured.rows.single { it.label == "piv_slot" }.value)
         assertEquals("piv-9d.cer", captured.fileName)
         assertArrayEquals(fixture.der, captured.export)
     }

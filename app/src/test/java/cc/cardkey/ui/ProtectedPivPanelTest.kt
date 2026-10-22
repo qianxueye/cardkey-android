@@ -21,7 +21,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.*
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w800dp-h1000dp-mdpi")
+@Config(sdk = [34], qualifiers = "zh-rCN-w800dp-h1000dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ProtectedPivPanelTest {

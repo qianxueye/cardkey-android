@@ -29,10 +29,10 @@ class CertificateLifecycleTest {
     @Test fun actualSlotReadAssessesInclusiveDatesAndPreservesCertificateAndKeyFacts() {
         val start = 1767225600000L
         val end = start + 86400000L
-        val cases = listOf(Triple(start, end, start - 1) to "尚未生效",
-            Triple(start, end, start) to "有效期内", Triple(start, end, start + 12345) to "有效期内",
-            Triple(start, end, end) to "有效期内", Triple(start, end, end + 1) to "已过期",
-            Triple(start, start, start) to "有效期内", Triple(end, start, start) to "有效期起止顺序异常")
+        val cases = listOf(Triple(start, end, start - 1) to "not_yet_valid",
+            Triple(start, end, start) to "valid", Triple(start, end, start + 12345) to "valid",
+            Triple(start, end, end) to "valid", Triple(start, end, end + 1) to "expired",
+            Triple(start, start, start) to "valid", Triple(end, start, start) to "invalid_dates")
         for ((dates, expected) in cases) {
             val fixture = CertificateLifecycleFixture(dates.first, dates.second)
             var reads = 0
@@ -40,15 +40,15 @@ class CertificateLifecycleTest {
             val report = result.value
             val rows = report.rows.associate { it.label to it.value }
             assertEquals(1, reads)
-            assertEquals(expected, rows["日期状态"])
-            assertEquals("9D", rows["槽位"])
-            assertEquals("CN=Lifecycle subject", rows["证书"])
-            assertEquals("CN=Lifecycle issuer", rows["签发者"])
-            assertEquals("80FF", rows["证书序列号（十六进制）"])
-            assertEquals(Instant.ofEpochMilli(dates.first).toString(), rows["生效时间（UTC）"])
-            assertEquals(Instant.ofEpochMilli(dates.second).toString(), rows["到期时间（UTC）"])
-            assertEquals(Instant.ofEpochMilli(dates.third).toString(), rows["检查时间（设备时钟，UTC）"])
-            assertEquals(Base64.getEncoder().encodeToString(fixture.card.keyPair.public.encoded), rows["公钥"])
+            assertEquals(expected, rows["piv_date_status"])
+            assertEquals("9D", rows["piv_slot"])
+            assertEquals("CN=Lifecycle subject", rows["piv_certificate"])
+            assertEquals("CN=Lifecycle issuer", rows["piv_issuer"])
+            assertEquals("80FF", rows["piv_certificate_serial"])
+            assertEquals(Instant.ofEpochMilli(dates.first).toString(), rows["piv_not_before"])
+            assertEquals(Instant.ofEpochMilli(dates.second).toString(), rows["piv_not_after"])
+            assertEquals(Instant.ofEpochMilli(dates.third).toString(), rows["piv_assessed_at"])
+            assertEquals(Base64.getEncoder().encodeToString(fixture.card.keyPair.public.encoded), rows["piv_public_key"])
             assertEquals(listOf(R.string.certificate_dateScope), report.messages)
             assertArrayEquals(fixture.der, report.export)
             assertEquals("piv-9d.cer", report.fileName)
@@ -67,11 +67,11 @@ class CertificateLifecycleTest {
         clock = fixture.end + 1
         val second = (fixture.read({ reads++; clock }, slot = 0x9a) as OperationResult.Completed).value
         assertEquals(2, reads)
-        assertEquals("有效期内", first.rows.single { it.label == "日期状态" }.value)
-        assertEquals("2026-01-01T00:00:00.001Z", first.rows.single { it.label == "检查时间（设备时钟，UTC）" }.value)
-        assertEquals("9D", first.rows.single { it.label == "槽位" }.value)
-        assertEquals("已过期", second.rows.single { it.label == "日期状态" }.value)
-        assertEquals("9A", second.rows.single { it.label == "槽位" }.value)
+        assertEquals("valid", first.rows.single { it.label == "piv_date_status" }.value)
+        assertEquals("2026-01-01T00:00:00.001Z", first.rows.single { it.label == "piv_assessed_at" }.value)
+        assertEquals("9D", first.rows.single { it.label == "piv_slot" }.value)
+        assertEquals("expired", second.rows.single { it.label == "piv_date_status" }.value)
+        assertEquals("9A", second.rows.single { it.label == "piv_slot" }.value)
         assertEquals("piv-9d.cer", first.fileName)
         assertArrayEquals(fixture.der, first.export)
     }
@@ -104,15 +104,15 @@ class CertificateLifecycleTest {
                 val report = (result as OperationResult.Completed).value
                 val rows = report.rows.associate { it.label to it.value }
                 if (mode == "absent") {
-                    assertEquals("未存储证书", rows["证书"])
-                    assertFalse(rows.containsKey("日期状态"))
-                    assertFalse(rows.containsKey("签发者"))
+                    assertEquals("absent", rows["piv_certificate"])
+                    assertFalse(rows.containsKey("piv_date_status"))
+                    assertFalse(rows.containsKey("piv_issuer"))
                     assertNull(report.export)
                     assertTrue(report.messages.isEmpty())
                 } else {
-                    assertEquals("有效期内", rows["日期状态"])
-                    assertFalse(rows.containsKey("公钥"))
-                    assertFalse(rows.containsKey("算法"))
+                    assertEquals("valid", rows["piv_date_status"])
+                    assertFalse(rows.containsKey("piv_public_key"))
+                    assertFalse(rows.containsKey("piv_algorithm"))
                     assertArrayEquals(fixture.der, report.export)
                     assertEquals(listOf(R.string.certificate_dateScope), report.messages)
                 }

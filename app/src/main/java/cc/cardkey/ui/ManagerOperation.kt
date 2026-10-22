@@ -73,7 +73,8 @@ class OperationInput(
     }
 }
 
-data class ResultRow(val label: String, val value: String)
+data class ResultRow(val label: String, val value: String, val labelResource: Int? = null,
+                     val valueResource: Int? = null, val valueArguments: List<Any> = emptyList())
 class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob: ByteArray? = null) : AutoCloseable {
     override fun close() { hmac?.fill(0); blobKey?.fill(0); credBlob?.fill(0) }
 }
@@ -145,6 +146,8 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
         val fido = FidoClient(session)
         if (!input.operation.piv && input.operation !in setOf(ManagerOperation.U2F_INFO, ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT)) fido.select()
         fun empty() = ManagerReport(emptyList())
+        fun pivRow(label: String, value: String, labelResource: Int, valueResource: Int? = null, vararg arguments: Any) =
+            ResultRow(label, value, labelResource, valueResource, arguments.toList())
         return when (input.operation) {
             ManagerOperation.FIDO_INVENTORY -> ManagerReport(emptyList(), inventory = fido.inventory(input.pin, approveFinalAttempt))
             ManagerOperation.FIDO_INFO -> info(fido.getInfo())
@@ -228,39 +231,41 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
                 empty()
             }
             ManagerOperation.PIV_INFO -> piv.readInfo().let {
-                ManagerReport(listOf(ResultRow("版本", it.version), ResultRow("序列号", it.serial.toString()),
-                    ResultRow("PIN 剩余重试次数", "剩余 ${it.pin.remaining} 次（共 ${it.pin.total} 次）"),
-                    ResultRow("PUK 剩余重试次数", "剩余 ${it.puk.remaining} 次（共 ${it.puk.total} 次）"),
-                    ResultRow("管理密钥", it.managementAlgorithm.name)))
+                ManagerReport(listOf(pivRow("piv_version", it.version, R.string.protectedPiv_rowVersion), pivRow("piv_serial", it.serial.toString(), R.string.protectedPiv_rowSerial),
+                    pivRow("piv_pin_retries", "${it.pin.remaining}/${it.pin.total}", R.string.protectedPiv_rowPinRetries, R.string.protectedPiv_rowRetries, it.pin.remaining, it.pin.total),
+                    pivRow("piv_puk_retries", "${it.puk.remaining}/${it.puk.total}", R.string.protectedPiv_rowPukRetries, R.string.protectedPiv_rowRetries, it.puk.remaining, it.puk.total),
+                    pivRow("piv_management_key", it.managementAlgorithm.name, R.string.protectedPiv_rowManagementKey)))
             }
             ManagerOperation.PIV_SLOT -> {
                 val assessedAt = now()
                 val slot = piv.readSlot(input.slot)
                 val cert = slot.certificate
-                val rows = mutableListOf(ResultRow("槽位", "%02X".format(slot.slot)),
-                    ResultRow("证书", cert?.subjectX500Principal?.name ?: "未存储证书"))
+                val rows = mutableListOf(pivRow("piv_slot", "%02X".format(slot.slot), R.string.protectedPiv_rowSlot),
+                    pivRow("piv_certificate", cert?.subjectX500Principal?.name ?: "absent", R.string.protectedPiv_rowCertificate, R.string.protectedPiv_rowNoCertificate.takeIf { cert == null }))
                 if (cert != null) {
                     val start = cert.notBefore.time
                     val end = cert.notAfter.time
                     val status = when {
-                        start > end -> "有效期起止顺序异常"
-                        assessedAt < start -> "尚未生效"
-                        assessedAt > end -> "已过期"
-                        else -> "有效期内"
+                        start > end -> "invalid_dates" to R.string.protectedPiv_rowInvalidDates
+                        assessedAt < start -> "not_yet_valid" to R.string.protectedPiv_rowNotYetValid
+                        assessedAt > end -> "expired" to R.string.protectedPiv_rowExpired
+                        else -> "valid" to R.string.protectedPiv_rowValid
                     }
-                    rows += listOf(ResultRow("日期状态", status),
-                        ResultRow("签发者", cert.issuerX500Principal.name),
-                        ResultRow("证书序列号（十六进制）", cert.serialNumber.toString(16).uppercase(Locale.ROOT)),
-                        ResultRow("生效时间（UTC）", Instant.ofEpochMilli(start).toString()),
-                        ResultRow("到期时间（UTC）", Instant.ofEpochMilli(end).toString()),
-                        ResultRow("检查时间（设备时钟，UTC）", Instant.ofEpochMilli(assessedAt).toString()))
+                    rows += listOf(pivRow("piv_date_status", status.first, R.string.protectedPiv_rowDateStatus, status.second),
+                        pivRow("piv_issuer", cert.issuerX500Principal.name, R.string.protectedPiv_rowIssuer),
+                        pivRow("piv_certificate_serial", cert.serialNumber.toString(16).uppercase(Locale.ROOT), R.string.protectedPiv_rowCertificateSerial),
+                        pivRow("piv_not_before", Instant.ofEpochMilli(start).toString(), R.string.protectedPiv_rowNotBefore),
+                        pivRow("piv_not_after", Instant.ofEpochMilli(end).toString(), R.string.protectedPiv_rowNotAfter),
+                        pivRow("piv_assessed_at", Instant.ofEpochMilli(assessedAt).toString(), R.string.protectedPiv_rowAssessedAt))
                 }
-                rows += listOfNotNull(slot.metadata?.algorithm?.let { ResultRow("算法", it.name) },
-                    slot.metadata?.let { ResultRow("PIN 验证策略",
-                        listOf("无需 PIN", "会话内验证一次", "每次操作验证")[it.pinPolicy - 1]) },
-                    slot.metadata?.let { ResultRow("触摸确认策略",
-                        listOf("无需触摸", "每次操作触摸", "允许缓存触摸确认")[it.touchPolicy - 1]) },
-                    slot.metadata?.publicKey?.let { ResultRow("公钥", Base64.getEncoder().encodeToString(it.encoded)) })
+                rows += listOfNotNull(slot.metadata?.algorithm?.let { pivRow("piv_algorithm", it.name, R.string.protectedPiv_rowAlgorithm) },
+                    slot.metadata?.let { pivRow("piv_pin_policy",
+                        listOf("none", "once", "always")[it.pinPolicy - 1], R.string.protectedPiv_rowPinPolicy,
+                        listOf(R.string.protectedPiv_rowNoPin, R.string.protectedPiv_rowPinOnce, R.string.protectedPiv_rowPinAlways)[it.pinPolicy - 1]) },
+                    slot.metadata?.let { pivRow("piv_touch_policy",
+                        listOf("none", "always", "cached")[it.touchPolicy - 1], R.string.protectedPiv_rowTouchPolicy,
+                        listOf(R.string.protectedPiv_rowNoTouch, R.string.protectedPiv_rowTouchAlways, R.string.protectedPiv_rowTouchCached)[it.touchPolicy - 1]) },
+                    slot.metadata?.publicKey?.let { pivRow("piv_public_key", Base64.getEncoder().encodeToString(it.encoded), R.string.protectedPiv_rowPublicKey) })
                 ManagerReport(rows, cert?.encoded, "piv-${input.slot.toString(16)}.cer",
                     messages = if (cert != null) listOf(R.string.certificate_dateScope) else emptyList())
             }
@@ -285,7 +290,7 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
                     it.publicKey?.let { key -> ResultRow("公钥", Base64.getEncoder().encodeToString(key.encoded)) }))
             }
             ManagerOperation.PIV_CSR -> piv.createCsr(input.slot, input.pin, input.text).let {
-                ManagerReport(listOf(ResultRow("CSR", input.text)), pem("CERTIFICATE REQUEST", it), "piv-${input.slot.toString(16)}.csr")
+                ManagerReport(listOf(pivRow("CSR", input.text, R.string.protectedPiv_rowCsr)), pem("CERTIFICATE REQUEST", it), "piv-${input.slot.toString(16)}.csr")
             }
             ManagerOperation.PIV_ENROLL_CSR -> {
                 val selection = input.enrollmentSelection
