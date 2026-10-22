@@ -397,7 +397,7 @@ fun ManagerScreen(
                     if (tab == 1) key(state.selectedReader?.routeKey, state.nfc) {
                         ProtectedPivPanel(protectedPiv, state.busy || state.permissionPending, state.requiresInspection,
                             clearInputs, onProtectedPivDocument, onProtectedPivClear, onProtectedPivRecognize,
-                            onProtectedPivExecute)
+                            onProtectedPivExecute, protectedInspectionRequired = state.requiresProtectedInspection)
                     }
                     if (tab < 2) {
                         if (!twoPanes) TextButton(onClick = {

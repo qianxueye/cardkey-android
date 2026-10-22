@@ -444,3 +444,13 @@ PlexoWorkspace protocol subtitle: absent → FIDO2 for Passkeys, PIV for Certifi
 ## PR 32 account-disambiguation correction
 
 Screen/key: PlexoObjects / credential row. Before: title = displayName, then name, then full credential ID; secondary text = RP ID only. After: keep the display-name title, show the actual nonblank username when it differs from that title, then RP ID. If the username is missing or the resulting account text collides with another row for the same RP, also show the complete credential ID; a full-ID title is not repeated. Exact added label: absent → `凭据 ID · {full idHex}`. This reuses the existing selected-object vocabulary. Names and identifiers are supplied public credential data; no name or binding is inferred. Text wraps without ellipsis so the distinguishing ID bytes remain available. Activation: the next build of this same candidate; selection/verification/deletion commands and provider behavior are unchanged. Reviewed with plain-language-iso-24495 for identification, scope and task clarity.
+# Recovery guidance in the protected PIV panel
+
+Reviewed with plain-language-iso-24495. Screen: Certificates -> Protected PIV panel, inspection warning. Activation: the next application build containing this change; no installation or device acceptance is implied. The signal comes from the original retained recovery identity, not from the latest status result. No identity text is exposed.
+
+| Condition / key | Before | After | Reason |
+| --- | --- | --- | --- |
+| Ordinary unresolved operation / `protectedPiv_ordinaryInspection` | `上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。` | `上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。` | Direct the user to the existing ordinary status controls. A protected status result cannot satisfy an ordinary recovery fence. Preserve the unknown outcome, original card and connection, and prohibition on replay; do not promise recovery from a status read. |
+| Protected unresolved operation / existing inline warning | `上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。` | `上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。` | Wording is unchanged; display only for recovery tied to the original protected identity. Retain the original-card configuration condition. |
+
+The exact control names were checked in `ManagerScreen`, `ManagerOperation`, and the default string resources. Existing generic status resources do not name the ordinary entry paths and would not correct the misleading next step. This change adds no English locale or unrelated localization work. The ordinary inspection fence and the protected same-identity recovery condition are unchanged.

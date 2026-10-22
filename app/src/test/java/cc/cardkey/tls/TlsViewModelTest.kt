@@ -189,6 +189,17 @@ class TlsViewModelTest {
             assertTrue(model.state.value.busy)
             assertTrue(f.card.closed)
             CardOperationGate.tryAcquire()!!.close()
+            val cancellingThread = Thread.currentThread()
+            val attempt = ReflectionHelpers.getField<java.util.concurrent.atomic.AtomicReference<PivTlsAttempt>>(model, "tlsAttempt").get()
+            val connection = ReflectionHelpers.getField<PivTlsConnection>(attempt, "connection")
+            val dns = ReflectionHelpers.getField<PivTlsDns>(connection, "dns")
+            // Let the real TLS completion publish before the initiating cancellation resumes.
+            ReflectionHelpers.setField(connection, "dns", object : PivTlsDns by dns {
+                override fun close() {
+                    dns.close()
+                    if (Thread.currentThread() === cancellingThread) await { !model.state.value.busy }
+                }
+            })
             model.cancel()
             await { !model.state.value.busy }
             assertTrue(TlsDnsShadow.cancellation!!.isCanceled)

@@ -38,6 +38,7 @@ data class ManagerState(
     val fidoFinalAttempt: Boolean = false,
     val documentMessage: Int? = null,
     val requiresInspection: Boolean = false,
+    val requiresProtectedInspection: Boolean = false,
     val operation: ManagerOperation? = null,
     val permissionPending: Boolean = false,
     val resultWire: CardWire = CardWire.APDU,
@@ -958,13 +959,14 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             result is OperationResult.Completed && recoveryWire != CardWire.CTAP &&
                 previous.operation?.let(ConfirmationPolicy::canInspect) == true &&
                 (if (recoveryProtectedIdentity != null) result.value.protectedPivIdentity == recoveryProtectedIdentity
-                 else recoveryRoute == operationRoute) -> false
+                 else result.value.protectedPivIdentity == null && recoveryRoute == operationRoute) -> false
             else -> previous.requiresInspection
         }
         if (!requiresInspection) { recoveryRoute = null; recoveryWire = null; recoveryProtectedIdentity = null }
         retireResult(result)
         mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null, fidoFinalAttempt = false, userPresenceRequired = false,
-            result = result, requiresInspection = requiresInspection)
+            result = result, requiresInspection = requiresInspection,
+            requiresProtectedInspection = recoveryProtectedIdentity != null)
     }
 
     fun approveLastRetry(approved: Boolean) { retryApproval?.complete(approved) }
@@ -1013,7 +1015,6 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             (mutable.value.result as? OperationResult.Completed)?.value?.let {
                 it.protectedPivSlot != null || mutable.value.operation?.isOwnedExport == true && (it.signatureFormat != null || it.sshPublicKey)
             } == true
-        tlsAttempt.get()?.close()
         networkCall.getAndSet(null)?.let { attempt ->
             if (!attempt.cancel()) enrollment.unsubmitted(attempt.owner)
             mutable.update { it.copy(busy = false) }
@@ -1025,6 +1026,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (!preserveInventoryDocument) inventory.retire()
         if (!preserveSignatureResult) retireResult()
         mutable.value = mutable.value.copy(result = mutable.value.result.takeIf { preserveSignatureResult }, userPresenceRequired = false)
+        // Closing DNS can let the TLS owner publish its result before close returns.
+        tlsAttempt.get()?.close()
         retryApproval?.complete(false)
         presenceWatch?.cancel()
         pendingNfcOwner = null

@@ -27,6 +27,7 @@ fun ProtectedPivPanel(
     onClear: () -> Unit,
     onRecognize: (ProtectedPivAction, Int, String) -> Unit,
     onExecute: (CharArray) -> Unit,
+    protectedInspectionRequired: Boolean = false,
 ) {
     var action by remember { mutableStateOf(ProtectedPivAction.STATUS) }
     var slot by remember { mutableIntStateOf(0x9a) }
@@ -70,7 +71,9 @@ fun ProtectedPivPanel(
                 Text("配置已就绪；尚不能据此确认当前卡片身份。", modifier = Modifier.testTag("protected-piv-ready"))
                 state.guid?.let { Text("配置中的卡片 GUID：$it", style = MaterialTheme.typography.bodySmall) }
             }
-            if (inspectionRequired) Text("上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。", color = MaterialTheme.colorScheme.error)
+            if (inspectionRequired) Text(if (protectedInspectionRequired)
+                "上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。"
+                else stringResource(R.string.protectedPiv_ordinaryInspection), color = MaterialTheme.colorScheme.error)
             Choice("受保护操作", selectedAction, if (inspectionRequired) listOf(ProtectedPivAction.STATUS) else ProtectedPivAction.entries, ::protectedPivActionTitle, selecting) { action = it; pin = ""; confirm = false }
             Choice("受保护槽位", slot, PivClient.slots, { "%02X".format(it) }, selecting) { slot = it; pin = ""; confirm = false }
             if (selectedAction == ProtectedPivAction.CSR) OutlinedTextField(subject, { subject = it },

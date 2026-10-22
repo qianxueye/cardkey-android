@@ -330,6 +330,23 @@ class ManagerScreenLayoutTest {
         }
     }
 
+    @Test fun protectedPanelGuidanceTracksOriginalRecoveryModeThroughManagerScreen() {
+        render(800, 800) { activity, update ->
+            compose.onNode(hasText("证书") and hasClickAction()).performClick()
+            val ordinary = activity.getString(R.string.protectedPiv_ordinaryInspection)
+            val protectedWarning = "上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。"
+            update(ManagerState(requiresInspection = true))
+            compose.onNodeWithText(ordinary).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(protectedWarning).assertDoesNotExist()
+            update(ManagerState(requiresInspection = true, requiresProtectedInspection = true))
+            compose.onNodeWithText(protectedWarning).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(ordinary).assertDoesNotExist()
+            update(ManagerState())
+            compose.onNodeWithText(protectedWarning).assertDoesNotExist()
+            compose.onNodeWithText(ordinary).assertDoesNotExist()
+        }
+    }
+
     @Test fun certificateReadShowsDateEvidenceAndExportsOriginalSlotAfterFormSelectionChanges() {
         val fixture = CertificateLifecycleFixture()
         val result = fixture.read({ fixture.start + 1 }) as OperationResult.Completed
