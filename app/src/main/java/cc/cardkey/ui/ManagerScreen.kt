@@ -457,9 +457,13 @@ fun ManagerScreen(
                                         }
                                         if (result.value.export != null) OutlinedButton(onClick = {
                                             if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
-                                        }, enabled = (!result.value.sshPublicKey && result.value.signatureFormat == null) || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
+                                        }, enabled = (!result.value.sshPublicKey && result.value.signatureFormat == null && result.value.protectedPivSlot == null) || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
                                         if (signingFiles.exportOwner === result.value) when (signingFiles.exportStatus) {
-                                            SignatureExportStatus.SAVED -> Text(stringResource(if (result.value.sshPublicKey) R.string.ssh_publicKeyExported else R.string.signing_exported))
+                                            SignatureExportStatus.SAVED -> Text(stringResource(when {
+                                                result.value.sshPublicKey -> R.string.ssh_publicKeyExported
+                                                result.value.signatureFormat != null -> R.string.signing_exported
+                                                else -> R.string.document_saved
+                                            }))
                                             SignatureExportStatus.CANCELLED -> Text(stringResource(R.string.signing_exportCancelled))
                                             SignatureExportStatus.UNKNOWN -> Text(stringResource(R.string.signing_exportUnknown))
                                             SignatureExportStatus.WRITING -> LinearProgressIndicator(Modifier.fillMaxWidth())

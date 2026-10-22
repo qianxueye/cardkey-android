@@ -85,6 +85,11 @@ class ProtectedPivWorkflowTest {
             val result = run(flow, flow.execute("123456".toCharArray()), second)
             assertTrue("$action: $result", result is OperationResult.Completed)
             assertFalse((result as OperationResult.Completed).value.protectedPivRecognition)
+            if (action in listOf(ProtectedPivAction.RAW_SIGN, ProtectedPivAction.CSR)) {
+                assertEquals(0x9a, result.value.protectedPivSlot)
+                assertEquals(if (action == ProtectedPivAction.RAW_SIGN) cc.cardkey.signing.SignatureFormat.RAW else null,
+                    result.value.signatureFormat)
+            }
             assertEquals(1, second.pinTries)
             if (action == ProtectedPivAction.RAW_SIGN) {
                 val report = (result as OperationResult.Completed).value
@@ -92,6 +97,28 @@ class ProtectedPivWorkflowTest {
                     initVerify(slotKey.public); update("original bytes".toByteArray()); verify(report.export)
                 })
             }
+        }
+    }
+
+    @Test fun protectedPublicExportsKeepTheirFormatAndOriginalSlot() {
+        val slotKey = key()
+        val name = X500Name("CN=Synthetic certificate")
+        val certificate = JcaX509v3CertificateBuilder(name, BigInteger.TEN, Date(0), Date(4102444800000), name, slotKey.public)
+            .build(JcaContentSignerBuilder("SHA256withECDSA").build(slotKey.private)).encoded
+        for (action in listOf(ProtectedPivAction.SSH, ProtectedPivAction.SLOT)) {
+            val flow = workflow()
+            val card = peer(slotKey).apply {
+                if (action == ProtectedPivAction.SLOT) certificateReply = PivTlv.encode(0x53,
+                    PivTlv.encode(0x70, certificate) + PivTlv.encode(0x71, byteArrayOf(0)))
+            }
+            val result = run(flow, flow.recognize(action, 0x9c, ""), card)
+            assertTrue("$action: $result", result is OperationResult.Completed)
+            val report = (result as OperationResult.Completed).value
+            assertEquals(0x9c, report.protectedPivSlot)
+            assertEquals(action == ProtectedPivAction.SSH, report.sshPublicKey)
+            assertNull(report.signatureFormat)
+            assertTrue(report.export!!.isNotEmpty())
+            assertEquals(0, card.pinTries)
         }
     }
 

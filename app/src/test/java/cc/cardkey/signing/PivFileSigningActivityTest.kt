@@ -245,6 +245,65 @@ class PivFileSigningActivityTest {
     }
 
     @Test fun saveRecreationWritesCapturedSignatureOnceAndCancellationKeepsVerifiedResult() = saveRecreation(false)
+    @Test fun protectedExportsSurviveRecreationWithOriginalBytesSlotAndWriteOutcome() {
+        for (operation in listOf(ManagerOperation.PIV_SIGN, ManagerOperation.PIV_SSH_EXPORT, ManagerOperation.PIV_CSR, ManagerOperation.PIV_SLOT)) {
+            val controller = Robolectric.buildActivity(MainActivity::class.java).setup().visible()
+            try {
+                val original = controller.get()
+                val model = model(original)
+                val card = EnrollmentCard().apply { certificate = documentCertificate(this).encoded }
+                val input = OperationInput(operation, slot = 0x9c, pin = "123456".toCharArray(),
+                    bytes = byteArrayOf(1, 2, 3), text = "CN=Synthetic export")
+                val result = try { CardSession(card).run { ManagerOperations().execute(it, input) } } finally { input.close() }
+                assertTrue("$operation: $result", result is OperationResult.Completed)
+                val report = (result as OperationResult.Completed).value.copy(protectedPivIdentity = "synthetic-card:issuer",
+                    protectedPivSlot = 0x9c)
+                val expected = report.export!!.copyOf()
+                state(model).value = model.state.value.copy(operation = operation, result = OperationResult.Completed(report, Effect.NONE))
+                ReflectionHelpers.setField(model, "signingAction", null)
+                compose.waitForIdle()
+                compose.onNodeWithText("导出", substring = false).performScrollTo().performClick()
+                val launch = shadowOf(original).nextStartedActivityForResult
+                assertEquals(Intent.ACTION_CREATE_DOCUMENT, launch.intent.action)
+                assertEquals(report.fileName, launch.intent.getStringExtra(Intent.EXTRA_TITLE))
+                assertEquals(if (operation == ManagerOperation.PIV_SSH_EXPORT) "text/plain" else "application/octet-stream", launch.intent.type)
+                val owner = model.signatureSaveRequestId
+                controller.recreate()
+                val recreated = controller.get()
+                assertSame(model, ViewModelProvider(recreated)[ManagerViewModel::class.java])
+                assertEquals(owner, model.signatureSaveRequestId)
+                assertEquals(0x9c, model.signingFiles.state.value.slot)
+                assertEquals(operation, model.signingFiles.state.value.restoreOperation)
+                assertFalse(model.protectedPiv.value.profileReady)
+                val uri = Uri.parse("content://protected-export/${operation.name}")
+                var writes = 0
+                val output = object : ByteArrayOutputStream() {
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) { writes++; super.write(bytes, offset, length) }
+                }
+                shadowOf(recreated.contentResolver).registerOutputStream(uri, output)
+                assertTrue(recreated.activityResultRegistry.dispatchResult(launch.requestCode, Activity.RESULT_OK, Intent().setData(uri)))
+                waitFor { model.signingFiles.state.value.exportStatus == SignatureExportStatus.SAVED }
+                assertArrayEquals(expected, output.toByteArray())
+                recreated.activityResultRegistry.dispatchResult(launch.requestCode, Activity.RESULT_OK, Intent().setData(uri))
+                compose.waitForIdle()
+                assertEquals(1, writes)
+                assertSame(report, (model.state.value.result as OperationResult.Completed).value)
+                compose.onNodeWithText("导出", substring = false).performScrollTo().performClick()
+                val cancelled = shadowOf(recreated).nextStartedActivityForResult
+                recreated.activityResultRegistry.dispatchResult(cancelled.requestCode, Activity.RESULT_CANCELED, null)
+                compose.waitForIdle()
+                assertEquals(SignatureExportStatus.CANCELLED, model.signingFiles.state.value.exportStatus)
+                compose.onNodeWithText("导出", substring = false).performScrollTo().performClick()
+                val uncertain = shadowOf(recreated).nextStartedActivityForResult
+                shadowOf(recreated.contentResolver).registerOutputStream(uri, object : ByteArrayOutputStream() {
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) { throw java.io.IOException("Synthetic output failure") }
+                })
+                recreated.activityResultRegistry.dispatchResult(uncertain.requestCode, Activity.RESULT_OK, Intent().setData(uri))
+                waitFor { model.signingFiles.state.value.exportStatus == SignatureExportStatus.UNKNOWN }
+                assertSame(report, (model.state.value.result as OperationResult.Completed).value)
+            } finally { controller.pause().stop().destroy() }
+        }
+    }
     @Test fun saveFromReaderPageKeepsCapturedSignatureAcrossRecreation() = saveRecreation(true)
     @Test fun cmsSaveRecreationKeepsMimeFilenameCapturedBytesAndCancellationReceipt() = saveRecreation(false, SignatureFormat.CMS)
     private fun saveRecreation(readerPage: Boolean, format: SignatureFormat = SignatureFormat.RAW) {

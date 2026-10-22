@@ -226,7 +226,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                 ManagerScreen(state, clearInputs, ::selectReader, model::refreshReaders, model::submit, model::cancel,
                     { importer.launch(arrayOf("*/*")) }, imported,
                     { report ->
-                        if (report.signatureFormat != null || report.sshPublicKey) {
+                        if (report.signatureFormat != null || report.sshPublicKey || report.protectedPivSlot != null) {
                             if (model.requestSignatureSave(report)) signatureExporter(requireNotNull(model.signatureSaveRequestId)).launch(requireNotNull(report.fileName))
                         } else if (report.inventoryGeneration != null) {
                             model.requestInventoryExport(report)?.let { inventoryExporter(it).launch("credential-blob.bin") }

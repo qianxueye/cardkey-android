@@ -192,13 +192,12 @@ internal class ProtectedPivScan(
                 piv.verifyPin(input.pin)
                 ManagerReport(emptyList(), protectedPivIdentity = identityLabel)
             } else run(piv).let { report ->
-                // These exports use the existing generic document exporter, without contact-file ownership.
                 val statusRows = if (action == ProtectedPivAction.STATUS) listOf(ResultRow("PIN 状态", when {
                     pin.contactRequired -> "需要接触式连接恢复"
                     pin.verified -> "当前会话已验证"
                     else -> "尚未验证"
                 })) + listOfNotNull(pin.retriesRemaining?.let { ResultRow("本次认证读取的 PIN 剩余重试次数", "$it 次") }) else emptyList()
-                report.copy(rows = report.rows + statusRows, signatureFormat = null, sshPublicKey = false,
+                report.copy(rows = report.rows + statusRows, protectedPivSlot = input.slot.takeIf { report.export != null },
                     protectedPivIdentity = identityLabel)
             }
         }

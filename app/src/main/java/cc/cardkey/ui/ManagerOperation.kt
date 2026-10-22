@@ -81,7 +81,7 @@ data class ManagerReport(val rows: List<ResultRow>, val export: ByteArray? = nul
     val secrets: SecretOutputs? = null, val protectedExport: Boolean = false, val messages: List<Int> = emptyList(), val enrollmentCsr: EnrollmentCsr? = null,
     val relyingParties: List<RelyingParty>? = null, val credentials: List<Credential>? = null,
     val inventoryGeneration: Long? = null, val protectedPivIdentity: String? = null, val signatureFormat: SignatureFormat? = null, val sshPublicKey: Boolean = false,
-    val inventory: CredentialInventory? = null, val protectedPivRecognition: Boolean = false) {
+    val inventory: CredentialInventory? = null, val protectedPivRecognition: Boolean = false, val protectedPivSlot: Int? = null) {
     override fun toString() = "ManagerReport(rows=$rows, hasExport=${export != null}, fileName=$fileName)"
 }
 

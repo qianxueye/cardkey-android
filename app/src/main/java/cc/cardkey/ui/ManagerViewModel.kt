@@ -547,9 +547,13 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun requestSignatureSave(report: ManagerReport): Boolean {
         val result = mutable.value.result as? OperationResult.Completed ?: return false
-        if (mutable.value.busy || mutable.value.operation?.isOwnedExport != true || result.value !== report ||
-            (report.sshPublicKey && signingAction != ManagerOperation.PIV_SSH_EXPORT)) return false
-        return signingFiles.requestSave(report, signingAction)
+        val operation = mutable.value.operation
+        val protectedDocument = report.protectedPivSlot != null && report.protectedPivIdentity != null
+        if (mutable.value.busy || (!protectedDocument && operation?.isOwnedExport != true) || result.value !== report ||
+            (!protectedDocument && report.sshPublicKey && signingAction != ManagerOperation.PIV_SSH_EXPORT)) return false
+        return signingFiles.requestSave(report, if (protectedDocument) operation else signingAction).also {
+            if (it && protectedDocument) signingAction = operation
+        }
     }
 
     fun receiveSignatureSave(requestId: String, uri: Uri?) {
@@ -1005,8 +1009,10 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         signingInput.getAndSet(null)?.close()
         inventoryInput.getAndSet(null)?.close()
         if (!preserveSigningDocuments) signingFiles.retire()
-        val preserveSignatureResult = preserveSigningDocuments && mutable.value.operation?.isOwnedExport == true &&
-            (mutable.value.result as? OperationResult.Completed)?.value?.let { it.signatureFormat != null || it.sshPublicKey } == true
+        val preserveSignatureResult = preserveSigningDocuments &&
+            (mutable.value.result as? OperationResult.Completed)?.value?.let {
+                it.protectedPivSlot != null || mutable.value.operation?.isOwnedExport == true && (it.signatureFormat != null || it.sshPublicKey)
+            } == true
         tlsAttempt.get()?.close()
         networkCall.getAndSet(null)?.let { attempt ->
             if (!attempt.cancel()) enrollment.unsubmitted(attempt.owner)
