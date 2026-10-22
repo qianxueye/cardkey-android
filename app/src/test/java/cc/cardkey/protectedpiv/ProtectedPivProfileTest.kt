@@ -108,6 +108,96 @@ class ProtectedPivProfileTest {
         }
     }
 
+    @Test fun escapedFieldsAndPairingReorderedWithInitialBomRemainCompatible() {
+        val issuer = ProtectedPivProfileParser.issuer(certificate())
+        val escaped = """{ "p\u0061iring" : "\u0031\u0032\u0033\u0034\u0035\u0036\u0037\u0038", "card_public" : "$cardPoint", "issuer_id" : "${ski.copyOf(8).hex()}", "\u0067uid" : "${guid.uppercase()}" }"""
+        for (prefix in listOf("", "\uFEFF")) {
+            val bytes = (prefix + "\t\r\n " + escaped + "\n").toByteArray()
+            val original = bytes.copyOf()
+            ProtectedPivProfileParser.profile(issuer, bytes).use { profile ->
+                val pairing = profile.pairingCopy()
+                try { assertArrayEquals("12345678".toCharArray(), pairing) } finally { pairing.fill('\u0000') }
+                assertEquals(guid, profile.guid)
+            }
+            assertArrayEquals(original, bytes)
+        }
+    }
+
+    @Test fun strictLexicalFailuresStayRedactedIncludingEscapedDuplicatesAndUtf8Suffixes() {
+        val issuer = ProtectedPivProfileParser.issuer(certificate())
+        val valid = json()
+        val invalid = listOf(
+            " \uFEFF$valid", valid + "\u000c", valid + "\u00a0",
+            valid.dropLast(1) + ",\"p\\u0061iring\":\"87654321\"}",
+            valid.replace("\"guid\"", "\"\\u0031\\u0032\\u0033\\u0034\\u0035\\u0036\\u0037\\u0038\""),
+            json(code = "\\x31\\u0032345678"), json(code = "\\u003"), json(code = "\\u00zz2345678"),
+            json(code = "1234\n5678"), json(code = "1234\\n5678"), json(code = "\\ud8002345678"),
+            valid.replace("\"pairing\": \"12345678\"", "\"pairing\": [\"12345678\"]"),
+            valid.replace("\"pairing\": \"12345678\"", "\"pairing\": true"),
+            valid.replace(", \"issuer_id\"", " \"issuer_id\""), valid.replace(": ", " = "),
+            valid.dropLast(1), valid.dropLast(1) + ",}", valid + valid,
+            json(code = "1".repeat(3000))
+        ).map { it.toByteArray() } + listOf(
+            valid.toByteArray() + byteArrayOf(0xc3.toByte(), 0x28),
+            valid.toByteArray() + byteArrayOf(0xed.toByte(), 0xa0.toByte(), 0x80.toByte()),
+            valid.toByteArray() + byteArrayOf(0xf4.toByte(), 0x90.toByte(), 0x80.toByte(), 0x80.toByte())
+        )
+        invalid.forEach { bytes ->
+            val original = bytes.copyOf()
+            val failure = assertThrows(IllegalArgumentException::class.java) {
+                ProtectedPivProfileParser.profile(issuer, bytes)
+            }
+            assertEquals("Invalid protected PIV enrollment profile", failure.message)
+            assertNull(failure.cause)
+            assertArrayEquals(original, bytes)
+        }
+    }
+
+    @Test fun profileInputBoundIncludesWhitespaceAndRetainsCallerOwnership() {
+        val issuer = ProtectedPivProfileParser.issuer(certificate())
+        val bytes = json().padEnd(4096, ' ').toByteArray()
+        val original = bytes.copyOf()
+        ProtectedPivProfileParser.profile(issuer, bytes).close()
+        assertArrayEquals(original, bytes)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProtectedPivProfileParser.profile(issuer, bytes + byteArrayOf(32))
+        }
+    }
+
+    @Test fun ownedJsonBuffersAreClearedAfterSuccessAndPartialDecodeOrStringFailure() {
+        val type = Class.forName("cc.cardkey.protectedpiv.ProtectedPivProfileParser\$ProfileJsonReader")
+        val constructor = type.getDeclaredConstructor(Int::class.javaPrimitiveType).apply { isAccessible = true }
+        val decode = type.getDeclaredMethod("decode", ByteArray::class.java).apply { isAccessible = true }
+        val expect = type.getDeclaredMethod("expect", Char::class.javaPrimitiveType).apply { isAccessible = true }
+        val string = type.getDeclaredMethod("string").apply { isAccessible = true }
+        val textField = type.getDeclaredField("text").apply { isAccessible = true }
+        val valueField = type.getDeclaredField("value").apply { isAccessible = true }
+        val valid = """{"pairing":"12345678"}""".toByteArray()
+        val malformedUtf8 = valid + byteArrayOf(0xc3.toByte(), 0x28)
+        val invalidEscape = """{"pairing":"1234\q"}""".toByteArray()
+        val oversized = ("{\"pairing\":\"" + "1".repeat(195) + "\"}").toByteArray()
+        for (bytes in listOf(valid, malformedUtf8, invalidEscape, oversized)) {
+            val reader = constructor.newInstance(bytes.size) as java.io.Closeable
+            val text = textField.get(reader) as CharArray
+            val value = valueField.get(reader) as CharArray
+            try {
+                val parse = {
+                    decode.invoke(reader, bytes)
+                    expect.invoke(reader, '{')
+                    string.invoke(reader)
+                    expect.invoke(reader, ':')
+                    string.invoke(reader)
+                }
+                if (bytes === valid) parse()
+                else assertThrows(java.lang.reflect.InvocationTargetException::class.java) { parse() }
+                assertTrue(text.any { it != '\u0000' })
+                if (bytes !== malformedUtf8) assertTrue(value.any { it != '\u0000' })
+            } finally { reader.close() }
+            assertTrue(text.all { it == '\u0000' })
+            assertTrue(value.all { it == '\u0000' })
+        }
+    }
+
     @Test fun closingRetiresOwnedSecretAndCannotRaceCopyIntoPartialSecret() {
         val issuer = ProtectedPivProfileParser.issuer(certificate())
         val profile = ProtectedPivProfileParser.profile(issuer, json().toByteArray())
