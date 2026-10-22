@@ -17,6 +17,15 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implements
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.RealObject
+import org.robolectric.shadow.api.Shadow
 
 class ProtectedPivProfileTest {
     private val ski = ByteArray(20) { (it + 1).toByte() }
@@ -164,6 +173,74 @@ class ProtectedPivProfileTest {
         }
     }
 
+    @Test fun strictJsonAgreesWithPreviousSchemaForEmptyObjectAndStandardEscapes() {
+        val issuer = ProtectedPivProfileParser.issuer(certificate())
+        // Synthetic inputs retain the replaced Gson schema as a compatibility oracle.
+        fun legacyAccepts(bytes: ByteArray): Boolean = runCatching {
+            require(bytes.isNotEmpty() && bytes.size <= 4096)
+            val text = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                .decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+            val fields = mutableMapOf<String, String>()
+            val required = setOf("guid", "issuer_id", "card_public", "pairing")
+            com.google.gson.stream.JsonReader(java.io.StringReader(text)).use { reader ->
+                reader.strictness = com.google.gson.Strictness.STRICT
+                reader.beginObject()
+                while (reader.hasNext()) {
+                    val name = reader.nextName()
+                    require(name in required && name !in fields)
+                    require(reader.peek() == com.google.gson.stream.JsonToken.STRING)
+                    fields[name] = reader.nextString()
+                }
+                reader.endObject()
+                require(reader.peek() == com.google.gson.stream.JsonToken.END_DOCUMENT && fields.keys == required)
+            }
+            fun hex(name: String, size: Int): ByteArray {
+                val value = fields.getValue(name)
+                require(value.length == size * 2 && value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' })
+                return ByteArray(size) { value.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+            }
+            val pairing = fields.getValue("pairing")
+            require(pairing.length == 8 && pairing.all { it in '0'..'9' })
+            val issuerId = hex("issuer_id", 8)
+            require(MessageDigest.isEqual(issuerId, issuer.issuerId))
+            cc.cardkey.protocol.piv.EnrolledPivCard(issuer.spki, issuerId, hex("guid", 16), hex("card_public", 97))
+        }.isSuccess
+        val valid = json()
+        val cases = listOf(
+            valid to true, valid.replace("pairing", "p\\u0061iring") to true,
+            json(code = "\\u00312345678") to true,
+            "{}" to false, json(code = "\\/2345678") to false, json(code = "\\b2345678") to false,
+            valid.dropLast(1) + ",\"p\\u0061iring\":\"87654321\"}" to false,
+            valid + " true" to false
+        )
+        cases.forEach { (text, expected) ->
+            val bytes = text.toByteArray()
+            assertEquals(expected, legacyAccepts(bytes))
+            val actual = runCatching { ProtectedPivProfileParser.profile(issuer, bytes).close() }.isSuccess
+            assertEquals(expected, actual)
+        }
+    }
+
+    @Test fun fourKiBByteBoundCountsBomAndRejectsMultibyteBoundaryTruncation() {
+        val issuer = ProtectedPivProfileParser.issuer(certificate())
+        val document = ("\uFEFF" + json()).toByteArray()
+        val bounded = document + ByteArray(4096 - document.size) { 32 }
+        assertEquals(4096, bounded.size)
+        assertEquals(4094, bounded.toString(Charsets.UTF_8).length)
+        ProtectedPivProfileParser.profile(issuer, bounded).close()
+        val complete = json().toByteArray().let { it + ByteArray(4094 - it.size) { 32 } } + "é".toByteArray()
+        assertEquals(4096, complete.size)
+        for (bytes in listOf(bounded + byteArrayOf(32), complete, complete.copyOf(4095), complete + byteArrayOf(32))) {
+            val failure = assertThrows(IllegalArgumentException::class.java) {
+                ProtectedPivProfileParser.profile(issuer, bytes)
+            }
+            assertEquals("Invalid protected PIV enrollment profile", failure.message)
+            assertNull(failure.cause)
+        }
+    }
+
     @Test fun ownedJsonBuffersAreClearedAfterSuccessAndPartialDecodeOrStringFailure() {
         val type = Class.forName("cc.cardkey.protectedpiv.ProtectedPivProfileParser\$ProfileJsonReader")
         val constructor = type.getDeclaredConstructor(Int::class.javaPrimitiveType).apply { isAccessible = true }
@@ -224,5 +301,80 @@ class ProtectedPivProfileTest {
         assertThrows(IllegalStateException::class.java) { profile.pairingCopy() }
         val secret = ProtectedPivProfile::class.java.getDeclaredField("pairing").apply { isAccessible = true }.get(profile) as CharArray
         assertTrue(secret.all { it == '\u0000' })
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], shadows = [ProtectedPivPairingCleanupTest.ReaderShadow::class],
+    instrumentedPackages = ["cc.cardkey.protectedpiv"])
+class ProtectedPivPairingCleanupTest {
+    private val key = KeyPairGenerator.getInstance("EC").apply {
+        initialize(ECGenParameterSpec("secp384r1"))
+    }.generateKeyPair()
+    private val issuer = ProtectedPivIssuer("Synthetic issuer", "synthetic", key.public.encoded, ByteArray(8) { 1 })
+
+    private fun document(mismatch: Boolean): ByteArray {
+        val point = Cs7.point(key.public as ECPublicKey).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        val id = if (mismatch) "00".repeat(8) else "01".repeat(8)
+        return ("{\"pairing\":\"12345678\",\"guid\":\"00112233445566778899aabbccddeeff\"," +
+            "\"card_public\":\"" + point + "\",\"issuer_id\":\"" + id + "\"}").toByteArray()
+    }
+
+    @Before fun resetCapture() {
+        ReaderShadow.hits = 0
+        ReaderShadow.returned = null
+    }
+
+    @After fun clearCapture() {
+        ReaderShadow.returned?.fill('\u0000')
+        ReaderShadow.returned = null
+        ReaderShadow.hits = 0
+    }
+
+    @Test fun pairingParsedFirstIsClearedWhenLaterIssuerValidationFails() {
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            ProtectedPivProfileParser.profile(issuer, document(mismatch = true))
+        }
+        assertEquals("Invalid protected PIV enrollment profile", failure.message)
+        assertNull(failure.cause)
+        assertEquals(1, ReaderShadow.hits)
+        val returned = requireNotNull(ReaderShadow.returned)
+        assertTrue(returned.all { it == '\u0000' })
+    }
+
+    @Test fun returnedPairingIsClearedWhileSuccessfulProfileOwnsItsDistinctCopy() {
+        val profile = ProtectedPivProfileParser.profile(issuer, document(mismatch = false))
+        try {
+            assertEquals(1, ReaderShadow.hits)
+            val returned = requireNotNull(ReaderShadow.returned)
+            assertTrue(returned.all { it == '\u0000' })
+            val owned = ProtectedPivProfile::class.java.getDeclaredField("pairing").apply { isAccessible = true }.get(profile) as CharArray
+            assertNotSame(returned, owned)
+            assertArrayEquals("12345678".toCharArray(), owned)
+            val copy = profile.pairingCopy()
+            try { assertArrayEquals("12345678".toCharArray(), copy) } finally { copy.fill('\u0000') }
+            profile.close()
+            assertTrue(owned.all { it == '\u0000' })
+        } finally { profile.close() }
+    }
+
+    @Implements(className = "cc.cardkey.protectedpiv.ProtectedPivProfileParser\$ProfileJsonReader", isInAndroidSdk = false)
+    class ReaderShadow {
+        @RealObject lateinit var reader: Any
+
+        @Implementation fun pairing(): CharArray {
+            val actual = Shadow.directlyOn<CharArray>(reader, reader.javaClass.name, "pairing")
+            assertArrayEquals("12345678".toCharArray(), actual)
+            assertTrue(actual.all { it != '\u0000' })
+            hits++
+            assertEquals(1, hits)
+            returned = actual
+            return actual
+        }
+
+        companion object {
+            var hits = 0
+            var returned: CharArray? = null
+        }
     }
 }

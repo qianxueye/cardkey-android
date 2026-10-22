@@ -57,7 +57,9 @@ fun ProtectedPivPanel(
                 style = MaterialTheme.typography.bodyMedium)
             OutlinedButton(onClick = { pin = ""; confirm = false; onDocument(ProtectedPivDocument.ISSUER) },
                 enabled = enabled, modifier = Modifier.testTag("protected-piv-issuer")) { Text(stringResource(R.string.protectedPiv_chooseIssuer)) }
-            state.issuerSubject?.let { Text(stringResource(R.string.protectedPiv_issuer, protectedPivDisplayText(it))) }
+            state.issuerSubject?.let(::protectedPivDisplayText)?.takeIf { it.isNotBlank() }?.let {
+                Text(stringResource(R.string.protectedPiv_issuer, it))
+            }
             state.issuerFingerprint?.let { Text(stringResource(R.string.protectedPiv_fingerprint, it), style = MaterialTheme.typography.bodySmall) }
             Text(stringResource(R.string.protectedPiv_issuerScope),
                 style = MaterialTheme.typography.bodySmall)

@@ -81,4 +81,13 @@ Example: a provider name containing `contract` + U+202E + U+2066 + U+2069 + U+20
 
 The protected panel, its action titles, authenticated PIN status/retry rows and shared PIV INFO/SLOT/CSR result rows now use resources at presentation. Chinese defaults and all risk wording remain exact. English preserves trust limits, retry/erasure effects, uncertain outcomes and the contact-only boundary. The complete exact Chinese-before/default-after and English-after table is in `UI-COPY-REVIEW.md`, under “Protected PIV English localization”. English file size uses `B`; the authenticated-attempt row uses a bare count because its label states the unit.
 
-Result rows retain stable English semantic keys for technical grouping; resources are resolved only by the UI. Related existing success/failure, export and verification resources also gain English, which applies to their shared callers. Unrelated application navigation and diagnostic controls remain in their existing language. This is source activation only, without installation, card operations or deployment. No change to issuer omission or ZWJ/ZWNJ policy is included in this localization package.
+Result rows retain stable English semantic keys for technical grouping; resources are resolved only by the UI. Related existing success/failure, export and verification resources also gain English, which applies to their shared callers. Unrelated application navigation and diagnostic controls remain in their existing language. This is source activation only, without installation, card operations or deployment. The separately reviewed empty-issuer and ZWJ/ZWNJ display rules below are preserved.
+## Empty issuer display and joiners
+
+Reviewed with plain-language-iso-24495 before application. These display rules apply when this source is built and installed; they do not establish installation or physical-card acceptance.
+
+| Screen / key | Before | Exact after | Reason / activation scope |
+| --- | --- | --- | --- |
+| Protected PIV / issuer subject filtered to empty or blank | A non-null subject could leave the label alone: “签发者：”. | Omit the issuer-subject row when its cleaned display value is blank. Nonblank subjects keep “签发者：$it”. | Match the existing filename display rule without inventing a name. The stored issuer subject, certificate fingerprint and operation eligibility are unchanged. |
+
+The existing format-character filter removes ZWJ (U+200D) and ZWNJ (U+200C). Joined emoji can therefore appear as separate emoji, and joining controls used in scripts such as Persian and Hindi are lost in these public display values. For example, “👩” + U+200D + “🔬” displays as “👩🔬”. Ordinary letters and combining marks remain. Line separator U+2028 and paragraph separator U+2029 remain outside this filter. These are display-only changes; the underlying subject, file bytes and authenticated identity are unchanged.
