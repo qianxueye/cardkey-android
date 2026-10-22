@@ -28,7 +28,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w400dp-h800dp-mdpi")
+@Config(sdk = [34], qualifiers = "zh-rCN-w400dp-h800dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class InventoryActivityTest {
