@@ -2,12 +2,9 @@ package cc.cardkey.protectedpiv
 
 import cc.cardkey.protocol.piv.Cs7
 import cc.cardkey.protocol.piv.EnrolledPivCard
-import com.google.gson.Strictness
-import com.google.gson.stream.JsonReader
-import com.google.gson.stream.JsonToken
 import java.io.Closeable
-import java.io.StringReader
 import java.nio.ByteBuffer
+import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
 import java.security.KeyFactory
 import java.security.MessageDigest
@@ -83,27 +80,34 @@ object ProtectedPivProfileParser {
             var guid: ByteArray? = null
             var issuerId: ByteArray? = null
             var cardPoint: ByteArray? = null
-            val seen = mutableSetOf<String>()
-            JsonReader(StringReader(decodeUtf8(bytes))).use { reader ->
-                reader.strictness = Strictness.STRICT
-                reader.beginObject()
-                while (reader.hasNext()) {
-                    val name = reader.nextName()
-                    require(name in setOf("guid", "issuer_id", "card_public", "pairing") && seen.add(name))
-                    require(reader.peek() == JsonToken.STRING)
-                    val value = reader.nextString()
-                    when (name) {
-                        "guid" -> guid = unhex(value, 16)
-                        "issuer_id" -> issuerId = unhex(value, 8)
-                        "card_public" -> cardPoint = unhex(value, 97)
-                        "pairing" -> {
-                            require(value.length == 8 && value.all { it in '0'..'9' })
-                            pairing = value.toCharArray()
-                        }
+            var seen = 0
+            ProfileJsonReader(bytes.size).use { reader ->
+                reader.decode(bytes)
+                reader.expect('{')
+                while (true) {
+                    reader.string()
+                    val field = when {
+                        reader.matches("guid") -> 1
+                        reader.matches("issuer_id") -> 2
+                        reader.matches("card_public") -> 4
+                        reader.matches("pairing") -> 8
+                        else -> error("Unknown field")
                     }
+                    require(seen and field == 0)
+                    seen = seen or field
+                    reader.expect(':')
+                    reader.string()
+                    when (field) {
+                        1 -> guid = reader.hex(16)
+                        2 -> issuerId = reader.hex(8)
+                        4 -> cardPoint = reader.hex(97)
+                        8 -> pairing = reader.pairing()
+                    }
+                    if (reader.take('}')) break
+                    reader.expect(',')
                 }
-                reader.endObject()
-                require(reader.peek() == JsonToken.END_DOCUMENT && seen.size == 4)
+                reader.end()
+                require(seen == 15)
             }
             require(MessageDigest.isEqual(issuerId!!, issuer.issuerId))
             val identity = EnrolledPivCard(issuer.spki, issuerId!!, guid!!, cardPoint!!)
@@ -115,9 +119,104 @@ object ProtectedPivProfileParser {
         }
     }
 
-    private fun unhex(value: String, size: Int): ByteArray {
-        require(value.length == size * 2 && value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' })
-        return ByteArray(size) { value.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+    private class ProfileJsonReader(capacity: Int) : Closeable {
+        private val text = CharArray(capacity)
+        private val value = CharArray(97 * 2)
+        private var limit = 0
+        private var position = 0
+        private var valueLength = 0
+
+        fun decode(bytes: ByteArray) {
+            val decoder = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
+            // Own partial decoder output so a malformed suffix can still be cleared.
+            val output = CharBuffer.wrap(text)
+            val decoded = decoder.decode(ByteBuffer.wrap(bytes), output, true)
+            if (decoded.isError) decoded.throwException()
+            val flushed = decoder.flush(output)
+            if (flushed.isError) flushed.throwException()
+            limit = output.position()
+            if (limit > 0 && text[0] == '\uFEFF') position = 1
+        }
+
+        fun take(expected: Char): Boolean {
+            whitespace()
+            if (position >= limit || text[position] != expected) return false
+            position++
+            return true
+        }
+
+        fun expect(expected: Char) { require(take(expected)) }
+
+        fun string() {
+            value.fill('\u0000')
+            valueLength = 0
+            expect('"')
+            while (position < limit) {
+                var char = text[position++]
+                if (char == '"') return
+                require(char >= ' ')
+                if (char == '\\') {
+                    require(position < limit)
+                    char = when (val escaped = text[position++]) {
+                        '"', '\\', '/' -> escaped
+                        'b' -> '\b'
+                        'f' -> '\u000c'
+                        'n' -> '\n'
+                        'r' -> '\r'
+                        't' -> '\t'
+                        'u' -> {
+                            require(limit - position >= 4)
+                            var code = 0
+                            repeat(4) { code = code * 16 + hexDigit(text[position++]) }
+                            code.toChar()
+                        }
+                        else -> error("Invalid escape")
+                    }
+                }
+                require(valueLength < value.size)
+                value[valueLength++] = char
+            }
+            error("Unterminated string")
+        }
+
+        fun matches(name: String) = valueLength == name.length && name.indices.all { value[it] == name[it] }
+
+        fun hex(size: Int): ByteArray {
+            require(valueLength == size * 2)
+            return ByteArray(size) { (hexDigit(value[it * 2]) * 16 + hexDigit(value[it * 2 + 1])).toByte() }
+        }
+
+        fun pairing(): CharArray {
+            require(valueLength == 8 && (0 until valueLength).all { value[it] in '0'..'9' })
+            return value.copyOf(valueLength)
+        }
+
+        fun end() {
+            whitespace()
+            require(position == limit)
+        }
+
+        private fun whitespace() {
+            while (position < limit) {
+                when (text[position]) {
+                    ' ', '\t', '\r', '\n' -> position++
+                    else -> return
+                }
+            }
+        }
+
+        private fun hexDigit(char: Char): Int = when (char) {
+            in '0'..'9' -> char - '0'
+            in 'a'..'f' -> char - 'a' + 10
+            in 'A'..'F' -> char - 'A' + 10
+            else -> error("Invalid hexadecimal digit")
+        }
+
+        override fun close() {
+            text.fill('\u0000')
+            value.fill('\u0000')
+        }
     }
 
     private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
