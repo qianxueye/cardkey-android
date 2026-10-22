@@ -127,13 +127,45 @@ class ProtectedPivViewModelTest {
             assertEquals(operation, model.state.value.operation)
         }
     }
+    @Test fun signingPickerSanitizesWholeCodePointsBeforeApplyingDisplayLimit() {
+        val provider = ProtectedSigningNameProvider()
+        ShadowContentResolver.registerProviderInternal("protected-signing-unicode", provider)
+        val model = model()
+        model.resumeProtectedPiv()
+        val symbol = String(Character.toChars(0x1f512))
+        val format = String(Character.toChars(0xe0001))
+        val cases = listOf(
+            "contract\u202e\u2066\u2069\u200b\u061c\n.pdf" to "contract.pdf",
+            "a".repeat(254) + symbol + "z" to "a".repeat(254) + symbol,
+            "\u202e".repeat(255) + symbol + "文.pdf" to symbol + "文.pdf",
+            "issuer" + format + "-עברית.pdf" to "issuer-עברית.pdf",
+            "\ud800name\udc00.pdf" to "name.pdf",
+            "\u202e\u2066\u200b\n" to null
+        )
+        val actual = mutableListOf<String?>()
+        for ((index, entry) in cases.withIndex()) {
+            provider.name = entry.first
+            val uri = Uri.parse("content://protected-signing-unicode/$index")
+            shadowOf(RuntimeEnvironment.getApplication().contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf(1, 2, 3)))
+            val request = model.requestProtectedPivDocument(ProtectedPivDocument.SIGNING_FILE)!!
+            model.receiveProtectedPivDocument(request, uri)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8)
+            while (model.protectedPiv.value.fileSize == null && System.nanoTime() < deadline) Thread.sleep(5)
+            assertEquals(3, model.protectedPiv.value.fileSize)
+            actual.add(model.protectedPiv.value.fileName)
+        }
+        assertEquals(cases.map { it.second }, actual)
+    }
+
     @Test fun signingPickerPublishesCleanActualNameAndOmitsUnavailableName() {
         val provider = ProtectedSigningNameProvider()
         ShadowContentResolver.registerProviderInternal("protected-signing-name", provider)
         val model = model()
         model.resumeProtectedPiv()
-        for ((index, name) in listOf("contract-A.pdf", "contract-B.pdf", "a\n" + "b".repeat(300), null, "\n\t").withIndex()) {
-            provider.name = name
+        val names = listOf("contract-A.pdf" to "contract-A.pdf", "contract-B.pdf" to "contract-B.pdf",
+            "a\n" + "b".repeat(300) to "a" + "b".repeat(254), null to null, "\n\t" to null)
+        for ((index, entry) in names.withIndex()) {
+            provider.name = entry.first
             val uri = Uri.parse("content://protected-signing-name/$index")
             shadowOf(RuntimeEnvironment.getApplication().contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf(1, 2, 3)))
             val request = model.requestProtectedPivDocument(ProtectedPivDocument.SIGNING_FILE)!!
@@ -141,7 +173,7 @@ class ProtectedPivViewModelTest {
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8)
             while (model.protectedPiv.value.fileSize == null && System.nanoTime() < deadline) Thread.sleep(5)
             assertEquals(3, model.protectedPiv.value.fileSize)
-            assertEquals(name?.take(255)?.filterNot { it.isISOControl() }?.takeIf { it.isNotBlank() }, model.protectedPiv.value.fileName)
+            assertEquals(entry.second, model.protectedPiv.value.fileName)
             assertNotEquals("file", model.protectedPiv.value.fileName)
         }
     }

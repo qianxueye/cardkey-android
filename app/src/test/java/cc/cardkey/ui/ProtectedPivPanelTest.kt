@@ -27,6 +27,30 @@ import org.robolectric.annotation.*
 class ProtectedPivPanelTest {
     @get:Rule val compose = createEmptyComposeRule()
 
+    @Test fun issuerDisplayRemovesFormatControlsAndKeepsSupplementaryBoundaryWithoutChangingIdentity() {
+        val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        val symbol = String(Character.toChars(0x1f512))
+        val rawSubject = "CN=\u202e\u2066" + "a".repeat(251) + symbol + "z"
+        val expectedSubject = "CN=" + "a".repeat(251) + symbol
+        val state = ProtectedPivState(issuerSubject = rawSubject, issuerFingerprint = "012345abcdef",
+            fileName = symbol + "文.pdf", fileSize = 3)
+        host.get().setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ProtectedPivPanel(state, false, false, 0, {}, {}, { _, _, _ -> }, {})
+                }
+            }
+        }
+        try {
+            compose.onNodeWithText("签发者：$expectedSubject").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("签发者：$rawSubject").assertDoesNotExist()
+            compose.onNodeWithText("证书指纹（SHA-256）：012345abcdef").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("文件：${symbol}文.pdf · 3 字节").performScrollTo().assertIsDisplayed()
+            assertEquals(rawSubject, state.issuerSubject)
+            assertEquals("012345abcdef", state.issuerFingerprint)
+        } finally { host.pause().stop().destroy() }
+    }
+
     @Test fun recognitionNeverExposesPinAndReadyProfileDoesNotClaimLiveVerification() {
         val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         var recognized: ProtectedPivAction? = null

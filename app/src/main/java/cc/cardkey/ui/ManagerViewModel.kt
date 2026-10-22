@@ -116,7 +116,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     if (kind == ProtectedPivDocument.SIGNING_FILE) {
                         name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                             if (it.moveToFirst()) it.getString(0) else null
-                        }?.take(255)?.filterNot { it.isISOControl() }?.takeIf { it.isNotBlank() }
+                        }?.let(::protectedPivDisplayText)?.takeIf { it.isNotBlank() }
                     }
                     resolver.openInputStream(uri)?.use { it.readNBytes(limit + 1) }
                 }
