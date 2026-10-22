@@ -920,6 +920,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (result is OperationResult.Failed) inventory.failedCurrent()
         if (result is OperationResult.Failed) protectedWorkflow.retire()
         presenceGeneration++
+        if (result is OperationResult.Completed && result.value.protectedPivRecognition) {
+            retireResult()
+            mutable.update { it.copy(busy = false, awaitingNfc = false, lastRetry = null, fidoFinalAttempt = false,
+                userPresenceRequired = false, operation = null, result = null) }
+            return
+        }
         if (result is OperationResult.Failed && (mutable.value.operation?.recognitionFamily != null ||
             result.code in setOf(FailureCode.TRANSPORT_FAILURE, FailureCode.MALFORMED_RESPONSE,
                 FailureCode.CANCELLED, FailureCode.AUTHORIZATION_DENIED, FailureCode.PHYSICAL_ACTION_REQUIRED,

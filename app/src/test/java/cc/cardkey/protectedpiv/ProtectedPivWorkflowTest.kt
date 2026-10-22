@@ -77,11 +77,14 @@ class ProtectedPivWorkflowTest {
             val slotKey = key()
             val flow = workflow("original bytes".toByteArray())
             val first = peer(slotKey)
-            assertTrue(run(flow, flow.recognize(action, 0x9a, "CN=Synthetic CSR"), first) is OperationResult.Completed)
+            val recognition = run(flow, flow.recognize(action, 0x9a, "CN=Synthetic CSR"), first)
+            assertTrue(recognition is OperationResult.Completed)
+            assertTrue((recognition as OperationResult.Completed).value.protectedPivRecognition)
             assertEquals(0, first.pinTries)
             val second = peer(slotKey)
             val result = run(flow, flow.execute("123456".toCharArray()), second)
             assertTrue("$action: $result", result is OperationResult.Completed)
+            assertFalse((result as OperationResult.Completed).value.protectedPivRecognition)
             assertEquals(1, second.pinTries)
             if (action == ProtectedPivAction.RAW_SIGN) {
                 val report = (result as OperationResult.Completed).value

@@ -71,4 +71,25 @@ class ProtectedPivViewModelTest {
         assertFalse(model.state.value.busy)
         assertNull(model.pendingNfcOwner)
     }
+    @Test fun privateRecognitionNeverPublishesCompletionOrClearsRecovery() {
+        val model = model()
+        val mutable = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+        val finish = ManagerViewModel::class.java.getDeclaredMethod("finish", OperationResult::class.java).apply { isAccessible = true }
+        for (operation in listOf(ManagerOperation.PIV_CSR, ManagerOperation.PIV_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
+            mutable.value = mutable.value.copy(operation = operation, busy = true, awaitingNfc = true, requiresInspection = true)
+            finish.invoke(model, OperationResult.Completed(ManagerReport(emptyList(), protectedPivIdentity = "same-card",
+                protectedPivRecognition = true), Effect.NONE))
+            assertNull(model.state.value.result)
+            assertNull(model.state.value.operation)
+            assertFalse(model.state.value.busy)
+            assertFalse(model.state.value.awaitingNfc)
+            assertTrue(model.state.value.requiresInspection)
+            mutable.value = mutable.value.copy(operation = operation, requiresInspection = false)
+            val completed = OperationResult.Completed(ManagerReport(listOf(ResultRow("signature", "verified")),
+                protectedPivIdentity = "same-card"), Effect.NONE)
+            finish.invoke(model, completed)
+            assertSame(completed, model.state.value.result)
+            assertEquals(operation, model.state.value.operation)
+        }
+    }
 }

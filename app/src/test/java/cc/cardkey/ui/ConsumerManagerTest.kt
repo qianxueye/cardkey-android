@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -21,6 +22,10 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.*
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.util.ReflectionHelpers
+import kotlinx.coroutines.flow.MutableStateFlow
+import cc.cardkey.R
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w800dp-h800dp-mdpi")
@@ -28,6 +33,42 @@ import org.robolectric.annotation.*
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ConsumerManagerTest {
     @get:Rule val compose = createEmptyComposeRule()
+    @Test fun protectedPreflightDoesNotRenderPrivateCompletionButExecutionDoes() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        val model = ManagerViewModel(RuntimeEnvironment.getApplication())
+        val mutable = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+        val finish = ManagerViewModel::class.java.getDeclaredMethod("finish", OperationResult::class.java).apply { isAccessible = true }
+        activity.get().setContent {
+            val state = model.state.collectAsState().value
+            MaterialTheme { Box(Modifier.requiredSize(800.dp, 800.dp)) {
+                ManagerScreen(state, 0, {}, {}, { it.close() }, {}, {}, null, {}, {}, {}, {},
+                    EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                    TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
+                    InventoryState(), { _, _ -> }, { _, _ -> }, {}, {},
+                    protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(awaitingPin = true),
+                    onProtectedPivDocument = {}, onProtectedPivClear = {},
+                    onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
+            } }
+        }
+        val receipt = activity.get().getString(R.string.workspace_receipt)
+        val verification = activity.get().getString(R.string.status_verification)
+        try {
+            for (operation in listOf(ManagerOperation.PIV_CSR, ManagerOperation.PIV_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
+                compose.runOnIdle {
+                    mutable.value = mutable.value.copy(operation = operation, busy = true)
+                    finish.invoke(model, OperationResult.Completed(ManagerReport(emptyList(), protectedPivRecognition = true), Effect.NONE))
+                }
+                compose.onNodeWithText(receipt).assertDoesNotExist()
+                compose.onNodeWithText(verification).assertDoesNotExist()
+                compose.runOnIdle {
+                    mutable.value = mutable.value.copy(operation = operation)
+                    finish.invoke(model, OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE))
+                }
+                compose.onNodeWithText(receipt).assertExists()
+                compose.onNodeWithText(verification).assertExists()
+            }
+        } finally { activity.pause().stop().destroy() }
+    }
     @Test fun coldLaunchAcceptsPinBeforeCardAndNeverRequiresManualRead() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         var submitted: OperationInput? = null

@@ -186,7 +186,7 @@ internal class ProtectedPivScan(
             if (recognition) {
                 require(input.pin.isEmpty())
                 observed = facts
-                return ManagerReport(emptyList(), protectedPivIdentity = identityLabel)
+                return ManagerReport(emptyList(), protectedPivIdentity = identityLabel, protectedPivRecognition = true)
             }
             return if (action == ProtectedPivAction.VERIFY_PIN) {
                 piv.verifyPin(input.pin)
