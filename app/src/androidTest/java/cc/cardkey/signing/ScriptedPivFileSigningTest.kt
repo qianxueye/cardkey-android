@@ -69,8 +69,9 @@ class ScriptedPivFileSigningTest {
             val report = (result as OperationResult.Completed).value
             assertEquals(SignatureFormat.CMS, report.signatureFormat)
             assertEquals("signature.p7s", report.fileName)
-            assertEquals(listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope,
-                cc.cardkey.R.string.signing_cmsTrust), report.messages)
+            assertEquals(listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope), report.messages)
+            val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+            assertEquals(0, context.resources.getIdentifier("signing_cmsTrust", "string", context.packageName))
             val encoded = requireNotNull(report.export)
             val cms = org.bouncycastle.cms.CMSSignedData(org.bouncycastle.cms.CMSProcessableByteArray(bytes), encoded)
             assertTrue(org.bouncycastle.cms.CMSSignedData(encoded).isDetachedSignature)

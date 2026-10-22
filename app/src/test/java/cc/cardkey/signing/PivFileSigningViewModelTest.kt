@@ -364,8 +364,7 @@ class PivFileSigningViewModelTest {
         val report = receipt.value
         assertEquals(SignatureFormat.CMS, report.signatureFormat)
         assertEquals("signature.p7s", report.fileName)
-        assertEquals(listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope,
-            cc.cardkey.R.string.signing_cmsTrust), report.messages)
+        assertEquals(listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope), report.messages)
         assertTrue(model.requestSignatureSave(report))
         assertEquals(SignatureFormat.CMS, model.signatureSaveFormat)
         val uri = Uri.parse("content://file-signing/cms-close.p7s")

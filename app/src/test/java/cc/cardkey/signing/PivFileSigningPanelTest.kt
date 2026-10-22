@@ -149,19 +149,19 @@ class PivFileSigningPanelTest {
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
         }
     }
-    @Test fun cmsVerifiedScopeAndTrustRemainVisibleWhenExportIsUnknown() {
+    @Test fun cmsOutputFactsRemainVisibleWithoutTrustCaveatWhenExportIsUnknown() {
         files.value = files.value.copy(operation = ManagerOperation.PIV_CMS_SIGN)
         render(360, 480) { _, _ ->
             compose.onNodeWithText("需要有效的文档签名证书，且证书公钥与所选槽位一致。").performScrollTo().assertIsDisplayed()
             val report = ManagerReport(emptyList(), byteArrayOf(1), "signature.p7s", signatureFormat = SignatureFormat.CMS,
-                messages = listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope, cc.cardkey.R.string.signing_cmsTrust))
+                messages = listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope))
             compose.runOnIdle {
                 manager.value = manager.value.copy(operation = ManagerOperation.PIV_CMS_SIGN, result = OperationResult.Completed(report, Effect.APPLIED))
                 files.value = files.value.copy(exportOwner = report, exportStatus = SignatureExportStatus.UNKNOWN)
             }
             compose.onNodeWithText("CMS 签名验证：通过").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("导出 .p7s 独立签名，包含签名证书；验证时还需原文件。原文件保持不变。").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("未验证证书信任链、吊销状态或可信时间。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("导出 .p7s 独立签名，包含签名证书；验证时还需原文件。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("未验证证书信任链、吊销状态或可信时间。").assertDoesNotExist()
             compose.onNodeWithText("未确认导出结果。请检查所选文件。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("已导出签名。").assertDoesNotExist()
         }

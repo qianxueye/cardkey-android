@@ -77,7 +77,7 @@ class EnrollmentPanelTest {
             compose.onNodeWithText("当前 PIV PIN").performScrollTo().performTextInput("123456")
             compose.onNodeWithText("文档签名").performScrollTo().performClick()
             compose.onNodeWithText("9C").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("使用所选槽位的现有密钥申请文档签名证书。不会生成或替换密钥。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("使用所选槽位的现有密钥申请文档签名证书。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("导出 CSR").assertDoesNotExist()
             compose.onNodeWithText("123456").assertDoesNotExist()
         }

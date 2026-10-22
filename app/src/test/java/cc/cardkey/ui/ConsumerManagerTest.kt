@@ -51,7 +51,7 @@ class ConsumerManagerTest {
             } }
         }
         val receipt = activity.get().getString(R.string.workspace_receipt)
-        val verification = activity.get().getString(R.string.status_verification)
+        val verification = "此结果仅验证卡片返回的密码运算、CSR 或签名，不代表证书受信任或外部账户接受。"
         try {
             for (operation in listOf(ManagerOperation.PIV_CSR, ManagerOperation.PIV_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
                 compose.runOnIdle {
@@ -65,7 +65,7 @@ class ConsumerManagerTest {
                     finish.invoke(model, OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE))
                 }
                 compose.onNodeWithText(receipt).assertExists()
-                compose.onNodeWithText(verification).assertExists()
+                compose.onNodeWithText(verification).assertDoesNotExist()
             }
         } finally { activity.pause().stop().destroy() }
     }

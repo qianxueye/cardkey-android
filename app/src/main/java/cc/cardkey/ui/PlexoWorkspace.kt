@@ -51,7 +51,6 @@ internal fun PlexoObjects(
             null, false, enabled, "object-overview", onOverview)
         if (destination == 1) {
             Text(stringResource(R.string.workspace_slotCatalog), style = MaterialTheme.typography.titleSmall)
-            Text(stringResource(R.string.workspace_slotContext), style = MaterialTheme.typography.bodyMedium)
             PivClient.slots.forEach { candidate ->
                 ObjectOption("%02X".format(candidate), stringResource(when (candidate) {
                     0x9a -> R.string.workspace_slotAuthentication

@@ -61,8 +61,6 @@ fun ProtectedPivPanel(
                 Text(stringResource(R.string.protectedPiv_issuer, it))
             }
             state.issuerFingerprint?.let { Text(stringResource(R.string.protectedPiv_fingerprint, it), style = MaterialTheme.typography.bodySmall) }
-            Text(stringResource(R.string.protectedPiv_issuerScope),
-                style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { pin = ""; confirm = false; onDocument(ProtectedPivDocument.SIGNING_FILE) },
                 enabled = enabled && state.issuerSubject != null, modifier = Modifier.testTag("protected-piv-file")) { Text(stringResource(R.string.protectedPiv_chooseFile)) }
             state.fileName?.let { Text(stringResource(R.string.protectedPiv_file, it, state.fileSize ?: 0)) }
@@ -81,7 +79,6 @@ fun ProtectedPivPanel(
             if (selectedAction == ProtectedPivAction.CSR) OutlinedTextField(subject, { subject = it },
                 label = { Text(stringResource(R.string.protectedPiv_csrSubject)) }, enabled = selecting, modifier = Modifier.fillMaxWidth())
             if (!state.awaitingPin || inspectionRequired) {
-                Text(stringResource(R.string.protectedPiv_recognitionScope), style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { pin = ""; confirm = false; onRecognize(selectedAction, slot, subject) },
                     enabled = selecting && state.profileReady && (selectedAction != ProtectedPivAction.RAW_SIGN || state.fileSize != null) &&
                         (selectedAction != ProtectedPivAction.CSR || subject.isNotBlank()), modifier = Modifier.testTag("protected-piv-recognize")) {
@@ -92,7 +89,7 @@ fun ProtectedPivPanel(
                 Text(stringResource(R.string.protectedPiv_pending, pendingAction, pendingSlot))
                 state.retries?.let { Text(stringResource(R.string.protectedPiv_retries, it)) }
                 if (state.erasesKeysOnFailure) Text(erasureWarning, color = MaterialTheme.colorScheme.error)
-                if (state.retries == 1) Text(stringResource(R.string.protectedPiv_lastRetry), color = MaterialTheme.colorScheme.error)
+                if (state.retries == 1 && !state.erasesKeysOnFailure) Text(stringResource(R.string.protectedPiv_lastRetry), color = MaterialTheme.colorScheme.error)
                 OutlinedTextField(pin, { pin = it }, label = { Text(stringResource(R.string.protectedPiv_pin)) }, singleLine = true,
                     enabled = enabled, visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -114,7 +111,7 @@ fun ProtectedPivPanel(
             Text(stringResource(R.string.protectedPiv_confirmOperation, pendingAction, pendingSlot))
             Text(stringResource(R.string.protectedPiv_confirmRisk))
             if (state.erasesKeysOnFailure) Text(erasureWarning)
-            if (state.retries == 1) Text(stringResource(R.string.protectedPiv_confirmLastRetry))
+            if (state.retries == 1 && !state.erasesKeysOnFailure) Text(stringResource(R.string.protectedPiv_confirmLastRetry))
         } },
         confirmButton = { TextButton(onClick = {
             val entered = pin.toCharArray()

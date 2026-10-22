@@ -179,7 +179,7 @@ fun ManagerScreen(
     confirmation?.let { input ->
         val dismiss = { input.close(); confirmation = null; if (input.inventorySelection != null) onCancel() }
         AlertDialog(onDismissRequest = dismiss,
-            title = { Text(input.operation.title) },
+            title = { Text(confirmationOperationTitleResource(input.operation)?.let { stringResource(it) } ?: input.operation.title) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (input.operation in setOf(ManagerOperation.FIDO_VERIFY_CREDENTIAL, ManagerOperation.FIDO_DELETE) ||
                     input.operation in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE)) {
@@ -219,7 +219,7 @@ fun ManagerScreen(
         dismissButton = { TextButton(onClick = { onLastRetry(false) }) { Text("取消") } })
     state.lastRetry?.let { (current, other) ->
         AlertDialog(onDismissRequest = { onLastRetry(false) },
-            title = { Text(state.operation?.title ?: "PIV") },
+            title = { Text(state.operation?.let { operation -> confirmationOperationTitleResource(operation)?.let { stringResource(it) } ?: operation.title } ?: "PIV") },
             text = { Text(stringResource(R.string.confirm_lastRetryErasesKeys)
                 .replace("{当前验证项}", current).replace("{另一项}", other)) },
             confirmButton = { TextButton(onClick = { onLastRetry(true) }) { Text("确认") } },
@@ -414,7 +414,6 @@ fun ManagerScreen(
                                     Text(stringResource(R.string.workspace_pivSecurity), style = MaterialTheme.typography.titleMedium)
                                 } else {
                                     Text(stringResource(R.string.workspace_selectedSlot, "%02X".format(slot)), style = MaterialTheme.typography.titleMedium)
-                                    Text(stringResource(R.string.workspace_slotContext), style = MaterialTheme.typography.bodyMedium)
                                 }
                             } else {
                                 inventory.credential?.let { credential ->
@@ -446,11 +445,6 @@ fun ManagerScreen(
                                             Text(stringResource(it), style = MaterialTheme.typography.titleMedium)
                                         }
                                         result.value.messages.forEach { Text(stringResource(it)) }
-                                        if (state.operation in setOf(ManagerOperation.FIDO_REGISTER, ManagerOperation.FIDO_ASSERT,
-                                                ManagerOperation.U2F_REGISTER, ManagerOperation.U2F_ASSERT, ManagerOperation.PIV_CSR,
-                                                ManagerOperation.PIV_SIGN, ManagerOperation.PIV_CMS_SIGN, ManagerOperation.PIV_ECDH, ManagerOperation.PIV_DECRYPT)) {
-                                            Text(stringResource(R.string.status_verification), style = MaterialTheme.typography.bodySmall)
-                                        }
                                         result.value.secrets?.let { outputs ->
                                             OutlinedButton(onClick = { showSecretConfirmation = true }) { Text(stringResource(R.string.secret_view)) }
                                             if (showSecrets) {
@@ -535,7 +529,6 @@ fun ManagerScreen(
                                 val op = operation
                                 if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
                                         ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
-                                    Text(stringResource(R.string.workspace_slotContext), style = MaterialTheme.typography.bodySmall)
                                     Choice("槽位", slot, PivClient.slots, { "%02X".format(it) }, !state.busy) { slot = it }
                                 }
                                 val tasks = if (advanced) ManagerOperation.entries.filter { it.piv == (tab == 1) && it !in setOf(ManagerOperation.PIV_ENROLL_CSR, ManagerOperation.PIV_ENROLL_IMPORT, ManagerOperation.FIDO_RPS, ManagerOperation.FIDO_CREDENTIALS) && (it != ManagerOperation.FIDO_RESET || state.supportsFidoReset) }
@@ -595,7 +588,6 @@ fun ManagerScreen(
                                     Text(stringResource(R.string.minPin_rpsHelp))
                                 }
                                 if (op == ManagerOperation.FIDO_UPDATE) {
-                                    Text(stringResource(R.string.user_updateHelp))
                                     OutlinedTextField(secondary, { secondary = it }, label = { Text("新用户名") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight))
                                 }
                                 if (op in setOf(ManagerOperation.FIDO_ALWAYS_UV, ManagerOperation.FIDO_MIN_PIN, ManagerOperation.FIDO_REGISTER)) {

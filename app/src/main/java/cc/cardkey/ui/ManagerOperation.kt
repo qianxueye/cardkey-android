@@ -266,8 +266,7 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
                         listOf("none", "always", "cached")[it.touchPolicy - 1], R.string.protectedPiv_rowTouchPolicy,
                         listOf(R.string.protectedPiv_rowNoTouch, R.string.protectedPiv_rowTouchAlways, R.string.protectedPiv_rowTouchCached)[it.touchPolicy - 1]) },
                     slot.metadata?.publicKey?.let { pivRow("piv_public_key", Base64.getEncoder().encodeToString(it.encoded), R.string.protectedPiv_rowPublicKey) })
-                ManagerReport(rows, cert?.encoded, "piv-${input.slot.toString(16)}.cer",
-                    messages = if (cert != null) listOf(R.string.certificate_dateScope) else emptyList())
+                ManagerReport(rows, cert?.encoded, "piv-${input.slot.toString(16)}.cer")
             }
             ManagerOperation.PIV_SSH_EXPORT -> {
                 val metadata = piv.readPublicKeyMetadata(input.slot)
@@ -314,7 +313,7 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
                 if (cancelled()) { signature.fill(0); throw CardFailure(FailureCode.CANCELLED) }
                 ManagerReport(emptyList(), signature, input.signatureFormat.fileName,
                     messages = if (input.signatureFormat == SignatureFormat.RAW) listOf(R.string.signing_verified, R.string.signing_exportScope) else
-                        listOf(R.string.signing_cmsVerified, R.string.signing_cmsScope, R.string.signing_cmsTrust),
+                        listOf(R.string.signing_cmsVerified, R.string.signing_cmsScope),
                     signatureFormat = input.signatureFormat)
             }
             ManagerOperation.PIV_ECDH -> { piv.verifyKeyAgreement(input.slot, input.pin); empty() }

@@ -76,7 +76,7 @@ class ProtectedPivLocalizationTest {
             compose.onNodeWithText("Issuer: CN=Synthetic").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("File: sample.bin · 3 B").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("The previous operation outcome is unknown. Import the original card configuration again, then read its protected status. Do not repeat the original operation.").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("The first scan checks only the card identity, slot and remaining PIN attempts. It does not send the PIN.").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("protected-piv-recognize").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("protected-piv-pin").assertDoesNotExist()
         }
     }
@@ -89,8 +89,20 @@ class ProtectedPivLocalizationTest {
             compose.onNodeWithTag("protected-piv-pin").performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("protected-piv-execute").performScrollTo().performClick()
             compose.onNodeWithText("This scan sends the PIN. An incorrect entry reduces the remaining attempts. A connection interruption may leave the outcome unknown. Do not retry automatically.").assertIsDisplayed()
-            compose.onNodeWithText("Only 1 attempt remains. An incorrect entry may require PIN recovery.").assertIsDisplayed()
+            compose.onNodeWithText("Only 1 attempt remains. An incorrect entry may require PIN recovery.").assertDoesNotExist()
+            compose.onNodeWithText("Action: Verify PIN, slot 9A. Scan the same card again. The operation stops if the identity, slot or remaining attempts have changed.").assertIsDisplayed()
             compose.onNodeWithText("Cancel").performClick()
+        }
+    }
+
+    @Test fun nonErasureLastAttemptStillShowsLockoutAndRecoveryAtConfirmation() {
+        render("en-US", ProtectedPivState(generation = 1, profileReady = true, awaitingPin = true,
+            action = ProtectedPivAction.VERIFY_PIN, retries = 1, erasesKeysOnFailure = false)) {
+            compose.onNodeWithText("Only 1 PIN attempt remains. Another incorrect entry may block the PIN. Recovery requires a contact connection.").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("protected-piv-pin").performScrollTo().performTextInput("123456")
+            compose.onNodeWithTag("protected-piv-execute").performScrollTo().performClick()
+            compose.onNodeWithText("Only 1 attempt remains. An incorrect entry may require PIN recovery.").assertIsDisplayed()
+            compose.onNodeWithText("This scan sends the PIN. An incorrect entry reduces the remaining attempts. A connection interruption may leave the outcome unknown. Do not retry automatically.").assertIsDisplayed()
         }
     }
 
@@ -161,23 +173,42 @@ class ProtectedPivLocalizationTest {
         val chinese = resources("zh-CN")
         val english = resources("en-US")
         val expected = mapOf(
+            "confirmTitle_FIDO_DELETE" to "删除通行密钥",
+            "confirmTitle_FIDO_ALWAYS_UV" to "始终验证用户",
+            "confirmTitle_FIDO_MIN_PIN" to "PIN · 最短长度",
+            "confirmTitle_FIDO_ENTERPRISE" to "企业证明 · 启用",
+            "confirmTitle_FIDO_REGISTER" to "注册 · 验证",
+            "confirmTitle_U2F_REGISTER" to "U2F · 注册",
+            "confirmTitle_FIDO_ASSERT" to "签名 · 验证",
+            "confirmTitle_FIDO_VERIFY_CREDENTIAL" to "验证签名",
+            "confirmTitle_FIDO_BLOB_READ" to "扩展数据 · 读取",
+            "confirmTitle_FIDO_BLOB_WRITE" to "扩展数据 · 设置",
+            "confirmTitle_FIDO_RESET" to "FIDO2 · 重置",
+            "confirmTitle_PIV_ADMIN" to "管理密钥 · 修改",
+            "confirmTitle_PIV_GENERATE" to "生成密钥",
+            "confirmTitle_PIV_IMPORT" to "导入证书",
+            "confirmTitle_PIV_ENROLL_IMPORT" to "导入证书",
+            "confirmTitle_PIV_ENROLL_CSR" to "生成 CSR",
+            "confirmTitle_PIV_RESET" to "PIV · 重置",
+            "confirmTitle_PIV_CHANGE_PIN" to "更改 PIV PIN",
+            "confirmTitle_PIV_CHANGE_PUK" to "更改 PUK",
+            "confirmTitle_PIV_UNBLOCK" to "解锁 PIV PIN",
+            "confirmTitle_PIV_CMS_SIGN" to "CMS 文件签名",
             "protectedPiv_title" to "受保护的 PIV",
             "protectedPiv_introduction" to "先选择公开签发者证书；如需签名，再选择文件；最后选择私有配置。配置仅保存在内存中，离开应用后清除。",
             "protectedPiv_chooseIssuer" to "选择签发者证书",
             "protectedPiv_issuer" to "签发者：%1\$s",
             "protectedPiv_fingerprint" to "证书指纹（SHA-256）：%1\$s",
-            "protectedPiv_issuerScope" to "此证书提供已登记的公钥和标识；不会验证证书链、有效期或吊销状态，也不会加入系统信任。",
             "protectedPiv_chooseFile" to "选择原始签名文件",
             "protectedPiv_file" to "文件：%1\$s · %2\$d 字节",
             "protectedPiv_chooseProfile" to "选择私有配置 JSON",
             "protectedPiv_pickerScope" to "打开任何文件选择器都会清除现有私有配置。不要分享私有配置或配对码。",
-            "protectedPiv_ready" to "配置已就绪；尚不能据此确认当前卡片身份。",
+            "protectedPiv_ready" to "配置已就绪。",
             "protectedPiv_guid" to "配置中的卡片 GUID：%1\$s",
             "protectedPiv_inspection" to "上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。",
             "protectedPiv_operation" to "受保护操作",
             "protectedPiv_slot" to "受保护槽位",
             "protectedPiv_csrSubject" to "CSR 主题（例如 CN=CardKey）",
-            "protectedPiv_recognitionScope" to "首次扫描只核对卡片身份、槽位和 PIN 剩余次数，不会发送 PIN。",
             "protectedPiv_recognize" to "识别卡片并读取",
             "protectedPiv_recognized" to "首次扫描已完成。请先移开卡片，再输入 PIN 并确认第二次扫描。",
             "protectedPiv_pending" to "待执行：%1\$s · 槽位 %2\$s",
@@ -245,13 +276,12 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_operationEcdh" to "ECDH · 验证",
             "protectedPiv_operationRsa" to "RSA · 验证",
             "protectedPiv_export" to "导出",
-            "certificate_dateScope" to "仅检查证书有效期，未验证信任链、吊销状态或与槽位公钥的匹配关系。",
             "document_saved" to "文件已保存。",
             "error_authorization" to "卡片未授权此操作。",
             "error_cancelled" to "操作已取消。",
             "error_capacityExceeded" to "卡片存储空间不足，或已达到此操作的数量或大小限制。",
             "error_cardRejected" to "卡片拒绝了此操作。请检查卡片状态及操作前提。",
-            "error_contactRequired" to "此操作需要接触式读卡器。NFC 目前仅支持读取 PIV 公开信息。",
+            "error_contactRequired" to "此操作需要接触式读卡器。",
             "error_invalidInput" to "输入格式有误，请检查所填内容。",
             "error_keyMismatch" to "证书公钥与所选槽位不匹配，未导入证书。",
             "error_malformed" to "卡片响应无效。",
@@ -270,13 +300,12 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_ordinaryInspection" to "上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。",
             "reader_nfc" to "选择操作后，将卡片贴近手机。",
             "signing_exportCancelled" to "已取消导出。",
-            "signing_exportScope" to "导出的是所选文件的独立签名；原文件保持不变。",
+            "signing_exportScope" to "导出的是所选文件的独立签名。",
             "signing_exportUnknown" to "未确认导出结果。请检查所选文件。",
             "signing_exported" to "已导出签名。",
             "signing_verified" to "签名验证：通过",
             "ssh_publicKeyExported" to "已导出 SSH 公钥。",
-            "ssh_publicKeyScope" to "已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。本操作不验证 SSH 登录。",
-            "status_verification" to "此结果仅验证卡片返回的密码运算、CSR 或签名，不代表证书受信任或外部账户接受。",
+            "ssh_publicKeyScope" to "已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。",
             "workspace_details" to "技术详情",
             "workspace_outputFile" to "本次导出文件",
             "workspace_receipt" to "任务结果",
@@ -332,17 +361,17 @@ class ProtectedPivLocalizationTest {
             "provider_username", "reader_empty", "reader_permissionDenied", "reader_usbPermission",
             "restriction_fidoReset", "secret_view", "settings_enrollment", "settings_provider",
             "settings_services", "signing_chooseFile", "signing_cmsRequirements", "signing_cmsScope",
-            "signing_cmsTrust", "signing_cmsVerified", "signing_limit", "signing_selectedFile",
+            "signing_cmsVerified", "signing_limit", "signing_selectedFile",
             "status_hidUserPresenceRequired", "tls_cancelled", "tls_chooseServerRoot", "tls_confirm",
             "tls_endpoint", "tls_endpointHelp", "tls_failed", "tls_identity",
-            "tls_mayHaveSubmitted", "tls_running", "tls_scope", "tls_serverRoot",
-            "tls_serverRootHelp", "tls_serverRootReady", "tls_start", "tls_success",
+            "tls_mayHaveSubmitted", "tls_running", "tls_serverRoot",
+            "tls_serverRootReady", "tls_start", "tls_success",
             "tls_timeout", "tls_title", "tls_unknown", "tls_validUntil",
-            "user_updateHelp", "workspace_advanced", "workspace_authenticator", "workspace_common",
+            "workspace_advanced", "workspace_authenticator", "workspace_common",
             "workspace_createOnWebsite", "workspace_enrollmentFlow", "workspace_fidoPin", "workspace_inspection",
             "workspace_objects", "workspace_pivReaderRequired", "workspace_pivSecurity", "workspace_readSites",
             "workspace_security", "workspace_selectedObject", "workspace_selectedSlot", "workspace_sites",
-            "workspace_slotAuthentication", "workspace_slotCardAuthentication", "workspace_slotCatalog", "workspace_slotContext",
+            "workspace_slotAuthentication", "workspace_slotCardAuthentication", "workspace_slotCatalog",
             "workspace_slotManagement", "workspace_slotRetired", "workspace_slotSignature", "workspace_tasks",
         )
         val fallbackKeys = defaults.filterValues { it.getAttributeNS("http://schemas.android.com/tools", "ignore")

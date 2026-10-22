@@ -84,8 +84,7 @@ class PivCmsTest {
             val report = (result as OperationResult.Completed).value
             assertEquals(SignatureFormat.CMS, report.signatureFormat)
             assertEquals("signature.p7s", report.fileName)
-            assertEquals(listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope,
-                cc.cardkey.R.string.signing_cmsTrust), report.messages)
+            assertEquals(listOf(cc.cardkey.R.string.signing_cmsVerified, cc.cardkey.R.string.signing_cmsScope), report.messages)
             PivCms.verify(requireNotNull(report.export), bytes,
                 java.security.cert.CertificateFactory.getInstance("X.509").generateCertificate(card.certificate!!.inputStream()) as X509Certificate, algorithm)
             assertEquals(1, card.commands.count { it.ins == 0x87 })
