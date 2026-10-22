@@ -59,7 +59,9 @@ class EnrollmentPanelTest {
                             onSelection(selection)
                             if (workflow != null) workflow.selection(selection)
                             else state.value = state.value.copy(selection = selection, revision = state.value.revision + 1, csr = null)
-                        })
+                        }, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
+                            onProtectedPivDocument = {}, onProtectedPivClear = {},
+                            onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
                 }
             }
         }

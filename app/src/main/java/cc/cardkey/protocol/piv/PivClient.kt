@@ -230,7 +230,6 @@ public class PivClient(private val session: CardSession, private val secure: Piv
     }
 
     fun signFile(slot: Int, pin: CharArray, bytes: ByteArray): ByteArray = withPin(pin) { encodedPin ->
-        session.requireContact()
         require(bytes.size in 1..MAX_SIGNING_FILE_BYTES)
         requireSlot(slot)
         select()

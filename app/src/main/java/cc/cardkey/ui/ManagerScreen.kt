@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.activity.compose.BackHandler
 import cc.cardkey.protocol.*
 import cc.cardkey.R
+import cc.cardkey.protectedpiv.*
 import cc.cardkey.enrollment.EnrollmentState
 import cc.cardkey.signing.SigningFileState
 import cc.cardkey.signing.SignatureExportStatus
@@ -71,6 +72,11 @@ fun ManagerScreen(
     onInventoryFile: (Long) -> Unit,
     onInventoryAction: (ManagerOperation?) -> Unit,
     onEnrollmentSelection: (cc.cardkey.enrollment.EnrollmentSelection) -> Unit = {},
+    protectedPiv: ProtectedPivState,
+    onProtectedPivDocument: (ProtectedPivDocument) -> Unit,
+    onProtectedPivClear: () -> Unit,
+    onProtectedPivRecognize: (ProtectedPivAction, Int, String) -> Unit,
+    onProtectedPivExecute: (CharArray) -> Unit,
     artworkReference: CardArtworkReference? = null,
     artworkSource: CardArtworkSource = UnconfiguredCardArtworkSource,
 ) {
@@ -388,6 +394,11 @@ fun ManagerScreen(
                     .testTag("workspace-detail").verticalScroll(detailScroll).padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (compact) { topBar(); readerContext() }
+                    if (tab == 1) key(state.selectedReader?.routeKey, state.nfc) {
+                        ProtectedPivPanel(protectedPiv, state.busy || state.permissionPending, state.requiresInspection,
+                            clearInputs, onProtectedPivDocument, onProtectedPivClear, onProtectedPivRecognize,
+                            onProtectedPivExecute)
+                    }
                     if (tab < 2) {
                         if (!twoPanes) TextButton(onClick = {
                             confirmation?.close(); confirmation = null
@@ -446,9 +457,13 @@ fun ManagerScreen(
                                         }
                                         if (result.value.export != null) OutlinedButton(onClick = {
                                             if (result.value.protectedExport) exportConfirmation = result.value else onExport(result.value)
-                                        }, enabled = (!result.value.sshPublicKey && result.value.signatureFormat == null) || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
+                                        }, enabled = (!result.value.sshPublicKey && result.value.signatureFormat == null && result.value.protectedPivSlot == null) || signingFiles.exportStatus != SignatureExportStatus.WRITING) { Text("导出") }
                                         if (signingFiles.exportOwner === result.value) when (signingFiles.exportStatus) {
-                                            SignatureExportStatus.SAVED -> Text(stringResource(if (result.value.sshPublicKey) R.string.ssh_publicKeyExported else R.string.signing_exported))
+                                            SignatureExportStatus.SAVED -> Text(stringResource(when {
+                                                result.value.sshPublicKey -> R.string.ssh_publicKeyExported
+                                                result.value.signatureFormat != null -> R.string.signing_exported
+                                                else -> R.string.document_saved
+                                            }))
                                             SignatureExportStatus.CANCELLED -> Text(stringResource(R.string.signing_exportCancelled))
                                             SignatureExportStatus.UNKNOWN -> Text(stringResource(R.string.signing_exportUnknown))
                                             SignatureExportStatus.WRITING -> LinearProgressIndicator(Modifier.fillMaxWidth())

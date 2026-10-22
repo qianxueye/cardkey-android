@@ -61,7 +61,9 @@ class PivFileSigningPanelTest {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
                     ManagerScreen(manager.value, 0, {}, {}, { submitted = it; submissions++ }, {}, {}, null, {}, {}, {}, {},
                         EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
-                        TlsQualificationState(), {}, {}, { it.close() }, files.value, { _, _ -> }, { picks++ }, InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
+                        TlsQualificationState(), {}, {}, { it.close() }, files.value, { _, _ -> }, { picks++ }, InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
+                            onProtectedPivDocument = {}, onProtectedPivClear = {},
+                            onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
                 }
             }
         }

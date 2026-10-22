@@ -52,6 +52,7 @@ class PivSigningFiles {
     internal val saveRequestId get() = save?.id
     internal val saveFormat get() = save?.source?.signatureFormat
     internal val saveMimeType get() = if (save?.source?.sshPublicKey == true) "text/plain" else saveFormat?.mimeType
+        ?: "application/octet-stream".takeIf { save?.source?.protectedPivSlot != null }
     internal fun current(request: SigningFileRequest, currentRoute: String?) =
         request.generation == generation && request.route == route && request.route == currentRoute
 
@@ -94,11 +95,21 @@ class PivSigningFiles {
     internal fun requestSave(report: ManagerReport, operation: ManagerOperation? = null): Boolean {
         if (save != null || writing) return false
         val signature = requireNotNull(report.export)
-        require(signature.isNotEmpty() && ((report.sshPublicKey && operation == ManagerOperation.PIV_SSH_EXPORT &&
+        val protectedDocument = report.protectedPivSlot?.let { slot ->
+            report.protectedPivIdentity != null && slot in PivClient.slots && when (operation) {
+                ManagerOperation.PIV_CSR -> report.fileName == "piv-${slot.toString(16)}.csr"
+                ManagerOperation.PIV_SLOT -> report.fileName == "piv-${slot.toString(16)}.cer"
+                ManagerOperation.PIV_SSH_EXPORT -> report.sshPublicKey && report.fileName == "piv-${slot.toString(16)}-ssh.pub"
+                ManagerOperation.PIV_SIGN -> report.signatureFormat == SignatureFormat.RAW && report.fileName == SignatureFormat.RAW.fileName
+                else -> false
+            }
+        } == true
+        require(signature.isNotEmpty() && (protectedDocument || (report.sshPublicKey && operation == ManagerOperation.PIV_SSH_EXPORT &&
             report.fileName == "piv-${mutable.value.slot.toString(16)}-ssh.pub") ||
             (report.signatureFormat != null && report.fileName == report.signatureFormat.fileName)))
         save = SignatureSave(report, signature.copyOf())
-        mutable.value = mutable.value.copy(exportOwner = report, exportStatus = null, restoreOperation = operation)
+        mutable.value = mutable.value.copy(exportOwner = report, exportStatus = null, restoreOperation = operation,
+            slot = report.protectedPivSlot ?: mutable.value.slot)
         return true
     }
     internal fun takeSave(id: String): SignatureSave? {

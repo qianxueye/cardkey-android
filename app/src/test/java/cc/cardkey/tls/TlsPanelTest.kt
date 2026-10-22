@@ -63,7 +63,9 @@ class TlsPanelTest {
                     ManagerScreen(manager.value, clear.intValue, {}, {}, { it.close() }, { cancelled++ }, {}, null,
                         {}, {}, {}, {}, enrollment, { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
                         tls.value, { tls.value = tls.value.copy(address = it, revision = tls.value.revision + 1) }, {},
-                        { submitted = it }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {})
+                        { submitted = it }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
+                            onProtectedPivDocument = {}, onProtectedPivClear = {},
+                            onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
                 }
             }
         }

@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cc.cardkey.protocol.*
+import cc.cardkey.protectedpiv.*
 import cc.cardkey.enrollment.*
 import cc.cardkey.tls.*
 import cc.cardkey.signing.*
@@ -70,6 +71,89 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     val enrollment = EnrollmentWorkflow()
     val signingFiles = PivSigningFiles()
     val inventory = FidoInventory()
+    private val protectedWorkflow = ProtectedPivWorkflow()
+    val protectedPiv = protectedWorkflow.state
+    private var protectedActive = false
+    private var protectedPickerOpen = false
+    private var protectedDocumentReturn: Pair<String, Uri?>? = null
+
+    fun requestProtectedPivDocument(kind: ProtectedPivDocument): String? {
+        if (mutable.value.busy) return null
+        protectedDocumentReturn = null
+        retireRecognition()
+        retireResult()
+        mutable.update { it.copy(result = null) }
+        return protectedWorkflow.requestDocument(kind).also { protectedPickerOpen = it != null }
+    }
+
+    fun receiveProtectedPivDocument(id: String, uri: Uri?) {
+        if (protectedWorkflow.documentKind(id) == null) return
+        protectedPickerOpen = false
+        protectedDocumentReturn = id to uri
+        if (protectedActive) resumeProtectedPiv()
+    }
+
+    fun resumeProtectedPiv() {
+        protectedActive = true
+        val returned = protectedDocumentReturn ?: return
+        protectedDocumentReturn = null
+        val (id, uri) = returned
+        val kind = protectedWorkflow.documentKind(id) ?: return
+        if (uri == null) { protectedWorkflow.receiveDocument(id, null); return }
+        val generation = protectedPiv.value.generation
+        viewModelScope.launch {
+            var bytes: ByteArray? = null
+            var name: String? = null
+            try {
+                bytes = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    val limit = when (kind) {
+                        ProtectedPivDocument.ISSUER -> 32768
+                        ProtectedPivDocument.PROFILE -> 4096
+                        ProtectedPivDocument.SIGNING_FILE -> PivClient.MAX_SIGNING_FILE_BYTES
+                    }
+                    if (kind == ProtectedPivDocument.SIGNING_FILE) {
+                        name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0) else null
+                        }?.take(255)?.filterNot { it.isISOControl() }?.takeIf { it.isNotBlank() }
+                    }
+                    resolver.openInputStream(uri)?.use { it.readNBytes(limit + 1) }
+                }
+                if (protectedActive && protectedWorkflow.documentKind(id) != null) {
+                    require(bytes != null)
+                    protectedWorkflow.receiveDocument(id, bytes, name)
+                }
+            } catch (_: Exception) {
+                if (protectedWorkflow.documentKind(id) != null || protectedPiv.value.generation == generation) {
+                    protectedWorkflow.receiveDocument(id, null)
+                    mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+                }
+            } finally { bytes?.fill(0) }
+        }
+    }
+
+    fun clearProtectedPiv() {
+        protectedDocumentReturn = null
+        cancel()
+        protectedWorkflow.retire()
+    }
+
+    fun recognizeProtectedPiv(action: ProtectedPivAction, slot: Int, subject: String) {
+        if (mutable.value.busy || mutable.value.requiresInspection && action != ProtectedPivAction.STATUS || !mutable.value.supportsPiv) return
+        try { submitOwned(protectedWorkflow.recognize(action, slot, subject)) }
+        catch (_: IllegalArgumentException) {
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+        }
+    }
+
+    fun executeProtectedPiv(pin: CharArray) {
+        try {
+            if (mutable.value.busy || mutable.value.requiresInspection || !mutable.value.supportsPiv) return
+            submitOwned(protectedWorkflow.execute(pin))
+        } catch (_: IllegalArgumentException) {
+            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
+        } finally { pin.fill('\u0000') }
+    }
 
     fun inventoryAction(operation: ManagerOperation?) { if (!mutable.value.busy) inventory.action(operation) }
     fun selectInventoryRp(generation: Long, rp: InventoryRp) {
@@ -133,6 +217,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private var operationWire = CardWire.APDU
     private var recoveryRoute: String? = null
     private var recoveryWire: CardWire? = null
+    private var recoveryProtectedIdentity: String? = null
+    private var operationProtectedIdentity: String? = null
     private var presenceGeneration = 0L
     private var recognitionLifecycle = 0L
     private val presenceLock = Any()
@@ -159,6 +245,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
         retireRecognition()
+        protectedWorkflow.retire()
+        protectedDocumentReturn = null
         retireResult()
         retireInventoryExport()
         signingFiles.retire()
@@ -317,6 +405,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         inProgress = true
         operationRoute = reader.routeKey
         operationWire = CardWire.APDU
+        operationProtectedIdentity = null
         operations.clearSession()
         inventory.retire()
         retireInventoryExport()
@@ -458,9 +547,13 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun requestSignatureSave(report: ManagerReport): Boolean {
         val result = mutable.value.result as? OperationResult.Completed ?: return false
-        if (mutable.value.busy || mutable.value.operation?.isOwnedExport != true || result.value !== report ||
-            (report.sshPublicKey && signingAction != ManagerOperation.PIV_SSH_EXPORT)) return false
-        return signingFiles.requestSave(report, signingAction)
+        val operation = mutable.value.operation
+        val protectedDocument = report.protectedPivSlot != null && report.protectedPivIdentity != null
+        if (mutable.value.busy || (!protectedDocument && operation?.isOwnedExport != true) || result.value !== report ||
+            (!protectedDocument && report.sshPublicKey && signingAction != ManagerOperation.PIV_SSH_EXPORT)) return false
+        return signingFiles.requestSave(report, if (protectedDocument) operation else signingAction).also {
+            if (it && protectedDocument) signingAction = operation
+        }
     }
 
     fun receiveSignatureSave(requestId: String, uri: Uri?) {
@@ -564,6 +657,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun submitOwned(input: OperationInput) {
+        if (input.protectedScan == null && !mutable.value.busy) protectedWorkflow.retire()
         if (mutable.value.busy) { input.close(); return }
         if (mutable.value.requiresInspection && !ConfirmationPolicy.canInspect(input.operation)) {
             input.close(); return
@@ -600,6 +694,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             } == true
         if (!preserveSigningFile) signingFiles.retireSelection()
         cancelled = false
+        operationProtectedIdentity = input.protectedScan?.identityLabel
         operationRoute = mutable.value.selectedReader?.routeKey ?: "nfc"
         operationWire = mutable.value.selectedReader?.wire ?: CardWire.APDU
         retireResult()
@@ -708,7 +803,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                                 } else CardSession(channel).use sessionUse@ { session ->
                                     if (input.operation.piv && session.wire == CardWire.CTAP)
                                         return@sessionUse OperationResult.Failed(FailureCode.UNSUPPORTED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
-                                    if (ConfirmationPolicy.pivVerificationReference(input.operation) != null) {
+                                    if (input.protectedScan == null && ConfirmationPolicy.pivVerificationReference(input.operation) != null) {
                                         session.requireContact()
                                         val before = PivClient(session).readInfo()
                                         val warning = ConfirmationPolicy.lastRetry(input.operation, before)
@@ -784,7 +879,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 presenceBlockedReader?.let(CardOperationGate::requireRemoval)
                 observeCardRemoval(reader)
             }
-            val retired = cancelled || input.inventoryRequest?.let { !inventory.current(it) } == true || (reader != null && (mutable.value.selectedReader?.routeKey != reader.routeKey ||
+            val protectedCurrent = input.protectedScan?.let { protectedWorkflow.settle(it, result) } ?: true
+            val retired = !protectedCurrent || cancelled || input.inventoryRequest?.let { !inventory.current(it) } == true || (reader != null && (mutable.value.selectedReader?.routeKey != reader.routeKey ||
                 !UsbAuthenticatorReader.isCurrent(usb, reader)))
             if (retired) {
                 retireRecognition()
@@ -801,7 +897,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 if (observationLifecycle == recognitionLifecycle && !mutable.value.permissionPending &&
                     observationRoute != null && observationRoute == (if (mutable.value.nfc) "nfc" else mutable.value.selectedReader?.routeKey) &&
                     (reader == null || usb.hasPermission(reader.device))) {
-                    input.operation.recognitionFamily?.let { family ->
+                    input.operation.recognitionFamily?.takeIf { input.protectedScan == null }?.let { family ->
                         mutable.update { it.copy(recognition = CardRecognition(observationRoute, observationLifecycle, family)) }
                     }
                 }
@@ -834,7 +930,14 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     private fun finish(result: OperationResult<ManagerReport>) {
         if (result is OperationResult.Failed) inventory.failedCurrent()
+        if (result is OperationResult.Failed) protectedWorkflow.retire()
         presenceGeneration++
+        if (result is OperationResult.Completed && result.value.protectedPivRecognition) {
+            retireResult()
+            mutable.update { it.copy(busy = false, awaitingNfc = false, lastRetry = null, fidoFinalAttempt = false,
+                userPresenceRequired = false, operation = null, result = null) }
+            return
+        }
         if (result is OperationResult.Failed && (mutable.value.operation?.recognitionFamily != null ||
             result.code in setOf(FailureCode.TRANSPORT_FAILURE, FailureCode.MALFORMED_RESPONSE,
                 FailureCode.CANCELLED, FailureCode.AUTHORIZATION_DENIED, FailureCode.PHYSICAL_ACTION_REQUIRED,
@@ -844,6 +947,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             if (!previous.requiresInspection) {
                 recoveryRoute = operationRoute
                 recoveryWire = operationWire
+                recoveryProtectedIdentity = operationProtectedIdentity
             } else {
                 if (recoveryRoute != operationRoute) recoveryRoute = null
                 if (operationWire == CardWire.CTAP) recoveryWire = CardWire.CTAP
@@ -852,10 +956,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         val requiresInspection = when {
             result is OperationResult.Failed && (result.effect == Effect.UNKNOWN || result.writeAccepted) -> true
             result is OperationResult.Completed && recoveryWire != CardWire.CTAP &&
-                recoveryRoute == operationRoute && previous.operation?.let(ConfirmationPolicy::canInspect) == true -> false
+                previous.operation?.let(ConfirmationPolicy::canInspect) == true &&
+                (if (recoveryProtectedIdentity != null) result.value.protectedPivIdentity == recoveryProtectedIdentity
+                 else recoveryRoute == operationRoute) -> false
             else -> previous.requiresInspection
         }
-        if (!requiresInspection) { recoveryRoute = null; recoveryWire = null }
+        if (!requiresInspection) { recoveryRoute = null; recoveryWire = null; recoveryProtectedIdentity = null }
         retireResult(result)
         mutable.value = previous.copy(busy = false, awaitingNfc = false, lastRetry = null, fidoFinalAttempt = false, userPresenceRequired = false,
             result = result, requiresInspection = requiresInspection)
@@ -887,21 +993,26 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun pauseForActivity(changingConfigurations: Boolean) {
+        protectedActive = false
         cancel(changingConfigurations || signingFiles.hasDocumentRequest, !mutable.value.busy && inventory.fileRequestId != null,
-            !mutable.value.busy && inventoryExport != null)
+            !mutable.value.busy && inventoryExport != null, protectedPickerOpen)
     }
 
     fun cancel() { cancel(false) }
 
-    private fun cancel(preserveSigningDocuments: Boolean, preserveInventoryDocument: Boolean = false, preserveInventoryExport: Boolean = false) {
+    private fun cancel(preserveSigningDocuments: Boolean, preserveInventoryDocument: Boolean = false, preserveInventoryExport: Boolean = false, preserveProtectedDocument: Boolean = false) {
+        protectedWorkflow.retire(preserveProtectedDocument)
+        if (!preserveProtectedDocument) { protectedDocumentReturn = null; protectedPickerOpen = false }
         documentGeneration++
         retireRecognition()
         if (!preserveInventoryExport) retireInventoryExport()
         signingInput.getAndSet(null)?.close()
         inventoryInput.getAndSet(null)?.close()
         if (!preserveSigningDocuments) signingFiles.retire()
-        val preserveSignatureResult = preserveSigningDocuments && mutable.value.operation?.isOwnedExport == true &&
-            (mutable.value.result as? OperationResult.Completed)?.value?.let { it.signatureFormat != null || it.sshPublicKey } == true
+        val preserveSignatureResult = preserveSigningDocuments &&
+            (mutable.value.result as? OperationResult.Completed)?.value?.let {
+                it.protectedPivSlot != null || mutable.value.operation?.isOwnedExport == true && (it.signatureFormat != null || it.sshPublicKey)
+            } == true
         tlsAttempt.get()?.close()
         networkCall.getAndSet(null)?.let { attempt ->
             if (!attempt.cancel()) enrollment.unsubmitted(attempt.owner)

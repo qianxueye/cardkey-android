@@ -580,7 +580,8 @@ class PivSecureContextTest {
         return session to PivSecureContext.establish(session, identity(), "12345678".toCharArray(), SecureRandom(), host(), bytes("host_id"))
     }
 
-    private inner class Peer(val cicc: ByteArray = bytes("cvc"), val algorithm: KeyAlgorithm = KeyAlgorithm.P256) : CardChannel {
+    internal inner class Peer(val cicc: ByteArray = bytes("cvc"), val algorithm: KeyAlgorithm = KeyAlgorithm.P256,
+                              private val dynamic: Boolean = false, keyPair: KeyPair? = null) : CardChannel {
         override var medium = Medium.NFC
         override val maxCommandBytes = 261
         val commands = mutableListOf<ByteArray>()
@@ -599,8 +600,12 @@ class PivSecureContextTest {
         private var cchain = ByteArray(16)
         private var rchain = ByteArray(16)
         private var counter = 1
-        private val keyBytes = keys()
-        private val slotKey = KeyPairGenerator.getInstance(if (algorithm == KeyAlgorithm.RSA2048) "RSA" else "EC").apply {
+        private var keyBytes = keys()
+        var pinRemaining = 4
+        var pukRemaining = 3
+        var successfulPinStatus: Int? = null
+        var onCommand: (Int, Int, ByteArray) -> Unit = { _, _, _ -> }
+        private val slotKey = keyPair ?: KeyPairGenerator.getInstance(if (algorithm == KeyAlgorithm.RSA2048) "RSA" else "EC").apply {
             if (this@Peer.algorithm == KeyAlgorithm.RSA2048) initialize(2048) else initialize(ECGenParameterSpec(this@Peer.algorithm.curve))
         }.generateKeyPair()
         override fun close() = Unit
@@ -620,7 +625,18 @@ class PivSecureContextTest {
             val body = fragments.also { fragments = byteArrayOf() }
             if (command[0] == 0.toByte()) {
                 assertEquals(0x87, ins); assertEquals(0x2e, command[2].toInt()); assertEquals(4, command[3].toInt())
-                val confirm = bytes("confirmation").also { if (badConfirmation) it[0]++ }
+                val confirm = if (dynamic) {
+                    val hello = PivTlv.parse(PivTlv.one(body, 0x7c)).getValue(0x81)
+                    val hostId = hello.copyOfRange(1, 9)
+                    val hostPoint = hello.copyOfRange(9, hello.size)
+                    val z = KeyAgreement.getInstance("ECDH").run {
+                        init(privateKey(5)); doPhase(Cs7.publicKey(hostPoint), true); generateSecret()
+                    }
+                    val ids = MessageDigest.getInstance("SHA-256").digest(cicc).copyOf(8)
+                    keyBytes = Cs7.derive(z, hostId, ids, bytes("nonce"), hostPoint)
+                    Cs7.mac(keyBytes.copyOfRange(0, 32), "KC_1_V".toByteArray() + ids + hostId + hostPoint.copyOfRange(1, 97))
+                } else bytes("confirmation")
+                if (badConfirmation) confirm[0]++
                 output = PivTlv.encode(0x7c, PivTlv.encode(0x82, byteArrayOf(0) + bytes("nonce") + confirm + cicc))
                 return next()
             }
@@ -638,13 +654,14 @@ class PivSecureContextTest {
                 while (plain[end] == 0.toByte()) end--
                 assertEquals(0x80.toByte(), plain[end]); plain.copyOf(end)
             } ?: byteArrayOf()
+            onCommand(ins, command[3].toInt() and 255, input)
             if (failure == "lost") throw TransportException(Dispatch.RESPONSE_UNAVAILABLE)
             val p2 = command[3].toInt() and 255
             var status = 0x9000
             val reply = when (ins) {
                 0x20 -> {
                     if (p2 == 0x98) { assertArrayEquals("12345678".toByteArray(), input); status = pairingStatus }
-                    else { status = pinStatus; if (input.isNotEmpty()) pinTries++ }
+                    else { status = if (input.isNotEmpty()) successfulPinStatus ?: pinStatus else pinStatus; if (input.isNotEmpty()) pinTries++ }
                     if (failure == "pin-data") byteArrayOf(1) else byteArrayOf()
                 }
                 0xfd, 0xf8, 0xf7 -> {
@@ -657,7 +674,7 @@ class PivSecureContextTest {
                         else -> when (p2) {
                             0x9b -> PivTlv.encode(1, byteArrayOf(0x0c)) + PivTlv.encode(5, byteArrayOf(1))
                             0x80, 0x81 -> PivTlv.encode(5, byteArrayOf(if (p2 == 0x80) 1 else 0)) +
-                                PivTlv.encode(6, byteArrayOf(5, if (p2 == 0x80) 4 else 3))
+                                PivTlv.encode(6, byteArrayOf(5, (if (p2 == 0x80) pinRemaining else pukRemaining).toByte()))
                             else -> slotMetadata ?: metadata()
                         }
                     }
