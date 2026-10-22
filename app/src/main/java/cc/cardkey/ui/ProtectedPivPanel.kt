@@ -56,7 +56,7 @@ fun ProtectedPivPanel(
                 style = MaterialTheme.typography.bodyMedium)
             OutlinedButton(onClick = { pin = ""; confirm = false; onDocument(ProtectedPivDocument.ISSUER) },
                 enabled = enabled, modifier = Modifier.testTag("protected-piv-issuer")) { Text("选择签发者证书") }
-            state.issuerSubject?.let { Text("签发者：$it") }
+            state.issuerSubject?.let { Text("签发者：${protectedPivDisplayText(it)}") }
             state.issuerFingerprint?.let { Text("证书指纹（SHA-256）：$it", style = MaterialTheme.typography.bodySmall) }
             Text("此证书提供已登记的公钥和标识；不会验证证书链、有效期或吊销状态，也不会加入系统信任。",
                 style = MaterialTheme.typography.bodySmall)

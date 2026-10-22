@@ -65,3 +65,14 @@ Dynamic values are public issuer identity/fingerprint, selected file metadata, p
 | Protected final retry | `PIN 仅剩 1 次机会。再次输错将锁定 NFC PIN 验证，需通过接触式连接恢复。` | `PIN 仅剩 1 次机会。再次输错可能锁定 PIN；恢复需要接触式连接。` | The dedicated path also supports known contact; avoid describing all attempts as NFC. |
 | Protected confirmation retry | `仅剩 1 次机会；输错后需通过接触式连接恢复。` | `仅剩 1 次机会；输错后可能需要恢复 PIN。` | Preserve the retry risk without misclassifying current transport. |
 | Protected authenticated destructive final retry | No warning in this panel | Existing `confirm_lastRetryErasesKeys`, with PIN/PUK substitution: `PIN 仅剩一次重试，PUK 已锁定。此次验证失败将清除 PIV 私钥。确认继续？` | Display in pending state and explicit confirmation when authenticated PIN remaining is 1 and PUK remaining is 0. Fresh execution rereads both counters before PIN. |
+
+## Public-name display
+
+Reviewed with plain-language-iso-24495 before application. The labels and trust explanation remain unchanged. Only the public dynamic display values change in this candidate's protected PIV panel; this does not activate an installed application or change the issuer certificate, authenticated identity, certificate bytes, fingerprint or file contents.
+
+| Screen / key | Before | Exact after | Reason / activation scope |
+| --- | --- | --- | --- |
+| Protected PIV / signing-file display name | Provider name was truncated to 255 UTF-16 code units, then ISO controls were removed; format and bidi controls remained, and the limit could split a surrogate pair. Display template: `文件：$it · ${state.fileSize ?: 0} 字节`. | Remove Unicode control and format code points and unpaired surrogates, then retain at most 255 complete code points. Omit a missing or blank cleaned name as before. Template unchanged: `文件：$it · ${state.fileSize ?: 0} 字节`. | Prevent invisible controls from changing the displayed name's order and retain complete supplementary characters. Applies to the selected signing file's public display name only; file bytes and URI are unchanged. |
+| Protected PIV / issuer display | Raw issuer subject in `签发者：$it`, without a code-point display limit. | Apply the same removal and 255-code-point limit only when rendering the subject. Template unchanged: `签发者：$it`. | Bound the displayed public name and remove invisible direction/format controls while preserving ordinary non-ASCII letters and symbols. The stored subject, issuer key/identifier and certificate fingerprint remain unchanged. |
+
+Example: a provider name containing `contract` + U+202E + U+2066 + U+2069 + U+200B + U+061C + a newline + `.pdf` displays as `contract.pdf`. A name with 254 `a` code points followed by U+1F512 retains the complete supplementary character as its 255th code point. Combining marks and ordinary right-to-left letters are retained; the limit counts code points, not grapheme clusters.
