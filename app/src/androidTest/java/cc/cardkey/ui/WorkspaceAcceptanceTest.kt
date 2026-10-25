@@ -90,7 +90,7 @@ class WorkspaceAcceptanceTest {
             compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertExists()
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             for (piv in listOf(false, true)) {
-                compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)).performClick()
+                compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
                 compose.onNodeWithText(if (piv) "高级 PIV 管理与诊断" else "高级 FIDO 设置与诊断").performScrollTo().performClick()
                 val actions = ManagerOperation.entries.filter {
                     it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET, ManagerOperation.FIDO_RPS,
@@ -107,7 +107,7 @@ class WorkspaceAcceptanceTest {
                     if (secrets.isNotEmpty()) assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
                 }
             }
-            compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)).performClick()
+            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()

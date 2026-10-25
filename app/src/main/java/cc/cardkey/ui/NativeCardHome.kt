@@ -28,7 +28,9 @@ internal fun NativeCardHome(
         OutlinedCard(colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    if (artwork !is CardArtworkState.Loaded) CardArtworkHero(artwork, onRetry, nfc = state.nfc)
+                    if (artwork !is CardArtworkState.Loaded) Box(Modifier.width(112.dp)) {
+                        CardArtworkHero(artwork, onRetry, nfc = state.nfc)
+                    }
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(if (state.canEnterFidoSecrets || state.canEnterPivSecrets)
                             R.string.native_observed else R.string.native_unread), style = MaterialTheme.typography.titleLarge)

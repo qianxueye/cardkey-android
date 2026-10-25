@@ -51,7 +51,7 @@ class InventoryActivityTest {
         seedInventory(model.inventory, card)
         compose.waitForIdle()
         compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
-        compose.onNode(hasText("设置") and hasClickAction()).performClick()
+        compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
         compose.onNodeWithText("高级 FIDO 设置与诊断").performScrollTo().performClick()
         choose("扩展数据 · 设置")
         return model to card

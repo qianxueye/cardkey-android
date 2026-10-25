@@ -71,7 +71,7 @@ class TlsPanelTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNode(hasText("设置") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
             check(activity)
         } finally { submitted?.close(); controller.pause().stop().destroy() }

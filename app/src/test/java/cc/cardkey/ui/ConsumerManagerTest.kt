@@ -69,6 +69,43 @@ class ConsumerManagerTest {
             }
         } finally { activity.pause().stop().destroy() }
     }
+    @Test fun homePublicReadCanCancelTheActualPendingNfcRequest() {
+        val app = RuntimeEnvironment.getApplication()
+        org.robolectric.shadows.ShadowNfcAdapter.setNfcHardwareExists(true)
+        org.robolectric.Shadows.shadowOf(app.packageManager).setSystemFeature(android.content.pm.PackageManager.FEATURE_NFC, true)
+        org.robolectric.Shadows.shadowOf(android.nfc.NfcAdapter.getDefaultAdapter(app)).setEnabled(true)
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        val model = ManagerViewModel(app)
+        var submissions = 0
+        activity.get().setContent {
+            val state = model.state.collectAsState().value
+            val inventory = model.inventory.state.collectAsState().value
+            MaterialTheme { Box(Modifier.requiredSize(400.dp, 800.dp)) {
+                ManagerScreen(state, 0, {}, {}, { submissions++; model.submit(it) }, model::cancel, {}, null, {}, {}, {}, {},
+                    EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                    TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
+                    inventory, { _, _ -> }, { _, _ -> }, {}, model::inventoryAction,
+                    protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
+                    onProtectedPivDocument = {}, onProtectedPivClear = {},
+                    onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
+            } }
+        }
+        try {
+            compose.onNodeWithTag("native-read-card").performScrollTo().performClick()
+            assertTrue(model.state.value.busy)
+            assertTrue(model.state.value.awaitingNfc)
+            assertNotNull(model.pendingNfcOwner)
+            compose.onNodeWithText("取消").performScrollTo().assertIsEnabled().performClick()
+            assertFalse(model.state.value.busy)
+            assertFalse(model.state.value.awaitingNfc)
+            assertNull(model.pendingNfcOwner)
+            val result = model.state.value.result as OperationResult.Failed
+            assertEquals(FailureCode.CANCELLED, result.code)
+            assertEquals(Effect.NONE, result.effect)
+            assertEquals(1, submissions)
+        } finally { model.cancel(); activity.pause().stop().destroy() }
+    }
+
     @Test fun coldLaunchAcceptsPinBeforeCardAndNeverRequiresManualRead() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         var submitted: OperationInput? = null

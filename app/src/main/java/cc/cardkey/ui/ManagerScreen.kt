@@ -428,7 +428,7 @@ fun ManagerScreen(
                     .testTag("workspace-detail").verticalScroll(detailScroll).padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (compact) { topBar(); if (tab != 5 && !focusedInventory) readerContext() }
-                    if (tab == 5) NativeCardHome(state, artwork,
+                    if (tab == 5 && !state.busy) NativeCardHome(state, artwork,
                         onRead = { onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
                             inventoryGeneration = inventory.generation, inventorySelection = inventory.credential)) },
                         onPrepare = { tab = 0; operation = ManagerOperation.FIDO_INVENTORY; advanced = false; focusedInventory = true; objectDetail = true },
@@ -507,6 +507,8 @@ fun ManagerScreen(
                                 }
                                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                                 if (state.busy && state.nfc) Text(stringResource(R.string.reader_nfc))
+                                if (tab == 5 && state.busy) OutlinedButton(onClick = onCancel,
+                                    modifier = Modifier.fillMaxWidth().testTag("native-cancel-read")) { Text("取消") }
                                 state.presenceMessage?.let { Text(stringResource(it)) }
                                 when (val result = state.result) {
                                     is OperationResult.Completed -> {

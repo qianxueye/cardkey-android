@@ -46,3 +46,7 @@ Issue #45. The Owner approved the four-platform concept, then clarified that onl
 | Task navigation / `native_back` | Unlabelled arrow | 返回 | Back | Accessible native back action; clears local prepared secrets, never guarantees undo. |
 
 Existing FIDO PIN field, cancellation, failure/unknown result, final-attempt warnings and all destructive/secret/export consequences remain exact. No placeholder PIN, example target, unprogrammed-card assertion or fake success enters runtime. Actual artwork loading, loaded images and retry retain their owners. English/Chinese catalogs include each new key with exact parity; no fallback exception is expanded.
+
+## Home read cancellation visibility
+
+PR #47 review correction: the home in-progress feedback now exposes the existing `取消` action, with the same meaning as Cancel elsewhere in the manager. Before: the pending home read had no cancel control. After: the unchanged cancellation label invokes existing `onCancel`; no new string/catalog key or cancellation guarantee is introduced. Activation is the next manager build/install. The actual task and NFC instruction stay beside it; known cancellation and unknown effects retain their original outcome policy. Artwork loading/failure width changes add no interface wording.
