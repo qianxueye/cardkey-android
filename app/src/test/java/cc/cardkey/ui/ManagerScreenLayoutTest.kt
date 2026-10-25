@@ -111,8 +111,9 @@ class ManagerScreenLayoutTest {
             update(ManagerState(busy = true, operation = ManagerOperation.FIDO_INFO))
             val scene = compose.onNodeWithTag("manager-scene").fetchSemanticsNode().boundsInRoot
             val safeBottom = scene.bottom - maxOf(navigationBottom, imeBottom)
-            for (label in listOf("继续", "取消")) {
-                val action = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            for (label in listOf("查看通行密钥", "取消")) {
+                val control = if (label == "查看通行密钥") compose.onNodeWithTag("manager-run") else compose.onNodeWithText(label)
+                val action = control.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
                 assertTrue("$label overlaps system area: $action, safe bottom $safeBottom", action.bottom <= safeBottom)
             }
             val destination = compose.onNode(hasText("通行密钥") and hasClickAction()).assertIsDisplayed().fetchSemanticsNode().boundsInRoot

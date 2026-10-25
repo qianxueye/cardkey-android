@@ -254,8 +254,7 @@ fun ManagerScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(managerDestinationIcons[2], contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.manager_connection) + " · " +
-                            (if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器"),
+                        Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器",
                             style = MaterialTheme.typography.titleMedium)
                         if (tab == 0 && !state.busy && !state.requiresInspection) Text(
                             stringResource(if (state.canEnterFidoSecrets) R.string.manager_fido_observed else R.string.manager_fido_unread),
@@ -412,7 +411,8 @@ fun ManagerScreen(
                                 Text(stringResource(R.string.workspace_objects))
                             }
                         }
-                        if (!advanced && inventory.credential == null && inventory.rp == null) {
+                        if (!advanced && inventory.credential == null && inventory.rp == null &&
+                            operation in setOf(ManagerOperation.FIDO_INVENTORY, ManagerOperation.FIDO_INFO)) {
                             Text(stringResource(R.string.manager_fido_intro), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedButton(onClick = {
                                 pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""

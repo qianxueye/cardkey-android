@@ -100,8 +100,12 @@ class PlexoWorkspaceTest {
     fun fidoDeliveryPreviewsUseOnlySyntheticState() {
         val dispatches = mutableListOf<OperationInput>()
         render(400, 800, onSubmit = { dispatches += it }) { activity, update, _ ->
+            compose.onNodeWithTag("manager-read-fido").assertIsEnabled()
             savePreview("fido-unread", activity)
             chooseTask(ManagerOperation.FIDO_CHANGE_PIN)
+            compose.onNodeWithTag("manager-read-fido").assertDoesNotExist()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertIsDisplayed()
+            compose.onNode(hasText("新 FIDO PIN") and hasSetTextAction()).assertIsDisplayed()
             savePreview("fido-pin-task", activity)
             update(ManagerState(operation = ManagerOperation.FIDO_INVENTORY,
                 result = OperationResult.Completed(ManagerReport(listOf(
@@ -143,6 +147,26 @@ class PlexoWorkspaceTest {
             compose.onNodeWithText("未初始化", substring = true).assertDoesNotExist()
             compose.onNodeWithText("未安装", substring = true).assertDoesNotExist()
             assertTrue(submissions.isEmpty())
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w400dp-h800dp-night-mdpi")
+    fun darkFidoWorkspaceUsesNativeSyntheticPreview() {
+        render(400, 800) { activity, _, _ ->
+            compose.onNodeWithTag("manager-read-fido").assertIsDisplayed()
+            savePreview("fido-dark", activity)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w800dp-h400dp-mdpi")
+    fun largeTextLandscapePinTaskStaysScrollableWithoutDispatch() {
+        render(800, 400, 1.5f) { activity, _, _ ->
+            chooseTask(ManagerOperation.FIDO_CHANGE_PIN)
+            compose.onNode(hasText("新 FIDO PIN") and hasSetTextAction()).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("manager-run").assertIsDisplayed()
+            savePreview("fido-large-landscape", activity)
         }
     }
 

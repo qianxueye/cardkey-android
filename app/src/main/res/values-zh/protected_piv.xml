@@ -136,7 +136,6 @@
     <string name="confirmTitle_PIV_UNBLOCK">解锁 PIV PIN</string>
     <string name="confirmTitle_PIV_CMS_SIGN">CMS 文件签名</string>
     <string name="user_updateHelp" formatted="false">此卡仅支持修改用户名，不支持修改显示名称。</string>
-    <string name="manager_connection">连接方式</string>
     <string name="manager_fido_unread">尚未读取 FIDO 信息</string>
     <string name="manager_fido_observed">已读取 FIDO 信息</string>
     <string name="manager_read_fido">读取 FIDO 信息</string>

@@ -160,7 +160,6 @@
     <string name="document_unknown" tools:ignore="MissingTranslation">未确认文件保存结果。请检查所选位置，勿重复提交卡片操作。</string>
     <string name="reader_permissionDenied" tools:ignore="MissingTranslation">未获 USB 读卡器访问授权。请重新选择读卡器，或改用 NFC。</string>
     <string name="user_updateHelp" formatted="false">此卡仅支持修改用户名，不支持修改显示名称。</string>
-    <string name="manager_connection">连接方式</string>
     <string name="manager_fido_unread">尚未读取 FIDO 信息</string>
     <string name="manager_fido_observed">已读取 FIDO 信息</string>
     <string name="manager_read_fido">读取 FIDO 信息</string>

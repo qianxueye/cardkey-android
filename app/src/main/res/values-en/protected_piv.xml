@@ -136,7 +136,6 @@
     <string name="confirmTitle_PIV_UNBLOCK">Unblock PIV PIN</string>
     <string name="confirmTitle_PIV_CMS_SIGN">CMS file signing</string>
     <string name="user_updateHelp" formatted="false">On this card, you can change the username but not the display name.</string>
-    <string name="manager_connection">Connection</string>
     <string name="manager_fido_unread">FIDO information not read</string>
     <string name="manager_fido_observed">FIDO information read</string>
     <string name="manager_read_fido">Read FIDO information</string>
