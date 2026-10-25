@@ -310,6 +310,12 @@ class ProtectedPivLocalizationTest {
             "workspace_details" to "技术详情",
             "workspace_outputFile" to "本次导出文件",
             "workspace_receipt" to "任务结果",
+            "manager_fido_unread" to "尚未读取 FIDO 信息",
+            "manager_fido_observed" to "已读取 FIDO 信息",
+            "manager_read_fido" to "读取 FIDO 信息",
+            "manager_fido_intro" to "可先读取信息，或输入 FIDO PIN 查看通行密钥。",
+            "manager_fido_advanced" to "高级设置与诊断",
+            "manager_inventory_action" to "查看通行密钥",
         )
         val placeholders = Regex("%[0-9]+\\$[sd]")
         fun entries(file: File): Map<String, org.w3c.dom.Element> {

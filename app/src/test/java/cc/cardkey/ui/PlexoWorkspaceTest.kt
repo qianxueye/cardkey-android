@@ -95,6 +95,81 @@ class PlexoWorkspaceTest {
         }
     }
 
+    @Test
+    @Config(qualifiers = "zh-rCN-w400dp-h800dp-mdpi")
+    fun fidoDeliveryPreviewsUseOnlySyntheticState() {
+        val dispatches = mutableListOf<OperationInput>()
+        render(400, 800, onSubmit = { dispatches += it }) { activity, update, _ ->
+            compose.onNodeWithTag("manager-read-fido").assertIsEnabled()
+            savePreview("fido-unread", activity)
+            chooseTask(ManagerOperation.FIDO_CHANGE_PIN)
+            compose.onNodeWithTag("manager-read-fido").assertDoesNotExist()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertIsDisplayed()
+            compose.onNode(hasText("新 FIDO PIN") and hasSetTextAction()).assertIsDisplayed()
+            savePreview("fido-pin-task", activity)
+            update(ManagerState(operation = ManagerOperation.FIDO_INVENTORY,
+                result = OperationResult.Completed(ManagerReport(listOf(
+                    ResultRow("已存储凭据", "2 个"), ResultRow("剩余凭据容量（估算）", "18 个")
+                )), Effect.NONE)))
+            savePreview("fido-result", activity)
+            assertTrue(dispatches.isEmpty())
+        }
+    }
+
+    @Test fun explicitFidoReadIsPublicAndDoesNotChangePinPreparation() {
+        val submissions = mutableListOf<OperationInput>()
+        render(400, 800, onSubmit = { submissions += it }) { _, update, action ->
+            compose.onNodeWithText("尚未读取 FIDO 信息").assertExists()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertExists()
+            assertTrue(submissions.isEmpty())
+            compose.onNodeWithTag("manager-read-fido").performScrollTo().performClick()
+            assertEquals(1, submissions.size)
+            assertEquals(ManagerOperation.FIDO_INFO, submissions.single().operation)
+            assertTrue(submissions.single().pin.isEmpty())
+            assertEquals(ManagerOperation.FIDO_INVENTORY, action()?.first)
+            update(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
+            compose.onNodeWithText("已读取 FIDO 信息").assertExists()
+            update(ManagerState(recognition = CardRecognition("other-route", 1, CardFamily.FIDO2)))
+            compose.onNodeWithText("尚未读取 FIDO 信息").assertExists()
+            compose.onNodeWithText("未初始化", substring = true).assertDoesNotExist()
+            compose.onNodeWithText("未安装", substring = true).assertDoesNotExist()
+            submissions.forEach { it.close() }
+        }
+    }
+
+    @Test fun unknownOutcomeDoesNotClaimAnAbsentAppletOrCreateAnotherTask() {
+        val submissions = mutableListOf<OperationInput>()
+        render(400, 800, onSubmit = { submissions += it }, initial = ManagerState(
+            requiresInspection = true,
+            result = OperationResult.Failed(cc.cardkey.protocol.FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN)
+        )) { _, _, _ ->
+            compose.onNodeWithText("尚未读取 FIDO 信息").assertDoesNotExist()
+            compose.onNodeWithText("未初始化", substring = true).assertDoesNotExist()
+            compose.onNodeWithText("未安装", substring = true).assertDoesNotExist()
+            assertTrue(submissions.isEmpty())
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w400dp-h800dp-night-mdpi")
+    fun darkFidoWorkspaceUsesNativeSyntheticPreview() {
+        render(400, 800) { activity, _, _ ->
+            compose.onNodeWithTag("manager-read-fido").assertIsDisplayed()
+            savePreview("fido-dark", activity)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w800dp-h400dp-mdpi")
+    fun largeTextLandscapePinTaskStaysScrollableWithoutDispatch() {
+        render(800, 400, 1.5f) { activity, _, _ ->
+            chooseTask(ManagerOperation.FIDO_CHANGE_PIN)
+            compose.onNode(hasText("新 FIDO PIN") and hasSetTextAction()).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("manager-run").assertIsDisplayed()
+            savePreview("fido-large-landscape", activity)
+        }
+    }
+
     private fun savePreview(name: String, activity: ComponentActivity) {
         val view = activity.window.decorView
         val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
