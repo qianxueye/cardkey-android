@@ -21,3 +21,15 @@ The local delivery is `.cardkey-delivery/current-fido-20261024/android-ui/` outs
 `CardKey-fido-workspace-debug.apk`: 42,611,773 bytes, `cc.cardkey.android`, version `0.1.0` / code `1`. `CardKey-fido-workspace-instrumentation.apk`: 2,473,687 bytes, `cc.cardkey.android.test`. Both pass build-tools `apksigner verify --verbose --print-certs` with the existing Android Debug certificate SHA-256 `83d41e07f0f200c4c135c7432e5aa28f2ace23540d3a25d1126789bb675c9951`; this serves the concrete same-signer update invariant, not a tracking manifest or release-signing claim.
 
 Final synthetic PNGs include unread light/dark, PIN task, retained result and large-text landscape; they were visually inspected. These are Android Canvas/Robolectric fixtures with synthetic data. No new UI APK was installed, no device was launched, and no card, PIN, APDU, provider, account or firmware operation occurred. Owner clarified that the intended target card is not programmed; historical FW17 does not identify this target. Root owns publication, native installation/synthetic device tests and any separately authorized physical acceptance. The existing Sony stay-awake value `3` is unchanged.
+
+## Synthetic visual comparison
+
+These existing isolated Android Canvas/Robolectric renders use synthetic state only. The before image represents base runtime `4ab71057`; final images represent runtime `65f8705`. The PIN task contains empty secure fields, not a real PIN. These are not phone screenshots, physical-card proof or Owner device acceptance. No new rendering or device operation was performed to package them.
+
+| Before: unread workspace | After: unread workspace |
+| --- | --- |
+| ![Base unread workspace](screenshots/fido-workspace/before-unread.png) | ![FIDO read and truthful unread state](screenshots/fido-workspace/unread.png) |
+
+| After: PIN task | After: dark mode |
+| --- | --- |
+| ![PIN task with both secure fields visible](screenshots/fido-workspace/pin-task.png) | ![Unread workspace in dark mode](screenshots/fido-workspace/dark.png) |
