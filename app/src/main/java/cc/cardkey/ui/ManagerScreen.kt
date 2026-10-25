@@ -307,7 +307,7 @@ fun ManagerScreen(
         val viewportWidth = maxWidth
         val twoPanes = !focusedInventory && workspaceUsesTwoPanes(maxWidth, LocalDensity.current.fontScale, viewportHeight)
         val detailVisible = tab >= 2 || twoPanes || objectDetail || state.busy
-        BackHandler(tab < 2 && objectDetail && !twoPanes && !state.busy) {
+        BackHandler(tab < 2 && objectDetail && !twoPanes && !focusedInventory && !state.busy) {
             confirmation?.close(); confirmation = null
             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
             objectDetail = false

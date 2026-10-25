@@ -181,6 +181,23 @@ class PlexoWorkspaceTest {
         output.outputStream().use { assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) }
     }
 
+    @Test fun focusedInventorySystemBackReturnsHomeAndRetiresPinWithoutDispatch() {
+        var submissions = 0
+        render(400, 800, openPasskeys = false, onSubmit = { submissions++; it.close() }) { activity, _, _ ->
+            compose.onNodeWithText(activity.getString(cc.cardkey.R.string.native_prepare)).performScrollTo().performClick()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).performTextInput("1234")
+            compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
+            compose.onNodeWithTag("native-card-home").assertExists()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
+            assertEquals(0, submissions)
+            compose.onNodeWithText(activity.getString(cc.cardkey.R.string.native_prepare)).performScrollTo().performClick()
+            val field = compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).fetchSemanticsNode()
+            assertEquals("", field.config[SemanticsProperties.EditableText].text)
+            compose.onNodeWithTag("manager-run").assertIsNotEnabled()
+            assertEquals(0, submissions)
+        }
+    }
+
     @Test fun compactObjectSelectionAndSystemBackPreserveSlotWithoutDispatch() {
         render(360, 640, 1.5f) { activity, _, action ->
             compose.onNodeWithTag("workspace-object-back").performClick()
