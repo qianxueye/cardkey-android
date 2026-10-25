@@ -119,3 +119,18 @@ fun CardKeyTheme(content: @Composable () -> Unit) {
         )
     }
 }
+
+@Composable
+internal fun managerColorScheme() = MaterialTheme.colorScheme.let { base ->
+    if (isSystemInDarkTheme()) base.copy(
+        primary = Color(0xFFADC6FF), onPrimary = Color(0xFF002E69),
+        primaryContainer = Color(0xFF164681), onPrimaryContainer = Color(0xFFD8E2FF),
+        secondaryContainer = Color(0xFF3B3215), onSecondaryContainer = Color(0xFFF4DF9A),
+        tertiary = Color(0xFFE8C45A), onTertiary = Color(0xFF3A3000),
+    ) else base.copy(
+        primary = Color(0xFF1757A6), onPrimary = Color.White,
+        primaryContainer = Color(0xFFE8F0FF), onPrimaryContainer = Color(0xFF103867),
+        secondaryContainer = Color(0xFFFFF2C9), onSecondaryContainer = Color(0xFF574500),
+        tertiary = Color(0xFF8A6800), onTertiary = Color.White,
+    )
+}

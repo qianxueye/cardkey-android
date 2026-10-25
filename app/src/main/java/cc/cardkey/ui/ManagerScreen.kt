@@ -176,6 +176,7 @@ fun ManagerScreen(
     }
     DisposableEffect(Unit) { onDispose { confirmation?.close() } }
 
+    MaterialTheme(colorScheme = if (tab in setOf(0, 2, 4)) managerColorScheme() else MaterialTheme.colorScheme) {
     confirmation?.let { input ->
         val dismiss = { input.close(); confirmation = null; if (input.inventorySelection != null) onCancel() }
         AlertDialog(onDismissRequest = dismiss,
@@ -251,10 +252,15 @@ fun ManagerScreen(
             Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(Modifier.widthIn(max = 840.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(managerDestinationIcons[2], contentDescription = null)
+                    Icon(managerDestinationIcons[2], contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.weight(1f)) {
-                        Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器",
+                        Text(stringResource(R.string.manager_connection) + " · " +
+                            (if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器"),
                             style = MaterialTheme.typography.titleMedium)
+                        if (tab == 0 && !state.busy && !state.requiresInspection) Text(
+                            stringResource(if (state.canEnterFidoSecrets) R.string.manager_fido_observed else R.string.manager_fido_unread),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("manager-fido-observation"))
                         if (state.requiresInspection) Text(stringResource(R.string.workspace_inspection),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         if (state.nfc && state.busy) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodySmall)
@@ -362,7 +368,7 @@ fun ManagerScreen(
                                 (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
-                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(if (op == ManagerOperation.FIDO_INVENTORY) "继续" else op.title.substringAfter("·").trim()) }
+                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(if (op == ManagerOperation.FIDO_INVENTORY) stringResource(R.string.manager_inventory_action) else op.title.substringAfter("·").trim()) }
                             if (state.busy) OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
                         }
                     }
@@ -394,20 +400,47 @@ fun ManagerScreen(
                     .testTag("workspace-detail").verticalScroll(detailScroll).padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (compact) { topBar(); readerContext() }
+                    if (tab == 0) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.navigation_passkeys), Modifier.weight(1f),
+                                style = MaterialTheme.typography.headlineMedium)
+                            if (!twoPanes) TextButton(onClick = {
+                                confirmation?.close(); confirmation = null
+                                pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+                                objectDetail = false
+                            }, enabled = !state.busy, modifier = Modifier.testTag("workspace-object-back")) {
+                                Text(stringResource(R.string.workspace_objects))
+                            }
+                        }
+                        if (!advanced && inventory.credential == null && inventory.rp == null) {
+                            Text(stringResource(R.string.manager_fido_intro), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedButton(onClick = {
+                                pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+                                confirmation?.close(); confirmation = null
+                                onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
+                                    inventoryGeneration = inventory.generation, inventorySelection = inventory.credential))
+                            }, enabled = !state.busy && !state.permissionPending &&
+                                (!state.requiresInspection || ConfirmationPolicy.canInspect(ManagerOperation.FIDO_INFO)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.fillMaxWidth().testTag("manager-read-fido")) {
+                                Text(stringResource(R.string.manager_read_fido))
+                            }
+                        }
+                    }
                     if (tab == 1) key(state.selectedReader?.routeKey, state.nfc) {
                         ProtectedPivPanel(protectedPiv, state.busy || state.permissionPending, state.requiresInspection,
                             clearInputs, onProtectedPivDocument, onProtectedPivClear, onProtectedPivRecognize,
                             onProtectedPivExecute, protectedInspectionRequired = state.requiresProtectedInspection)
                     }
                     if (tab < 2) {
-                        if (!twoPanes) TextButton(onClick = {
+                        if (!twoPanes && tab == 1) TextButton(onClick = {
                             confirmation?.close(); confirmation = null
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                             objectDetail = false
                         }, enabled = !state.busy, modifier = Modifier.testTag("workspace-object-back")) {
                             Text(stringResource(R.string.workspace_objects))
                         }
-                        PlexoSection(stringResource(R.string.workspace_selectedObject)) {
+                        if (tab == 1 || inventory.credential != null || inventory.rp != null) PlexoSection(stringResource(R.string.workspace_selectedObject)) {
                             if (tab == 1) {
                                 if (operation in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN,
                                         ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_RESET)) {
@@ -523,8 +556,9 @@ fun ManagerScreen(
                         }
                         OutlinedButton(onClick = onRefresh, enabled = !state.busy) { Text("刷新读卡器") }
                     } else if (tab < 2) {
-                        Text(stringResource(if (tab == 0) R.string.navigation_passkeys else R.string.navigation_certificates), style = MaterialTheme.typography.headlineSmall)
-                        OutlinedCard(Modifier.fillMaxWidth()) {
+                        if (tab == 1) Text(stringResource(R.string.navigation_certificates), style = MaterialTheme.typography.headlineSmall)
+                        Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+                            color = if (tab == 0) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceContainerLow) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 val op = operation
                                 if (op.piv && op !in setOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PUK,
@@ -535,6 +569,8 @@ fun ManagerScreen(
                                 else if (tab == 1) listOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT, ManagerOperation.PIV_SSH_EXPORT, ManagerOperation.PIV_SIGN, ManagerOperation.PIV_CMS_SIGN, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_UNBLOCK)
                                 else listOf(ManagerOperation.FIDO_INVENTORY, ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN) +
                                     if (inventory.credential != null) listOf(ManagerOperation.FIDO_UPDATE, ManagerOperation.FIDO_DELETE) else emptyList()
+                                if (tab == 0 && !advanced) Text(stringResource(R.string.workspace_common),
+                                    style = MaterialTheme.typography.titleMedium)
                                 OperationChoice(operation, tasks, !state.busy) { operation = it }
                                 if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission, displayName))
                                 if (op.isFileSigning) {
@@ -643,6 +679,12 @@ fun ManagerScreen(
                             }
                         }
                     }
+                    if (tab == 0 && !advanced) TextButton(onClick = {
+                        pin = ""; newPin = ""; confirmation?.close(); confirmation = null
+                        advanced = true
+                    }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.manager_fido_advanced))
+                    }
                     if (tab == 4) {
                         Text(stringResource(R.string.navigation_settings), style = MaterialTheme.typography.headlineSmall)
                         PlexoSection(stringResource(R.string.settings_services)) {
@@ -677,6 +719,7 @@ fun ManagerScreen(
                 }
             }
         }
+    }
     }
 }
 
