@@ -123,14 +123,20 @@ fun CardKeyTheme(content: @Composable () -> Unit) {
 @Composable
 internal fun managerColorScheme() = MaterialTheme.colorScheme.let { base ->
     if (isSystemInDarkTheme()) base.copy(
-        primary = Color(0xFFADC6FF), onPrimary = Color(0xFF002E69),
-        primaryContainer = Color(0xFF164681), onPrimaryContainer = Color(0xFFD8E2FF),
-        secondaryContainer = Color(0xFF3B3215), onSecondaryContainer = Color(0xFFF4DF9A),
-        tertiary = Color(0xFFE8C45A), onTertiary = Color(0xFF3A3000),
+        primary = Color(0xFFACC4FF), onPrimary = Color(0xFF002D70),
+        primaryContainer = Color(0xFF1B3F7B), onPrimaryContainer = Color(0xFFD9E2FF),
+        background = Color(0xFF1C2226), surface = Color(0xFF20292F),
+        onSurface = Color(0xFFE6EBE8), onBackground = Color(0xFFE6EBE8),
+        onSurfaceVariant = Color(0xFFAFBABF), outlineVariant = Color(0xFF465057),
+        surfaceContainer = Color(0xFF242E34), surfaceContainerLow = Color(0xFF20292F),
+        secondaryContainer = Color(0xFF293E5D), onSecondaryContainer = Color(0xFFD9E2FF),
     ) else base.copy(
-        primary = Color(0xFF1757A6), onPrimary = Color.White,
-        primaryContainer = Color(0xFFE8F0FF), onPrimaryContainer = Color(0xFF103867),
-        secondaryContainer = Color(0xFFFFF2C9), onSecondaryContainer = Color(0xFF574500),
-        tertiary = Color(0xFF8A6800), onTertiary = Color.White,
+        primary = Color(0xFF2358C4), onPrimary = Color.White,
+        primaryContainer = Color(0xFFE8EEFB), onPrimaryContainer = Color(0xFF1E438B),
+        background = Color(0xFFF7F7F2), surface = Color.White,
+        onSurface = Color(0xFF20292F), onBackground = Color(0xFF20292F),
+        onSurfaceVariant = Color(0xFF67747A), outlineVariant = Color(0xFFDDE2DF),
+        surfaceContainer = Color(0xFFF7F7F2), surfaceContainerLow = Color.White,
+        secondaryContainer = Color(0xFFE8EEFB), onSecondaryContainer = Color(0xFF2358C4),
     )
 }

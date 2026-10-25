@@ -52,7 +52,7 @@ class ManagerScreenLayoutTest {
             (0 until group.childCount).firstNotNullOfOrNull { composeRoot(group.getChildAt(it)) }
         }
 
-    private fun render(width: Int, height: Int, recognizedFamily: CardFamily? = null, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
+    private fun render(width: Int, height: Int, prepareInventory: Boolean = false, recognizedFamily: CardFamily? = null, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         activity.enableEdgeToEdge()
@@ -72,10 +72,38 @@ class ManagerScreenLayoutTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            if (prepareInventory) compose.onNodeWithText(activity.getString(R.string.native_prepare)).performScrollTo().performClick()
+            else compose.onNode(hasText("通行密钥") and hasClickAction()).performScrollTo().performClick()
             compose.waitForIdle()
             check(activity) { next -> compose.runOnIdle { state.value = next.copy(recognition = next.recognition ?: recognized) }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w400dp-h800dp-mdpi")
+    fun preparedInventoryKeepsPinAndSubmitInsideImeViewportWithoutDispatch() {
+        var dispatches = 0
+        render(400, 800, prepareInventory = true, onSubmit = { dispatches++; it.close() }) { activity, _ ->
+            val field = compose.onNode(hasText("FIDO PIN") and hasSetTextAction())
+            field.performScrollTo().performClick().performTextInput("1234")
+            compose.runOnIdle {
+                requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
+                    .setInsets(WindowInsets.Type.navigationBars(), Insets.of(0, 0, 0, 24))
+                    .setVisible(WindowInsets.Type.navigationBars(), true)
+                    .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 300))
+                    .setVisible(WindowInsets.Type.ime(), true).build())
+            }
+            field.performScrollTo().assertIsDisplayed()
+            val submit = compose.onNodeWithTag("manager-run").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val scene = compose.onNodeWithTag("manager-scene").fetchSemanticsNode().boundsInRoot
+            assertTrue("Submit overlaps IME: $submit / $scene", submit.bottom <= scene.bottom - 300)
+            assertEquals(0, dispatches)
+            val bitmap = android.graphics.Bitmap.createBitmap(activity.window.decorView.width, activity.window.decorView.height, android.graphics.Bitmap.Config.ARGB_8888)
+            compose.runOnIdle { activity.window.decorView.draw(android.graphics.Canvas(bitmap)) }
+            val directory = java.io.File("build/ui-previews").apply { mkdirs() }
+            val output = java.io.File(directory, "native-pin-ime.png")
+            output.outputStream().use { assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) }
+        }
     }
 
     private fun assertInputSpace() {

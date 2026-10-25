@@ -142,4 +142,23 @@
     <string name="manager_fido_intro">Read information first, or enter the FIDO PIN to view passkeys.</string>
     <string name="manager_fido_advanced">Advanced settings and diagnostics</string>
     <string name="manager_inventory_action">View passkeys</string>
+    <string name="native_card">Card</string>
+    <string name="native_unread">Not read</string>
+    <string name="native_observed">Information read</string>
+    <string name="native_app_unread">Not read</string>
+    <string name="native_app_read">Read</string>
+    <string name="native_read">Read card</string>
+    <string name="native_read_scope">Reads public FIDO information. Read certificate information in Certificates and signing.</string>
+    <string name="native_tap">Hold the card near the phone’s NFC area</string>
+    <string name="native_usb">Select a connected USB reader</string>
+    <string name="native_prepare">Prepare PIN</string>
+    <string name="native_inventory_title">View passkeys</string>
+    <string name="native_target_unread">Target card not identified</string>
+    <string name="native_target_observed">FIDO information was read on this connection</string>
+    <string name="native_pin_tap">Enter the PIN first, then submit and present the card.</string>
+    <string name="native_pin_usb">Enter the PIN first, then submit the read.</string>
+    <string name="native_submit_tap">Submit and present card</string>
+    <string name="native_certificates">Certificates and signing</string>
+    <string name="native_technical">Technical information</string>
+    <string name="native_back">Back</string>
 </resources>

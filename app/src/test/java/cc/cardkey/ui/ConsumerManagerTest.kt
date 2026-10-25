@@ -87,6 +87,9 @@ class ConsumerManagerTest {
         }
         try {
             compose.waitForIdle()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
+            compose.runOnIdle { assertEquals(0, submissions) }
+            compose.onNodeWithText(activity.get().getString(R.string.native_prepare)).performScrollTo().performClick()
             compose.onNodeWithTag("recognition-task").assertDoesNotExist()
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).performScrollTo().performTextInput("1234")
@@ -96,6 +99,8 @@ class ConsumerManagerTest {
                 assertArrayEquals("1234".toCharArray(), submitted?.pin)
             }
             compose.onNodeWithText("RP SHA-256 · HEX").assertDoesNotExist()
+            compose.onNodeWithText("取消").performClick()
+            compose.onNode(hasText("通行密钥") and hasClickAction()).performScrollTo().performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithTag("task-FIDO_CHANGE_PIN").performScrollTo().performClick()
             compose.runOnIdle {

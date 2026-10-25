@@ -81,9 +81,11 @@ class PlexoWorkspaceTest {
     @Config(qualifiers = "zh-rCN-w400dp-h800dp-mdpi")
     fun taskNavigationKeepsDeviceAndSettingsPassive() {
         render(400, 800, initial = ManagerState(nfc = false), openPasskeys = false) { activity, _, _ ->
-            compose.onNode(hasText("卡片") and hasClickAction()).performClick()
-            compose.onNodeWithText("通用卡片示意图").assertIsDisplayed()
+            compose.onNodeWithTag("native-card-home").assertExists()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
             savePreview("device", activity)
+            compose.onNodeWithText("USB", substring = false).performClick()
+            compose.onNodeWithContentDescription("通用卡片示意图").assertIsDisplayed()
             compose.onNodeWithText("刷新读卡器").performScrollTo().assertIsDisplayed()
             compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
             compose.onNodeWithTag("workspace-object-back").performClick()
@@ -99,38 +101,38 @@ class PlexoWorkspaceTest {
     @Config(qualifiers = "zh-rCN-w400dp-h800dp-mdpi")
     fun fidoDeliveryPreviewsUseOnlySyntheticState() {
         val dispatches = mutableListOf<OperationInput>()
-        render(400, 800, onSubmit = { dispatches += it }) { activity, update, _ ->
-            compose.onNodeWithTag("manager-read-fido").assertIsEnabled()
-            savePreview("fido-unread", activity)
-            chooseTask(ManagerOperation.FIDO_CHANGE_PIN)
-            compose.onNodeWithTag("manager-read-fido").assertDoesNotExist()
+        render(400, 800, openPasskeys = false, onSubmit = { dispatches += it }) { activity, update, _ ->
+            compose.onNodeWithTag("native-read-card").assertIsEnabled()
+            savePreview("native-home", activity)
+            compose.onNodeWithText("准备 PIN").performScrollTo().performClick()
             compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertIsDisplayed()
-            compose.onNode(hasText("新 FIDO PIN") and hasSetTextAction()).assertIsDisplayed()
-            savePreview("fido-pin-task", activity)
+            compose.onNodeWithText("目标卡片尚未识别").assertExists()
+            savePreview("native-pin-task", activity)
             update(ManagerState(operation = ManagerOperation.FIDO_INVENTORY,
                 result = OperationResult.Completed(ManagerReport(listOf(
                     ResultRow("已存储凭据", "2 个"), ResultRow("剩余凭据容量（估算）", "18 个")
                 )), Effect.NONE)))
-            savePreview("fido-result", activity)
+            savePreview("native-result", activity)
             assertTrue(dispatches.isEmpty())
         }
     }
 
     @Test fun explicitFidoReadIsPublicAndDoesNotChangePinPreparation() {
         val submissions = mutableListOf<OperationInput>()
-        render(400, 800, onSubmit = { submissions += it }) { _, update, action ->
-            compose.onNodeWithText("尚未读取 FIDO 信息").assertExists()
-            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertExists()
+        render(400, 800, openPasskeys = false, onSubmit = { submissions += it }) { _, update, _ ->
+            compose.onNodeWithText("尚未读取", substring = false).assertExists()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
             assertTrue(submissions.isEmpty())
-            compose.onNodeWithTag("manager-read-fido").performScrollTo().performClick()
+            compose.onNodeWithTag("native-read-card").performScrollTo().performClick()
             assertEquals(1, submissions.size)
             assertEquals(ManagerOperation.FIDO_INFO, submissions.single().operation)
             assertTrue(submissions.single().pin.isEmpty())
-            assertEquals(ManagerOperation.FIDO_INVENTORY, action()?.first)
             update(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
-            compose.onNodeWithText("已读取 FIDO 信息").assertExists()
+            compose.onNodeWithText("信息已读取").assertExists()
+            compose.onNodeWithText("FIDO2 · 已读取").assertExists()
+            compose.onNodeWithText("PIV · 未读取").assertExists()
             update(ManagerState(recognition = CardRecognition("other-route", 1, CardFamily.FIDO2)))
-            compose.onNodeWithText("尚未读取 FIDO 信息").assertExists()
+            compose.onNodeWithText("尚未读取", substring = false).assertExists()
             compose.onNodeWithText("未初始化", substring = true).assertDoesNotExist()
             compose.onNodeWithText("未安装", substring = true).assertDoesNotExist()
             submissions.forEach { it.close() }
@@ -153,20 +155,20 @@ class PlexoWorkspaceTest {
     @Test
     @Config(qualifiers = "zh-rCN-w400dp-h800dp-night-mdpi")
     fun darkFidoWorkspaceUsesNativeSyntheticPreview() {
-        render(400, 800) { activity, _, _ ->
-            compose.onNodeWithTag("manager-read-fido").assertIsDisplayed()
-            savePreview("fido-dark", activity)
+        render(400, 800, openPasskeys = false) { activity, _, _ ->
+            compose.onNodeWithTag("native-read-card").assertIsDisplayed()
+            savePreview("native-dark", activity)
         }
     }
 
     @Test
     @Config(qualifiers = "zh-rCN-w800dp-h400dp-mdpi")
     fun largeTextLandscapePinTaskStaysScrollableWithoutDispatch() {
-        render(800, 400, 1.5f) { activity, _, _ ->
-            chooseTask(ManagerOperation.FIDO_CHANGE_PIN)
-            compose.onNode(hasText("新 FIDO PIN") and hasSetTextAction()).performScrollTo().assertIsDisplayed()
+        render(800, 400, 1.5f, openPasskeys = false) { activity, _, _ ->
+            compose.onNodeWithText("准备 PIN").performScrollTo().performClick()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("manager-run").assertIsDisplayed()
-            savePreview("fido-large-landscape", activity)
+            savePreview("native-large-landscape", activity)
         }
     }
 

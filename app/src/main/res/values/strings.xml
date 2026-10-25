@@ -166,4 +166,23 @@
     <string name="manager_fido_intro">可先读取信息，或输入 FIDO PIN 查看通行密钥。</string>
     <string name="manager_fido_advanced">高级设置与诊断</string>
     <string name="manager_inventory_action">查看通行密钥</string>
+    <string name="native_card">卡片</string>
+    <string name="native_unread">尚未读取</string>
+    <string name="native_observed">信息已读取</string>
+    <string name="native_app_unread">未读取</string>
+    <string name="native_app_read">已读取</string>
+    <string name="native_read">读取卡片</string>
+    <string name="native_read_scope">读取 FIDO 公开信息；证书信息请到“证书与签名”读取。</string>
+    <string name="native_tap">贴近手机的 NFC 感应区</string>
+    <string name="native_usb">选择已连接的 USB 读卡器</string>
+    <string name="native_prepare">准备 PIN</string>
+    <string name="native_inventory_title">查看通行密钥</string>
+    <string name="native_target_unread">目标卡片尚未识别</string>
+    <string name="native_target_observed">已在此连接读取 FIDO 信息</string>
+    <string name="native_pin_tap">可先输入 PIN，再提交并贴卡。</string>
+    <string name="native_pin_usb">可先输入 PIN，再提交读取。</string>
+    <string name="native_submit_tap">提交并贴卡</string>
+    <string name="native_certificates">证书与签名</string>
+    <string name="native_technical">技术信息</string>
+    <string name="native_back">返回</string>
 </resources>

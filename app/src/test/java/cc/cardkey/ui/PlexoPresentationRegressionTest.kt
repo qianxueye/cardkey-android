@@ -43,7 +43,7 @@ class PlexoPresentationRegressionTest {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 CardKeyTheme {
                     Column(Modifier.requiredSize(width.dp, 480.dp).verticalScroll(rememberScrollState()).padding(20.dp)) {
-                        CardArtworkHero(artwork) {}
+                        CardArtworkHero(artwork, onRetry = {})
                         Text("Following content", Modifier.testTag("following-content"))
                     }
                 }

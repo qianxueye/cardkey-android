@@ -70,7 +70,16 @@ class WorkspaceAcceptanceTest {
                 }
             }
             compose.waitForIdle()
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
+            assertEquals(0, dispatches.get())
+            compose.onNodeWithText(activity.getString(R.string.native_prepare)).performScrollTo().performClick()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertIsDisplayed()
+            assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
+            compose.onNodeWithTag("manager-run").assertIsNotEnabled()
+            compose.onNodeWithTag("native-home-back").performClick()
+            compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
+            assertEquals(0, dispatches.get())
+            compose.onNode(hasText("通行密钥") and hasClickAction()).performScrollTo().performClick()
             check(activity, { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }, dispatches)
         }
     }
