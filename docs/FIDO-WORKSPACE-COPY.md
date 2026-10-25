@@ -50,3 +50,13 @@ Existing FIDO PIN field, cancellation, failure/unknown result, final-attempt war
 ## Home read cancellation visibility
 
 PR #47 review correction: the home in-progress feedback now exposes the existing `取消` action, with the same meaning as Cancel elsewhere in the manager. Before: the pending home read had no cancel control. After: the unchanged cancellation label invokes existing `onCancel`; no new string/catalog key or cancellation guarantee is introduced. Activation is the next manager build/install. The actual task and NFC instruction stay beside it; known cancellation and unknown effects retain their original outcome policy. Artwork loading/failure width changes add no interface wording.
+
+## CTAP PIN-required result guidance
+
+Refs #45. Root reviewed the exact Chinese/English wording; plain-language review before application preserves the condition, uncertainty and actual activation timing. This is manager result presentation only, not PIN entry, verification, retry or a new authentication policy.
+
+| Screen / key | Exact before | Chinese after | English after | Condition / reason / activation |
+| --- | --- | --- | --- | --- |
+| Manager operation failure / `error_pinRequired` | `error_authorization`: 卡片未授权此操作。 / The card did not authorize this operation. | 此操作需要 PIN 验证。 | This operation requires PIN verification. | Only existing AUTHORIZATION_DENIED with preserved CTAP status 0x36. Distinguish required verification from generic rejection. Next application build/install only. |
+
+The public client preserves status 0x36 and currently resolves token acquisition through the PIN-based ClientPIN path. Existing built-in UV request flags remain unchanged; this condition does not redefine every verification path as PIN-only. Status 0x33, other authorization codes and status-less denial retain their exact generic message. Unknown, not-dispatched and accepted-write/readback warnings retain their original conditions and ordering. The text does not request or trigger automatic resubmission. No provider, protocol, consent, retry, effect or state behavior changes.

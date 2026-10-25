@@ -86,7 +86,8 @@ object ConfirmationPolicy {
                 FailureCode.PIN_CHANGE_REQUIRED -> R.string.error_pinChangeRequired
                 FailureCode.PIN_BLOCKED -> if (wire == CardWire.CTAP && result.status == 0x34)
                     R.string.error_hidPowerCycleRequired else R.string.error_pinBlocked
-                FailureCode.AUTHORIZATION_DENIED -> R.string.error_authorization
+                FailureCode.AUTHORIZATION_DENIED -> if (result.status == 0x36)
+                    R.string.error_pinRequired else R.string.error_authorization
                 FailureCode.MALFORMED_RESPONSE -> R.string.error_malformed
                 FailureCode.CERTIFICATE_KEY_MISMATCH -> R.string.error_keyMismatch
                 FailureCode.INVALID_INPUT -> R.string.error_invalidInput
