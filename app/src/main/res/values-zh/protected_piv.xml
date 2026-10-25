@@ -92,6 +92,7 @@
     <string name="error_pinBlocked" formatted="false">PIN 或 PUK 已锁定。</string>
     <string name="error_unsupported" formatted="false">此卡片或读卡器不支持这项操作。</string>
     <string name="error_authorization" formatted="false">卡片未授权此操作。</string>
+    <string name="error_pinRequired" formatted="false">此操作需要 PIN 验证。</string>
     <string name="error_malformed" formatted="false">卡片响应无效。</string>
     <string name="error_keyMismatch" formatted="false">证书公钥与所选槽位不匹配，未导入证书。</string>
     <string name="error_invalidInput" formatted="false">输入格式有误，请检查所填内容。</string>

@@ -92,6 +92,7 @@
     <string name="error_pinBlocked">The PIN or PUK is blocked.</string>
     <string name="error_unsupported">This card or reader does not support this operation.</string>
     <string name="error_authorization">The card did not authorize this operation.</string>
+    <string name="error_pinRequired" formatted="false">This operation requires PIN verification.</string>
     <string name="error_malformed">The card response is invalid.</string>
     <string name="error_keyMismatch">The certificate public key does not match the selected slot. The certificate was not imported.</string>
     <string name="error_invalidInput">The input format is invalid. Check the entered values.</string>

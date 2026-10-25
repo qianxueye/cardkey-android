@@ -279,6 +279,7 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_export" to "导出",
             "document_saved" to "文件已保存。",
             "error_authorization" to "卡片未授权此操作。",
+            "error_pinRequired" to "此操作需要 PIN 验证。",
             "error_cancelled" to "操作已取消。",
             "error_capacityExceeded" to "卡片存储空间不足，或已达到此操作的数量或大小限制。",
             "error_cardRejected" to "卡片拒绝了此操作。请检查卡片状态及操作前提。",

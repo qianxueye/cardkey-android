@@ -31,6 +31,23 @@ class ConfirmationPolicyTest {
         assertEquals(listOf(R.string.error_capacityExceeded, R.string.error_recoveryRequired, R.string.error_cardRejected), messages)
     }
 
+    @Test fun pinRequiredStatusHasDistinctGuidanceWithoutChangingAuthorizationOrEffectWarnings() {
+        val required = OperationResult.Failed(FailureCode.AUTHORIZATION_DENIED, Effect.NONE, status = 0x36)
+        val reason = ConfirmationPolicy.resultMessages(required).single()
+        assertNotEquals(R.string.error_authorization, reason)
+        assertEquals(R.string.error_pinRequired, reason)
+        for (status in listOf(null, 0x33, 0x35, 0x6982)) {
+            assertEquals(listOf(R.string.error_authorization),
+                ConfirmationPolicy.resultMessages(required.copy(status = status)))
+        }
+        assertEquals(listOf(R.string.operation_unknown, reason), ConfirmationPolicy.resultMessages(
+            required.copy(effect = Effect.UNKNOWN, dispatch = Dispatch.RESPONSE_UNAVAILABLE)))
+        assertEquals(listOf(R.string.operation_appliedReadbackFailed, reason), ConfirmationPolicy.resultMessages(
+            required.copy(effect = Effect.APPLIED, writeAccepted = true)))
+        assertEquals(listOf(R.string.operation_notDispatched, reason), ConfirmationPolicy.resultMessages(
+            required.copy(dispatch = Dispatch.NOT_DISPATCHED)))
+    }
+
     private fun info(pin: Int, puk: Int, serial: Long = 1) = PivInfo("1.0.0", serial,
         RetryMetadata(false, 3, pin), RetryMetadata(false, 3, puk), ManagementAlgorithm.TDES, false)
 
