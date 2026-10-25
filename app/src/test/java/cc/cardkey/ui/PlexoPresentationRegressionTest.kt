@@ -43,7 +43,7 @@ class PlexoPresentationRegressionTest {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 CardKeyTheme {
                     Column(Modifier.requiredSize(width.dp, 480.dp).verticalScroll(rememberScrollState()).padding(20.dp)) {
-                        CardArtworkHero(artwork) {}
+                        CardArtworkHero(artwork, onRetry = {})
                         Text("Following content", Modifier.testTag("following-content"))
                     }
                 }
@@ -62,6 +62,38 @@ class PlexoPresentationRegressionTest {
                     assertEquals(1.586f, image.width / image.height, 0.02f)
                 }
             }
+        } finally { host.pause().stop().destroy() }
+    }
+
+    @Test fun loadingArtworkPreservesHomeReaderControls() = homeArtwork(CardArtworkState.Loading)
+
+    @Test fun failedArtworkPreservesHomeReaderControlsAndRetry() = homeArtwork(CardArtworkState.Failed)
+
+    private fun homeArtwork(state: CardArtworkState) {
+        val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        var retries = 0
+        var readerSelections = 0
+        host.get().setContent {
+            CardKeyTheme {
+                Column(Modifier.requiredSize(360.dp, 800.dp).verticalScroll(rememberScrollState()).padding(20.dp)) {
+                    NativeCardHome(ManagerState(), state, { fail("Unexpected read") }, { fail("Unexpected preparation") },
+                        { fail("Unexpected task") }, { fail("Unexpected PIV task") }, { fail("Unexpected settings") },
+                        { readerSelections++ }, { retries++ })
+                }
+            }
+        }
+        try {
+            val reader = compose.onNodeWithText("NFC", substring = false).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val status = compose.onNodeWithText(host.get().getString(cc.cardkey.R.string.native_unread)).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("Reader switch collapsed: $reader", reader.width >= 48f)
+            assertTrue("State label collapsed: $status", status.width > 0f)
+            assertTrue(reader.right <= 340f && status.right <= 340f)
+            compose.onNodeWithText("NFC", substring = false).performClick()
+            assertEquals(1, readerSelections)
+            if (state == CardArtworkState.Failed) {
+                compose.onNodeWithText(host.get().getString(cc.cardkey.R.string.artwork_retry)).performScrollTo().assertIsDisplayed().performClick()
+                assertEquals(1, retries)
+            } else assertEquals(0, retries)
         } finally { host.pause().stop().destroy() }
     }
 

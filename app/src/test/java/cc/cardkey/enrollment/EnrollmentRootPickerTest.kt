@@ -38,7 +38,7 @@ class EnrollmentRootPickerTest {
             val model = ViewModelProvider(original)[ManagerViewModel::class.java]
             model.enrollmentSettings("https://localhost", fixture.csr.cn)
             compose.waitForIdle()
-            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText("选择 CA 根证书").performScrollTo().performClick()
             val launch = shadowOf(original).nextStartedActivityForResult
@@ -66,7 +66,7 @@ class EnrollmentRootPickerTest {
             val model = ViewModelProvider(original)[ManagerViewModel::class.java]
             model.enrollmentSettings("https://localhost", fixture.csr.cn)
             compose.waitForIdle()
-            compose.onNode(hasText("设置") and hasClickAction()).performClick()
+            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText("选择 CA 根证书").performScrollTo().performClick()
             val launch = shadowOf(original).nextStartedActivityForResult

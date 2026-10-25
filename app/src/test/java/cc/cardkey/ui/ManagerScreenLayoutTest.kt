@@ -52,7 +52,7 @@ class ManagerScreenLayoutTest {
             (0 until group.childCount).firstNotNullOfOrNull { composeRoot(group.getChildAt(it)) }
         }
 
-    private fun render(width: Int, height: Int, recognizedFamily: CardFamily? = null, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
+    private fun render(width: Int, height: Int, prepareInventory: Boolean = false, recognizedFamily: CardFamily? = null, onSubmit: (OperationInput) -> Unit = { it.close() }, onExport: (ManagerReport) -> Unit = {}, check: (ComponentActivity, (ManagerState) -> Unit) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         activity.enableEdgeToEdge()
@@ -72,10 +72,38 @@ class ManagerScreenLayoutTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            if (prepareInventory) compose.onNodeWithText(activity.getString(R.string.native_prepare)).performScrollTo().performClick()
+            else compose.onNode(hasText("通行密钥") and hasClickAction()).performScrollTo().performClick()
             compose.waitForIdle()
             check(activity) { next -> compose.runOnIdle { state.value = next.copy(recognition = next.recognition ?: recognized) }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w400dp-h800dp-mdpi")
+    fun preparedInventoryKeepsPinAndSubmitInsideImeViewportWithoutDispatch() {
+        var dispatches = 0
+        render(400, 800, prepareInventory = true, onSubmit = { dispatches++; it.close() }) { activity, _ ->
+            val field = compose.onNode(hasText("FIDO PIN") and hasSetTextAction())
+            field.performScrollTo().performClick().performTextInput("1234")
+            compose.runOnIdle {
+                requireNotNull(composeRoot(activity.window.decorView)).view.dispatchApplyWindowInsets(WindowInsets.Builder()
+                    .setInsets(WindowInsets.Type.navigationBars(), Insets.of(0, 0, 0, 24))
+                    .setVisible(WindowInsets.Type.navigationBars(), true)
+                    .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 300))
+                    .setVisible(WindowInsets.Type.ime(), true).build())
+            }
+            field.performScrollTo().assertIsDisplayed()
+            val submit = compose.onNodeWithTag("manager-run").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val scene = compose.onNodeWithTag("manager-scene").fetchSemanticsNode().boundsInRoot
+            assertTrue("Submit overlaps IME: $submit / $scene", submit.bottom <= scene.bottom - 300)
+            assertEquals(0, dispatches)
+            val bitmap = android.graphics.Bitmap.createBitmap(activity.window.decorView.width, activity.window.decorView.height, android.graphics.Bitmap.Config.ARGB_8888)
+            compose.runOnIdle { activity.window.decorView.draw(android.graphics.Canvas(bitmap)) }
+            val directory = java.io.File("build/ui-previews").apply { mkdirs() }
+            val output = java.io.File(directory, "native-pin-ime.png")
+            output.outputStream().use { assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) }
+        }
     }
 
     private fun assertInputSpace() {
@@ -91,7 +119,7 @@ class ManagerScreenLayoutTest {
     }
 
     private fun selectLongRegistrationForm() {
-        compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
+        compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
         compose.onNodeWithText("高级 FIDO 设置与诊断").performScrollTo().performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(ManagerOperation.FIDO_REGISTER.title).performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -160,7 +188,7 @@ class ManagerScreenLayoutTest {
     }
 
     private fun submitInvalidManagementHex() {
-        compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
+        compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
         compose.onNodeWithText("高级 PIV 管理与诊断").performScrollTo().performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -288,7 +316,7 @@ class ManagerScreenLayoutTest {
         var submissions = 0
         render(360, 640, onSubmit = { submissions++; it.close() }) { activity, _ ->
             for (piv in listOf(false, true)) {
-                compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
+                compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
                 compose.onNodeWithText(if (piv) "高级 PIV 管理与诊断" else "高级 FIDO 设置与诊断").performScrollTo().performClick()
                 val actions = ManagerOperation.entries.filter {
                     it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET,
@@ -301,7 +329,7 @@ class ManagerScreenLayoutTest {
                     compose.onNodeWithTag("manager-run").assertExists()
                 }
             }
-            compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
+            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()
@@ -333,7 +361,7 @@ class ManagerScreenLayoutTest {
 
     @Test fun protectedPanelGuidanceTracksOriginalRecoveryModeThroughManagerScreen() {
         render(800, 800) { activity, update ->
-            compose.onNode(hasText("证书") and hasClickAction()).performClick()
+            compose.onNode((hasText("证书") or hasText("证书与签名")) and hasClickAction()).performClick()
             val ordinary = activity.getString(R.string.protectedPiv_ordinaryInspection)
             val protectedWarning = "上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。"
             update(ManagerState(requiresInspection = true))
@@ -354,7 +382,7 @@ class ManagerScreenLayoutTest {
         val report = result.value
         var exported: ManagerReport? = null
         render(360, 480, onExport = { exported = it }) { activity, update ->
-            compose.onNode(hasText("证书") and hasClickAction()).performClick()
+            compose.onNode((hasText("证书") or hasText("证书与签名")) and hasClickAction()).performClick()
             compose.onNodeWithTag("object-overview").performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithText(ManagerOperation.PIV_SLOT.title).performClick()
@@ -396,12 +424,12 @@ class ManagerScreenLayoutTest {
 
     @Test fun busyCertificateTaskKeepsCancelReachableAndDisablesNavigation() {
         render(360, 640) { _, update ->
-            compose.onNode(hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
+            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             update(ManagerState(busy = true, operation = ManagerOperation.PIV_ENROLL_CSR))
             compose.onNode(hasText("取消") and !hasAnyAncestor(hasScrollAction())).assertIsDisplayed().assertHasClickAction()
             compose.onNode(hasText("通行密钥") and hasClickAction()).assertIsNotEnabled()
-            compose.onNode(hasText("证书") and hasClickAction()).assertIsNotEnabled()
+            compose.onNode((hasText("证书") or hasText("证书与签名")) and hasClickAction()).assertIsNotEnabled()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
         }
     }

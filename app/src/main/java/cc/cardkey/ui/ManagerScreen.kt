@@ -92,8 +92,9 @@ fun ManagerScreen(
         signingFiles.restoringSave && signingFiles.restoreOperation == null -> 2
         signingFiles.restoreOperation?.piv == true || signingFiles.active -> 1
         inventory.action != null -> 0
-        else -> 0
+        else -> 5
     }) }
+    var focusedInventory by remember { mutableStateOf(false) }
     var objectDetail by remember { mutableStateOf(true) }
     var advanced by remember { mutableStateOf(false) }
     val objectListScroll = rememberScrollState()
@@ -146,7 +147,9 @@ fun ManagerScreen(
     val secretInputReady = !state.permissionPending
     SideEffect { onSecureChange(tab == 1 || tab == 3 || secretForm || secretResult || state.lastRetry != null || state.fidoFinalAttempt) }
     LaunchedEffect(state.busy, state.result, state.requiresInspection) {
-        if (!state.busy && (state.result as? OperationResult.Completed)?.value?.inventory != null) objectDetail = false
+        if (!state.busy && (state.result as? OperationResult.Completed)?.value?.inventory != null) {
+            objectDetail = false; focusedInventory = false
+        }
         else if (state.busy || state.result != null || state.requiresInspection) objectDetail = true
     }
     LaunchedEffect(state.result) {
@@ -176,7 +179,7 @@ fun ManagerScreen(
     }
     DisposableEffect(Unit) { onDispose { confirmation?.close() } }
 
-    MaterialTheme(colorScheme = if (tab in setOf(0, 2, 4)) managerColorScheme() else MaterialTheme.colorScheme) {
+    MaterialTheme(colorScheme = if (tab != 3) managerColorScheme() else MaterialTheme.colorScheme) {
     confirmation?.let { input ->
         val dismiss = { input.close(); confirmation = null; if (input.inventorySelection != null) onCancel() }
         AlertDialog(onDismissRequest = dismiss,
@@ -226,17 +229,39 @@ fun ManagerScreen(
             confirmButton = { TextButton(onClick = { onLastRetry(true) }) { Text("确认") } },
             dismissButton = { TextButton(onClick = { onLastRetry(false) }) { Text("取消") } })
     }
+    val returnHome = {
+        pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
+        confirmation?.close(); confirmation = null
+        focusedInventory = false; tab = 5
+    }
+    BackHandler(tab != 5 && !state.busy && (focusedInventory || tab >= 2 || !objectDetail)) { returnHome() }
     val topBar: @Composable () -> Unit = {
-        TopAppBar(title = { Text(stringResource(R.string.app_name)) })
+        TopAppBar(title = {
+            if (focusedInventory && tab == 0) Text(stringResource(R.string.native_inventory_title))
+            else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SmartCardGlyph(Modifier.size(30.dp, 22.dp))
+                Text(stringResource(R.string.app_name))
+            }
+        }, navigationIcon = {
+            if (tab != 5) IconButton(onClick = returnHome, enabled = !state.busy,
+                modifier = Modifier.testTag("native-home-back")) {
+                Icon(nativeBackIcon, stringResource(R.string.native_back))
+            }
+        }, actions = {
+            if (tab == 5) IconButton(onClick = { tab = 4 }, enabled = !state.busy) {
+                Icon(managerDestinationIcons[3], stringResource(R.string.navigation_settings))
+            }
+        })
     }
     val navigationBar: @Composable () -> Unit = {
-        NavigationBar(Modifier.testTag("workspace-navigation")) {
+        if (tab != 5 && !focusedInventory) NavigationBar(Modifier.testTag("workspace-navigation")) {
             listOf(2 to R.string.navigation_device, 0 to R.string.navigation_passkeys,
                 1 to R.string.navigation_certificates, 4 to R.string.navigation_settings).forEach { (index, label) ->
                 NavigationBarItem(selected = tab == index || index == 4 && tab == 3,
                     enabled = !state.busy && (index != 1 || state.supportsPiv), onClick = {
                     confirmation?.close(); confirmation = null
                     tab = index
+                    focusedInventory = false
                     advanced = false
                     objectDetail = index == 0
                     if (index < 2) {
@@ -280,9 +305,9 @@ fun ManagerScreen(
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val viewportHeight = maxHeight
         val viewportWidth = maxWidth
-        val twoPanes = workspaceUsesTwoPanes(maxWidth, LocalDensity.current.fontScale, viewportHeight)
+        val twoPanes = !focusedInventory && workspaceUsesTwoPanes(maxWidth, LocalDensity.current.fontScale, viewportHeight)
         val detailVisible = tab >= 2 || twoPanes || objectDetail || state.busy
-        BackHandler(tab < 2 && objectDetail && !twoPanes && !state.busy) {
+        BackHandler(tab < 2 && objectDetail && !twoPanes && !focusedInventory && !state.busy) {
             confirmation?.close(); confirmation = null
             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
             objectDetail = false
@@ -367,9 +392,13 @@ fun ManagerScreen(
                                 (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
-                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(if (op == ManagerOperation.FIDO_INVENTORY) stringResource(R.string.manager_inventory_action) else op.title.substringAfter("·").trim()) }
+                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(if (focusedInventory && state.nfc) stringResource(R.string.native_submit_tap)
+                                    else if (op == ManagerOperation.FIDO_INVENTORY) stringResource(R.string.manager_inventory_action)
+                                    else op.title.substringAfter("·").trim()) }
                             if (state.busy) OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
                         }
+                        if (focusedInventory && !state.busy) TextButton(onClick = returnHome,
+                            modifier = Modifier.fillMaxWidth()) { Text("取消") }
                     }
                     if (tab == 3 && state.busy) OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
                 }
@@ -388,7 +417,7 @@ fun ManagerScreen(
             },
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (!compact) readerContext()
+                if (!compact && tab != 5 && !focusedInventory) readerContext()
                 state.documentMessage?.let { Text(stringResource(it), Modifier.padding(12.dp)) }
                 Row(Modifier.weight(1f).widthIn(max = 1200.dp).fillMaxWidth()) {
                     if (tab < 2 && (twoPanes || !detailVisible)) {
@@ -398,8 +427,16 @@ fun ManagerScreen(
                     if (detailVisible) Column(Modifier.weight(1f).fillMaxHeight()
                     .testTag("workspace-detail").verticalScroll(detailScroll).padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    if (compact) { topBar(); readerContext() }
-                    if (tab == 0) {
+                    if (compact) { topBar(); if (tab != 5 && !focusedInventory) readerContext() }
+                    if (tab == 5 && !state.busy) NativeCardHome(state, artwork,
+                        onRead = { onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
+                            inventoryGeneration = inventory.generation, inventorySelection = inventory.credential)) },
+                        onPrepare = { tab = 0; operation = ManagerOperation.FIDO_INVENTORY; advanced = false; focusedInventory = true; objectDetail = true },
+                        onFido = { tab = 0; operation = ManagerOperation.FIDO_INVENTORY; focusedInventory = false; advanced = false; objectDetail = true },
+                        onPiv = { tab = 1; operation = ManagerOperation.PIV_INFO; focusedInventory = false; objectDetail = false },
+                        onTechnical = { tab = 4; focusedInventory = false },
+                        onReaders = { tab = 2 }, onRetry = { artworkLoader.load(artworkReference) })
+                    if (tab == 0 && !focusedInventory) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.navigation_passkeys), Modifier.weight(1f),
                                 style = MaterialTheme.typography.headlineMedium)
@@ -432,7 +469,7 @@ fun ManagerScreen(
                             clearInputs, onProtectedPivDocument, onProtectedPivClear, onProtectedPivRecognize,
                             onProtectedPivExecute, protectedInspectionRequired = state.requiresProtectedInspection)
                     }
-                    if (tab < 2) {
+                    if (tab < 2 && !focusedInventory) {
                         if (!twoPanes && tab == 1) TextButton(onClick = {
                             confirmation?.close(); confirmation = null
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
@@ -470,6 +507,8 @@ fun ManagerScreen(
                                 }
                                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                                 if (state.busy && state.nfc) Text(stringResource(R.string.reader_nfc))
+                                if (tab == 5 && state.busy) OutlinedButton(onClick = onCancel,
+                                    modifier = Modifier.fillMaxWidth().testTag("native-cancel-read")) { Text("取消") }
                                 state.presenceMessage?.let { Text(stringResource(it)) }
                                 when (val result = state.result) {
                                     is OperationResult.Completed -> {
@@ -542,7 +581,7 @@ fun ManagerScreen(
                     }
                     if (tab == 2) {
                         Text(stringResource(R.string.navigation_device), style = MaterialTheme.typography.headlineSmall)
-                        CardArtworkHero(artwork) { artworkLoader.load(artworkReference) }
+                        CardArtworkHero(artwork, onRetry = { artworkLoader.load(artworkReference) })
                         Text(stringResource(R.string.device_reader), style = MaterialTheme.typography.titleMedium)
                         if (state.readers.isEmpty()) Text(stringResource(R.string.reader_empty))
                         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -556,6 +595,15 @@ fun ManagerScreen(
                         }
                         OutlinedButton(onClick = onRefresh, enabled = !state.busy) { Text("刷新读卡器") }
                     } else if (tab < 2) {
+                        if (focusedInventory) {
+                            Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                                SmartCardGlyph(Modifier.size(112.dp, 64.dp), nfc = state.nfc,
+                                    waveColor = MaterialTheme.colorScheme.primary)
+                                Text(stringResource(if (state.canEnterFidoSecrets) R.string.native_target_observed else R.string.native_target_unread),
+                                    style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
                         if (tab == 1) Text(stringResource(R.string.navigation_certificates), style = MaterialTheme.typography.headlineSmall)
                         Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
                             color = if (tab == 0) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceContainerLow) {
@@ -569,9 +617,9 @@ fun ManagerScreen(
                                 else if (tab == 1) listOf(ManagerOperation.PIV_INFO, ManagerOperation.PIV_SLOT, ManagerOperation.PIV_SSH_EXPORT, ManagerOperation.PIV_SIGN, ManagerOperation.PIV_CMS_SIGN, ManagerOperation.PIV_CHANGE_PIN, ManagerOperation.PIV_UNBLOCK)
                                 else listOf(ManagerOperation.FIDO_INVENTORY, ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN) +
                                     if (inventory.credential != null) listOf(ManagerOperation.FIDO_UPDATE, ManagerOperation.FIDO_DELETE) else emptyList()
-                                if (tab == 0 && !advanced) Text(stringResource(R.string.workspace_common),
+                                if (tab == 0 && !advanced && !focusedInventory) Text(stringResource(R.string.workspace_common),
                                     style = MaterialTheme.typography.titleMedium)
-                                OperationChoice(operation, tasks, !state.busy) { operation = it }
+                                if (!focusedInventory) OperationChoice(operation, tasks, !state.busy) { operation = it }
                                 if (state.permissionPending) Text(stringResource(R.string.reader_usbPermission, displayName))
                                 if (op.isFileSigning) {
                                     if (op == ManagerOperation.PIV_CMS_SIGN) Text(stringResource(R.string.signing_cmsRequirements), style = MaterialTheme.typography.bodySmall)
@@ -584,6 +632,8 @@ fun ManagerScreen(
                                     signingFiles.selection?.let { file -> Text(stringResource(R.string.signing_selectedFile, file.name, file.size)) }
                                 }
                                 if (secretInputReady && needsPin(op)) SecretField(when { op == ManagerOperation.PIV_CHANGE_PUK || op == ManagerOperation.PIV_UNBLOCK -> "当前 PUK"; op.piv -> "当前 PIV PIN"; else -> "FIDO PIN" }, pin, !state.busy, viewportHeight) { pin = it }
+                                if (focusedInventory) Text(stringResource(if (state.nfc) R.string.native_pin_tap else R.string.native_pin_usb),
+                                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (secretInputReady && op.piv && needsPin(op)) Text("6–8 位数字", style = MaterialTheme.typography.bodySmall)
                                 if (op in setOf(ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_CHANGE_PIN, ManagerOperation.PIV_CHANGE_PIN,
                                         ManagerOperation.PIV_CHANGE_PUK, ManagerOperation.PIV_UNBLOCK)) {
@@ -679,7 +729,7 @@ fun ManagerScreen(
                             }
                         }
                     }
-                    if (tab == 0 && !advanced) TextButton(onClick = {
+                    if (tab == 0 && !advanced && !focusedInventory) TextButton(onClick = {
                         pin = ""; newPin = ""; confirmation?.close(); confirmation = null
                         advanced = true
                     }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
@@ -793,7 +843,7 @@ private fun ReaderOption(title: String, detail: String?, selected: Boolean, enab
     }
 }
 
-private val managerDestinationIcons = listOf(
+internal val managerDestinationIcons = listOf(
     ImageVector.Builder("Key", 24.dp, 24.dp, 24f, 24f).apply {
         path(fill = SolidColor(Color.Black)) {
             moveTo(7f, 14f); arcTo(3f, 3f, 0f, true, true, 7f, 8f); arcTo(3f, 3f, 0f, false, true, 7f, 14f); close()
@@ -856,3 +906,11 @@ private fun needsPin(op: ManagerOperation): Boolean = op !in setOf(
 private fun needsSecretInput(op: ManagerOperation): Boolean = needsPin(op) || op in setOf(
     ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT,
 )
+
+private val nativeBackIcon = ImageVector.Builder("Back", 24.dp, 24.dp, 24f, 24f).apply {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(20f, 11f); lineTo(7.8f, 11f); lineTo(13.4f, 5.4f); lineTo(12f, 4f)
+        lineTo(4f, 12f); lineTo(12f, 20f); lineTo(13.4f, 18.6f); lineTo(7.8f, 13f)
+        lineTo(20f, 13f); close()
+    }
+}.build()
