@@ -5,6 +5,7 @@ import android.hardware.usb.UsbManager
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.net.Uri
+import android.view.HapticFeedbackConstants
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cc.cardkey.protocol.*
@@ -20,6 +21,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -69,6 +72,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val usb = application.getSystemService(UsbManager::class.java)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
+    private val feedback = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val operationFeedback = feedback.asSharedFlow()
     val enrollment = EnrollmentWorkflow()
     val signingFiles = PivSigningFiles()
     val inventory = FidoInventory()
@@ -450,7 +455,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     CardOperationGate.requireRemoval(reader.routeKey)
                     observeCardRemoval(reader)
                 }
-                finish(report)
+                finish(report, retired = !current, timedOut = settled.outcome == PivTlsOutcome.TIMED_OUT)
             }
         }
     }
@@ -913,7 +918,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     (result.effect == Effect.UNKNOWN || result.writeAccepted)) inventory.retire()
             }
             finish(if (retired && result is OperationResult.Completed)
-                OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result)
+                OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result,
+                retired = retired, timedOut = false)
         }
     }
 
@@ -929,7 +935,14 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         mutable.update { it.copy(recognition = null) }
     }
 
-    private fun finish(result: OperationResult<ManagerReport>) {
+    private fun finish(result: OperationResult<ManagerReport>) = finish(result, retired = false, timedOut = false)
+
+    private fun finish(result: OperationResult<ManagerReport>, retired: Boolean, timedOut: Boolean) {
+        if (mutable.value.busy && !retired && !cancelled &&
+            (timedOut || !(result is OperationResult.Failed && result.code == FailureCode.CANCELLED))) {
+            feedback.tryEmit(if (!timedOut && result is OperationResult.Completed && result.effect != Effect.UNKNOWN)
+                HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.REJECT)
+        }
         if (result is OperationResult.Failed) inventory.failedCurrent()
         if (result is OperationResult.Failed) protectedWorkflow.retire()
         presenceGeneration++
