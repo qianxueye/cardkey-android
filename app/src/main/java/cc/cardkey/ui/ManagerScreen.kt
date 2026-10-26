@@ -268,7 +268,7 @@ fun ManagerScreen(
                     if (index < 2) {
                         operation = if (index == 0) ManagerOperation.FIDO_INVENTORY else ManagerOperation.PIV_INFO
                     }
-                }, icon = { Icon(managerDestinationIcons[when (index) { 0 -> 0; 1 -> 1; 4 -> 3; else -> 2 }], contentDescription = null) },
+                }, icon = { Icon(managerDestinationIcons[when (index) { 0 -> 0; 1 -> 1; 4 -> 3; else -> 4 }], contentDescription = null) },
                     label = { Text(stringResource(label)) })
             }
         }
@@ -856,6 +856,7 @@ internal val managerDestinationIcons: List<androidx.compose.ui.graphics.painter.
         androidx.compose.ui.res.painterResource(R.drawable.ic_approved_certificate),
         androidx.compose.ui.res.painterResource(R.drawable.ic_approved_reader),
         androidx.compose.ui.res.painterResource(R.drawable.ic_approved_settings),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card),
     )
 
 private val expandMoreIcon = ImageVector.Builder("ExpandMore", 24.dp, 24.dp, 24f, 24f).apply {
