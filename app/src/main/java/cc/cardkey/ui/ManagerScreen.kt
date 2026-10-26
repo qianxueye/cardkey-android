@@ -77,6 +77,7 @@ fun ManagerScreen(
     onProtectedPivClear: () -> Unit,
     onProtectedPivRecognize: (ProtectedPivAction, Int, String) -> Unit,
     onProtectedPivExecute: (CharArray) -> Unit,
+    badgeContent: (@Composable () -> Unit)? = null,
     artworkReference: CardArtworkReference? = null,
     artworkSource: CardArtworkSource = UnconfiguredCardArtworkSource,
 ) {
@@ -145,7 +146,7 @@ fun ManagerScreen(
     val secretResult = report?.secrets != null || report?.protectedExport == true
     val secretForm = tab < 2 && needsSecretInput(operation)
     val secretInputReady = !state.permissionPending
-    SideEffect { onSecureChange(tab == 1 || tab == 3 || secretForm || secretResult || state.lastRetry != null || state.fidoFinalAttempt) }
+    SideEffect { onSecureChange(tab == 1 || tab == 3 || tab == 6 || secretForm || secretResult || state.lastRetry != null || state.fidoFinalAttempt) }
     LaunchedEffect(state.busy, state.result, state.requiresInspection) {
         if (!state.busy && (state.result as? OperationResult.Completed)?.value?.inventory != null) {
             objectDetail = false; focusedInventory = false
@@ -417,7 +418,7 @@ fun ManagerScreen(
             },
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (!compact && tab != 5 && !focusedInventory) readerContext()
+                if (!compact && tab != 5 && tab != 6 && !focusedInventory) readerContext()
                 state.documentMessage?.let { Text(stringResource(it), Modifier.padding(12.dp)) }
                 Row(Modifier.weight(1f).widthIn(max = 1200.dp).fillMaxWidth()) {
                     if (tab < 2 && (twoPanes || !detailVisible)) {
@@ -427,7 +428,7 @@ fun ManagerScreen(
                     if (detailVisible) Column(Modifier.weight(1f).fillMaxHeight()
                     .testTag("workspace-detail").verticalScroll(detailScroll).padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    if (compact) { topBar(); if (tab != 5 && !focusedInventory) readerContext() }
+                    if (compact) { topBar(); if (tab != 5 && tab != 6 && !focusedInventory) readerContext() }
                     if (tab == 5 && !state.busy) NativeCardHome(state, artwork,
                         onRead = { onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
                             inventoryGeneration = inventory.generation, inventorySelection = inventory.credential)) },
@@ -436,6 +437,8 @@ fun ManagerScreen(
                         onPiv = { tab = 1; operation = ManagerOperation.PIV_INFO; focusedInventory = false; objectDetail = false },
                         onTechnical = { tab = 4; focusedInventory = false },
                         onReaders = { tab = 2 }, onRetry = { artworkLoader.load(artworkReference) })
+                    if (tab == 5 && badgeContent != null) OutlinedButton(onClick = { tab = 6 }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.issuer_title)) }
+                    if (tab == 6) badgeContent?.invoke()
                     if (tab == 0 && !focusedInventory) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.navigation_passkeys), Modifier.weight(1f),

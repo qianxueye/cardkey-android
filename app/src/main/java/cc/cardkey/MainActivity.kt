@@ -258,7 +258,7 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                     tls, model::tlsSettings, ::chooseTlsRoot, model::submitTls,
                     signingFiles, model::fileSigningAction, ::chooseSigningFile,
                     inventory, model::selectInventoryRp, model::selectInventoryCredential, ::chooseInventoryFile, model::inventoryAction, model::enrollmentSelection,
-                    protectedPiv, ::chooseProtectedPivDocument, model::clearProtectedPiv, model::recognizeProtectedPiv, model::executeProtectedPiv)
+                    protectedPiv, ::chooseProtectedPivDocument, model::clearProtectedPiv, model::recognizeProtectedPiv, model::executeProtectedPiv, badgeContent = { IssuerBadgeRoute() })
                 if (showProviderSettings) AlertDialog(
                     onDismissRequest = { showProviderSettings = false },
                     title = { Text("凭据提供者") },

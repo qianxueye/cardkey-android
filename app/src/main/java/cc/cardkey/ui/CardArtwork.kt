@@ -32,7 +32,7 @@ sealed interface CardArtworkState {
 
 internal fun decodeCardArtwork(payload: CardArtworkPayload): CardArtworkState.Loaded {
     require(payload.encodedImage.size in 1..4_194_304)
-    require(payload.accessibilityLabel.isNotBlank() && payload.accessibilityLabel.length <= 200)
+    require(payload.accessibilityLabel.isNotBlank() && payload.accessibilityLabel.codePointCount(0, payload.accessibilityLabel.length) <= 200)
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(payload.encodedImage, 0, payload.encodedImage.size, options)
     require(options.outMimeType in setOf("image/png", "image/jpeg"))

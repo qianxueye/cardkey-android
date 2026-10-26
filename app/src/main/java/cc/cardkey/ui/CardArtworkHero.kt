@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -19,7 +20,9 @@ import cc.cardkey.R
 internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit, nfc: Boolean = false) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state is CardArtworkState.Loaded) {
-            Surface(shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 333.dp).fillMaxWidth().aspectRatio(1.586f)) {
+            val ratio = state.bitmap.width.toFloat() / state.bitmap.height
+            val width = minOf(333.dp, LocalConfiguration.current.screenHeightDp.dp * 0.65f * ratio)
+            Surface(shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = width).fillMaxWidth().aspectRatio(ratio)) {
                 Image(state.bitmap.asImageBitmap(), state.label, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             }
         } else {

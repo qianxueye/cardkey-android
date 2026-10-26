@@ -7,6 +7,8 @@ import cc.cardkey.transport.*
 import cc.cardkey.ui.*
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,15 +36,33 @@ import java.util.concurrent.TimeUnit
 @Config(sdk = [34], manifest = Config.NONE)
 class EnrollmentViewModelTest {
     private val app get() = RuntimeEnvironment.getApplication()
-    @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
-    @After fun teardown() { Dispatchers.resetMain() }
+    private val models = mutableListOf<ManagerViewModel>()
+    private lateinit var mainDispatcher: TestDispatcher
+    @Before fun setup() {
+        mainDispatcher = UnconfinedTestDispatcher()
+        Dispatchers.setMain(mainDispatcher)
+    }
+    @After fun teardown() {
+        val jobs = models.map { model -> model.cancel(); model.viewModelScope.coroutineContext[Job]!! }
+        jobs.forEach { it.cancel() }
+        // Cancellation clears busy state before IO continuations finish using Main.
+        runBlocking {
+            withTimeout(10000) {
+                while (jobs.any { !it.isCompleted }) {
+                    mainDispatcher.scheduler.runCurrent()
+                    delay(1)
+                }
+            }
+        }
+        Dispatchers.resetMain()
+    }
     private fun reader(): UsbReaderDescriptor {
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", "enrollment-device")
         shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(device, true)
         return UsbReaderDescriptor(device, 1, CardWire.APDU)
     }
-    private fun model(fixture: EnrollmentFixtures, address: String = "https://localhost") = ManagerViewModel(app).apply {
+    private fun model(fixture: EnrollmentFixtures, address: String = "https://localhost") = ManagerViewModel(app).also(models::add).apply {
         selectReader(reader())
         enrollmentSettings(address, fixture.csr.cn)
         enrollmentRoot(enrollment.rootRequest(), fixture.root)
@@ -147,7 +167,8 @@ class EnrollmentViewModelTest {
     }
     @Test fun queuedCancellationDoesNotDispatchOrSpendTheCsrAttempt() {
         val scheduler = TestCoroutineScheduler()
-        Dispatchers.setMain(StandardTestDispatcher(scheduler))
+        mainDispatcher = StandardTestDispatcher(scheduler)
+        Dispatchers.setMain(mainDispatcher)
         val fixture = EnrollmentFixtures()
         EnrollmentHttpsServer(fixture) { error("Queued cancellation must not reach HTTP") }.use { server ->
             val model = model(fixture, server.address)
@@ -248,7 +269,7 @@ class EnrollmentViewModelTest {
     }
 
     @Test fun queuedCancellationCannotTouchAnAlreadyRetiredChannel() {
-        val model = ManagerViewModel(app)
+        val model = ManagerViewModel(app).also(models::add)
         var touches = 0
         val delegate = object : CardChannel by EnrollmentCard() {
             override fun setUserPresenceListener(listener: ((Boolean) -> Unit)?) { touches++ }
