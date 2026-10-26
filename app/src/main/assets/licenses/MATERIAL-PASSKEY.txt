@@ -1,0 +1,5 @@
+Material Symbols passkey icon by Google.
+Licensed under the Apache License, Version 2.0 (APACHE-2.0.txt).
+Source: https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsoutlined/passkey/default/24px.svg
+The original path geometry is unchanged. The Android vector applies a 0.025 scale,
+24-unit Y translation, and the surrounding icon tint.

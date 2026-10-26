@@ -87,6 +87,7 @@ class PlexoWorkspaceTest {
             compose.onNodeWithText("USB", substring = false).performClick()
             compose.onNodeWithContentDescription("通用卡片示意图").assertIsDisplayed()
             compose.onNodeWithText("刷新读卡器").performScrollTo().assertIsDisplayed()
+            savePreview("readers", activity)
             compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
             compose.onNodeWithTag("workspace-object-back").performClick()
             compose.onNodeWithTag("object-overview").assertIsDisplayed()
