@@ -2,6 +2,7 @@ package cc.cardkey.ui
 
 import android.content.Context
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -9,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -39,7 +41,8 @@ internal fun IssuerBadgePanel(reader: IssuerReader) {
             label = { Text(stringResource(R.string.issuer_address)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(token, { token = it; reader.editConnection() },
             label = { Text(stringResource(R.string.issuer_token)) }, visualTransformation = PasswordVisualTransformation(),
-            singleLine = true, modifier = Modifier.fillMaxWidth())
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+            singleLine = true, modifier = Modifier.fillMaxWidth().testTag("issuer-token"))
         Text(stringResource(R.string.issuer_token_hint), style = MaterialTheme.typography.bodySmall)
         Button(onClick = { reader.connect(address, token); token = "" }, enabled = !state.busy) {
             Text(stringResource(R.string.issuer_connect))
@@ -66,7 +69,11 @@ internal fun IssuerBadgePanel(reader: IssuerReader) {
             Text("${person.name} · ${person.reference}")
             Text(listOf(person.department, person.title, person.badge).filter { it.isNotEmpty() }.joinToString(" · "))
             Text(stringResource(if (person.active) R.string.issuer_active else R.string.issuer_inactive))
-            if (state.cards.isEmpty() && !state.busy && state.error == null) Text(stringResource(R.string.issuer_no_cards))
+            state.cardsError?.let {
+                Text(stringResource(it), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = reader::retryCards, enabled = !state.busy) { Text(stringResource(R.string.issuer_retry_cards)) }
+            }
+            if (state.cardsLoaded && state.cards.isEmpty() && !state.busy && state.cardsError == null) Text(stringResource(R.string.issuer_no_cards))
             state.cards.forEach { card ->
                 OutlinedButton(onClick = { reader.selectCard(card) },
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.card?.id == card.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
@@ -78,7 +85,11 @@ internal fun IssuerBadgePanel(reader: IssuerReader) {
         }
         state.card?.let { card ->
             Text(stringResource(R.string.issuer_card, card.serial, stringResource(cardStatus(card.status))), style = MaterialTheme.typography.titleLarge)
-            if (state.revisions.isEmpty() && !state.busy && state.error == null) Text(stringResource(R.string.issuer_no_badge))
+            state.revisionsError?.let {
+                Text(stringResource(it), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = reader::retryRevisions, enabled = !state.busy) { Text(stringResource(R.string.issuer_retry_revisions)) }
+            }
+            if (state.revisionsLoaded && state.revisions.isEmpty() && !state.busy && state.revisionsError == null) Text(stringResource(R.string.issuer_no_badge))
             state.revisions.forEach { revision ->
                 OutlinedButton(onClick = { reader.selectRevision(revision) },
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.revision?.id == revision.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),

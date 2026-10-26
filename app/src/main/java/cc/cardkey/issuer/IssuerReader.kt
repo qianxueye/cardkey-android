@@ -10,8 +10,9 @@ internal data class IssuerReaderState(
     val origin: String = "", val actor: String? = null, val busy: Boolean = false, val error: Int? = null,
     val people: List<IssuerPerson> = emptyList(), val peopleCursor: String = "", val person: IssuerPerson? = null,
     val cards: List<IssuerCard> = emptyList(), val cardsCursor: String = "", val card: IssuerCard? = null,
+    val cardsLoaded: Boolean = false, val cardsError: Int? = null,
     val revisions: List<BadgeRevision> = emptyList(), val revisionsCursor: String = "", val current: String? = null,
-    val revision: BadgeRevision? = null,
+    val revision: BadgeRevision? = null, val revisionsLoaded: Boolean = false, val revisionsError: Int? = null,
 )
 internal class IssuerReader(private val secrets: IssuerSecrets, private val scope: CoroutineScope,
     private val makeClient: (String, String) -> IssuerClient = { origin, token -> IssuerClient(origin, token) }) {
@@ -49,20 +50,32 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
         runCatching { secrets.forget(origin) }
         mutable.value = IssuerReaderState(origin = origin, error = R.string.issuer_unauthorized)
     }
-    private fun run(block: suspend () -> Unit) {
+    private enum class Query { CARDS, REVISIONS }
+    private fun run(query: Query? = null, block: suspend () -> Unit) {
         val epoch = generation
-        mutable.value = mutable.value.copy(busy = true, error = null)
+        mutable.value = when (query) {
+            Query.CARDS -> mutable.value.copy(busy = true, cardsError = null)
+            Query.REVISIONS -> mutable.value.copy(busy = true, revisionsError = null)
+            null -> mutable.value.copy(busy = true, error = null)
+        }
         job = scope.launch {
             try { block() } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 if (epoch == generation) {
                     if (failure is IssuerFailure && failure.status == 401) unauthorized()
-                    else mutable.value = mutable.value.copy(error = when {
-                        failure is IssuerFailure && failure.status == 404 -> R.string.issuer_missing
-                        failure is IssuerFailure && failure.status in 300..399 -> R.string.issuer_redirect
-                        failure is IllegalArgumentException || failure is IllegalStateException -> R.string.issuer_invalid_response
-                        else -> R.string.issuer_failed
-                    })
+                    else {
+                        val error = when {
+                            failure is IssuerFailure && failure.status == 404 -> R.string.issuer_missing
+                            failure is IssuerFailure && failure.status in 300..399 -> R.string.issuer_redirect
+                            failure is IllegalArgumentException || failure is IllegalStateException -> R.string.issuer_invalid_response
+                            else -> R.string.issuer_failed
+                        }
+                        mutable.value = when (query) {
+                            Query.CARDS -> mutable.value.copy(cardsError = error)
+                            Query.REVISIONS -> mutable.value.copy(revisionsError = error)
+                            null -> mutable.value.copy(error = error)
+                        }
+                    }
                 }
             } finally { if (epoch == generation) mutable.value = mutable.value.copy(busy = false) }
         }
@@ -109,10 +122,11 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
         val api = client ?: return
         retire()
         mutable.value = mutable.value.copy(person = person, cards = emptyList(), cardsCursor = "", card = null,
-            revisions = emptyList(), revisionsCursor = "", current = null, revision = null)
-        run {
+            revisions = emptyList(), revisionsCursor = "", current = null, revision = null,
+            cardsLoaded = false, cardsError = null, revisionsLoaded = false, revisionsError = null)
+        run(Query.CARDS) {
             val page = api.cards(person.id); currentCoroutineContext().ensureActive()
-            mutable.value = mutable.value.copy(cards = page.items, cardsCursor = page.next)
+            mutable.value = mutable.value.copy(cards = page.items, cardsCursor = page.next, cardsLoaded = true)
         }
     }
     fun moreCards() {
@@ -120,21 +134,25 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
         val person = mutable.value.person ?: return
         val cursor = mutable.value.cardsCursor
         if (cursor.isEmpty() || mutable.value.busy) return
-        run {
+        run(Query.CARDS) {
             val page = api.cards(person.id, cursor); currentCoroutineContext().ensureActive()
             require(page.next.isEmpty() || page.next != cursor)
-            mutable.value = mutable.value.copy(cards = (mutable.value.cards + page.items).distinctBy { it.id }, cardsCursor = page.next)
+            mutable.value = mutable.value.copy(cards = (mutable.value.cards + page.items).distinctBy { it.id }, cardsCursor = page.next, cardsLoaded = true)
         }
+    }
+    fun retryCards() {
+        if (mutable.value.cardsCursor.isNotEmpty()) moreCards() else mutable.value.person?.let(::selectPerson)
     }
     fun selectCard(card: IssuerCard) {
         val api = client ?: return
         require(card.person == mutable.value.person?.id)
         retire()
-        mutable.value = mutable.value.copy(card = card, revisions = emptyList(), revisionsCursor = "", current = null, revision = null)
-        run {
+        mutable.value = mutable.value.copy(card = card, revisions = emptyList(), revisionsCursor = "", current = null, revision = null,
+            revisionsLoaded = false, revisionsError = null)
+        run(Query.REVISIONS) {
             val current = api.current(card)
             val page = api.history(card); currentCoroutineContext().ensureActive()
-            mutable.value = mutable.value.copy(current = current?.id, revisions = page.items, revisionsCursor = page.next)
+            mutable.value = mutable.value.copy(current = current?.id, revisions = page.items, revisionsCursor = page.next, revisionsLoaded = true)
             current?.let { showRevision(it, api) }
         }
     }
@@ -143,11 +161,14 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
         val card = mutable.value.card ?: return
         val cursor = mutable.value.revisionsCursor
         if (cursor.isEmpty() || mutable.value.busy) return
-        run {
+        run(Query.REVISIONS) {
             val page = api.history(card, cursor); currentCoroutineContext().ensureActive()
             require(page.next.isEmpty() || page.next != cursor)
-            mutable.value = mutable.value.copy(revisions = (mutable.value.revisions + page.items).distinctBy { it.id }, revisionsCursor = page.next)
+            mutable.value = mutable.value.copy(revisions = (mutable.value.revisions + page.items).distinctBy { it.id }, revisionsCursor = page.next, revisionsLoaded = true)
         }
+    }
+    fun retryRevisions() {
+        if (mutable.value.revisionsCursor.isNotEmpty()) moreRevisions() else mutable.value.card?.let(::selectCard)
     }
     fun selectRevision(revision: BadgeRevision) {
         val api = client ?: return

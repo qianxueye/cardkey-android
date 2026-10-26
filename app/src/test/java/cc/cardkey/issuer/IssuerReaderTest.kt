@@ -140,12 +140,57 @@ class IssuerReaderTest {
                 reader.selectCard(reader.state.value.cards.single()); awaitReady(reader); awaitImages(reader)
                 fixture.currentMissing = true; fixture.historyMissing = true
                 reader.selectCard(reader.state.value.cards.single()); awaitReady(reader)
-                assertEquals(R.string.issuer_missing, reader.state.value.error)
+                assertEquals(R.string.issuer_missing, reader.state.value.revisionsError)
                 assertNull(reader.state.value.revision); assertEquals(CardArtworkState.Default, reader.front.state.value)
                 fixture.failure = 401
                 reader.selectPerson(reader.state.value.people.single()); awaitReady(reader)
                 assertNull(reader.state.value.actor); assertTrue(reader.state.value.people.isEmpty())
                 assertEquals(R.string.issuer_unauthorized, reader.state.value.error)
+            } finally { reader.close(); scope.cancel() }
+        }
+    }
+    @Test fun failedCardsRemainFailedAfterUnrelatedPeoplePageSucceeds() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.peoplePages = true; fixture.peopleFirstPageHasPerson = true
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "token"); awaitReady(reader)
+                fixture.failure = 503; fixture.failurePath = "/v1/cards"
+                reader.selectPerson(reader.state.value.people.single()); awaitReady(reader)
+                assertEquals(R.string.issuer_failed, reader.state.value.cardsError)
+                assertFalse(reader.state.value.cardsLoaded)
+                reader.morePeople(); awaitReady(reader)
+                assertEquals("", reader.state.value.peopleCursor)
+                assertEquals(R.string.issuer_failed, reader.state.value.cardsError)
+                assertFalse(reader.state.value.cardsLoaded)
+                fixture.failure = 0
+                reader.retryCards(); awaitReady(reader)
+                assertNull(reader.state.value.cardsError); assertTrue(reader.state.value.cardsLoaded)
+                assertEquals(fixture.cardID, reader.state.value.cards.single().id)
+            } finally { reader.close(); scope.cancel() }
+        }
+    }
+    @Test fun failedHistoryRemainsFailedAfterUnrelatedPeoplePageSucceeds() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.peoplePages = true; fixture.peopleFirstPageHasPerson = true
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "token"); awaitReady(reader)
+                reader.selectPerson(reader.state.value.people.single()); awaitReady(reader)
+                fixture.failure = 503; fixture.failurePath = "/v1/cards/${fixture.cardID}/badge-revisions"
+                reader.selectCard(reader.state.value.cards.single()); awaitReady(reader)
+                assertEquals(R.string.issuer_failed, reader.state.value.revisionsError)
+                assertFalse(reader.state.value.revisionsLoaded)
+                reader.morePeople(); awaitReady(reader)
+                assertEquals("", reader.state.value.peopleCursor)
+                assertEquals(R.string.issuer_failed, reader.state.value.revisionsError)
+                assertFalse(reader.state.value.revisionsLoaded)
+                fixture.failure = 0
+                reader.retryRevisions(); awaitReady(reader); awaitImages(reader)
+                assertNull(reader.state.value.revisionsError); assertTrue(reader.state.value.revisionsLoaded)
+                assertEquals(fixture.revisionID, reader.state.value.revision!!.id)
             } finally { reader.close(); scope.cancel() }
         }
     }

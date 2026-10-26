@@ -26,6 +26,8 @@ internal class IssuerFixture : AutoCloseable {
     val origin get() = "http://127.0.0.1:${server.localPort}"
     var personName = "Synthetic Person"
     var failure = 0
+    var failurePath: String? = null
+    var peopleFirstPageHasPerson = false
     var mediaFailure = 0
     var currentMissing = false
     var historyMissing = false
@@ -56,10 +58,10 @@ internal class IssuerFixture : AutoCloseable {
                 val path = exchange.requestURI.path
                 requests.add(exchange.requestURI.toString() to exchange.requestHeaders["authorization"])
                 if (path == delayPath) { enteredDelay.countDown(); Thread.sleep(delayMillis) }
-                if (failure != 0) { exchange.responseHeaders["Location"] = redirect; respond(exchange, failure, "application/json", "{}".toByteArray()) }
+                if (failure != 0 && (failurePath == null || failurePath == path)) { exchange.responseHeaders["Location"] = redirect; respond(exchange, failure, "application/json", "{}".toByteArray()) }
                 else when {
                     path == "/v1/me" -> json(exchange, """{"operator":{"id":"test-operator","display_name":"Test Operator","administrator":false},"capabilities":["people:read","cards:read"],"ca_id":"test-ca","ca_url":"https://ca.invalid"}""")
-                    path == "/v1/people" -> json(exchange, page(if (peoplePages && !exchange.requestURI.query.contains("cursor=second")) "" else person(), if (peoplePages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
+                    path == "/v1/people" -> json(exchange, page(if (peoplePages && !peopleFirstPageHasPerson && !exchange.requestURI.query.contains("cursor=second")) "" else person(), if (peoplePages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
                     path == "/v1/cards" -> json(exchange, page(if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "" else card(), if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
                     path.endsWith("/badge-current") -> if (currentMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, revision())
                     path.endsWith("/badge-revisions") -> if (historyMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, page(if (exchange.requestURI.query.contains("cursor=older")) revision(oldID) else revision(), if (historyPages && !exchange.requestURI.query.contains("cursor=older")) "older" else ""))
