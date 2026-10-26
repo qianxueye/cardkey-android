@@ -14,13 +14,15 @@ data class EnrollmentState(
     val receipt: IssuanceReceipt? = null,
     val unknownReceipts: List<IssuanceReceipt> = emptyList(),
     val selection: EnrollmentSelection = EnrollmentSelection(), val revision: Long = 0,
+    val savedAddress: String = "",
 )
 class EnrollmentImport(val csr: EnrollmentCsr, val ca: EnrollmentCA, val bundle: EnrollmentBundle) {
     fun validate() = EnrollmentProfile.validate(bundle.chain, ca.anchor, csr, issuedAt = bundle.verifiedAt)
 }
 
-class EnrollmentWorkflow {
-    private val mutable = MutableStateFlow(EnrollmentState())
+class EnrollmentWorkflow(private val settingsStore: EnrollmentSettings? = null) {
+    private val savedAddress = settingsStore?.load().orEmpty()
+    private val mutable = MutableStateFlow(EnrollmentState(address = savedAddress, savedAddress = savedAddress))
     val state = mutable.asStateFlow()
     private var root: ByteArray? = null
     private val attemptedBindings = mutableSetOf<String>()
@@ -46,8 +48,13 @@ class EnrollmentWorkflow {
     private var rootRequest = 0L
     fun settings(address: String, cn: String) {
         if (address == mutable.value.address && cn == mutable.value.cn) return
+        val addressChanged = address != mutable.value.address
         retire()
-        mutable.value = mutable.value.copy(address = address, cn = cn)
+        if (addressChanged) root = null
+        val validAddress = if (address.isEmpty()) "" else runCatching { enrollmentOrigin(address) }.getOrNull()
+        if (addressChanged && validAddress != null) settingsStore?.save(validAddress)
+        mutable.value = mutable.value.copy(address = address, cn = cn,
+            hasRoot = root != null, savedAddress = validAddress ?: mutable.value.savedAddress)
     }
     fun rootRequest(): Pair<Long, Long> = ++rootRequest to settingsGeneration
     fun acceptRoot(request: Pair<Long, Long>, bytes: ByteArray): Boolean {

@@ -23,10 +23,7 @@ class EnrollmentCA(address: String, root: ByteArray) {
     private val selectedRoot = EnrollmentProfile.root(root)
     val anchor get() = selectedRoot.copyOf()
     init {
-        val uri = URI(address)
-        require(uri.scheme == "https" && uri.host != null && uri.rawUserInfo == null &&
-            uri.rawQuery == null && uri.rawFragment == null && uri.rawPath in listOf("", "/"))
-        endpoint = address.toHttpUrl().newBuilder().encodedPath("/1.0/sign").build()
+        endpoint = enrollmentOrigin(address).toHttpUrl().newBuilder().encodedPath("/1.0/sign").build()
     }
     fun checkToken(token: String, csr: EnrollmentCsr, now: Long = System.currentTimeMillis()) {
         require(token.length in 1..16384)
@@ -103,4 +100,11 @@ class EnrollmentCA(address: String, root: ByteArray) {
         } catch (failure: EnrollmentException) { throw failure }
         catch (_: Exception) { throw EnrollmentException(IssuanceFailure.UNKNOWN) }
     }
+}
+
+internal fun enrollmentOrigin(address: String): String {
+    val uri = URI(address)
+    require(uri.scheme.equals("https", ignoreCase = true) && uri.host != null && uri.rawUserInfo == null &&
+        uri.rawQuery == null && uri.rawFragment == null && uri.rawPath in listOf("", "/"))
+    return address.toHttpUrl().toString().removeSuffix("/")
 }

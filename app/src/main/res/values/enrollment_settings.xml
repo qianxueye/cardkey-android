@@ -1,0 +1,5 @@
+<resources>
+    <string name="enrollment_addressSaved">地址会自动保存。</string>
+    <string name="enrollment_addressInvalid">输入 HTTPS 服务地址，可包含端口；不要包含路径。</string>
+    <string name="enrollment_addressEmpty">输入 CA 的 HTTPS 地址。</string>
+</resources>

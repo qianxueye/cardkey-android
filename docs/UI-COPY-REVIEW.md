@@ -700,3 +700,16 @@ The `fix/ui-review-refinements-20261026` candidate reuses the complete Android c
 | Android manager / card home / `HomeTask` decorative chevron, Chinese and English | Visible `›` also contributes text to task accessibility semantics. | Visible `›` remains; its text semantics are cleared. Existing task labels, subtitles, status, click actions and Prepare button remain. | Avoid an extra arrow announcement beside named navigation tasks. Applies to all three home task rows on the next application build/install. |
 
 Coverage: only the decorative glyph semantics reopen A1. The existing copy inventory, layout, palette, read button and navigation remain the baseline. The real Compose regression checks the Chinese and English task labels, enabled click actions, dispatched callbacks and the absence of arrow text in merged and unmerged semantics trees. Installed TalkBack traversal remains a separate root-owned acceptance step.
+
+
+## Persistent CA address
+
+Candidate branch: `feat/ca-connection-settings-20261026`, based on `2196eef`. Refs hub #35/#39 and Android #45. Reused the complete manager/provider baseline in this ledger and applied `plain-language-iso-24495` plus its client-copy reference to these additions. Scope: existing Settings → PIV certificate application, all maintained Chinese/default and English resources. The CA address field and its label remain available.
+
+| Screen/key | Before | Chinese/default after | English after | Condition and reason |
+| --- | --- | --- | --- | --- |
+| Enrollment / `enrollment_addressSaved` | Absent | 地址会自动保存。 | Address saved automatically. | Valid HTTPS origin in the existing input; explains automatic preference persistence. |
+| Enrollment / `enrollment_addressInvalid` | Absent | 输入 HTTPS 服务地址，可包含端口；不要包含路径。 | Enter an HTTPS service address, with an optional port and no path. | Invalid nonempty input; shows the accepted input format as field supporting text and marks the native field error. The last valid saved origin stays intact. |
+| Enrollment / `enrollment_addressEmpty` | Absent | 输入 CA 的 HTTPS 地址。 | Enter the CA HTTPS address. | Empty address; clearing the input removes the saved origin. |
+
+The public origin is saved automatically, including a non-default port. OTT, PIN, CN, root certificate and enrollment state stay transient. Editing the address clears selected root trust and retires unsubmitted request/picker generations; submitted or unknown receipts keep their original endpoint. Save/load performs no network or card operation. Activation: next build and installation. Source copy review and Robolectric Compose checks are separate from installed-device or physical-card acceptance.

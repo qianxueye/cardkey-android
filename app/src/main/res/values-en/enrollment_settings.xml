@@ -1,0 +1,5 @@
+<resources>
+    <string name="enrollment_addressSaved">Address saved automatically.</string>
+    <string name="enrollment_addressInvalid">Enter an HTTPS service address, with an optional port and no path.</string>
+    <string name="enrollment_addressEmpty">Enter the CA HTTPS address.</string>
+</resources>

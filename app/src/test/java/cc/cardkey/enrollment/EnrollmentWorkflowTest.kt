@@ -66,6 +66,7 @@ class EnrollmentWorkflowTest {
         flow.pause()
         flow.settings("https://other", "other")
         flow.settings("https://localhost", fixture.csr.cn)
+        flow.acceptRoot(flow.rootRequest(), fixture.root)
         flow.settleCsr(flow.startCsr(), fixture.csr)
         assertTrue(flow.state.value.attempted)
         assertSame(fixture.csr, flow.state.value.receipt!!.csr)

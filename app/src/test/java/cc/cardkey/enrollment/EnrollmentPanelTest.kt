@@ -29,7 +29,7 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w800dp-h800dp-mdpi")
+@Config(sdk = [34], qualifiers = "zh-rCN-w800dp-h800dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class EnrollmentPanelTest {
@@ -54,7 +54,7 @@ class EnrollmentPanelTest {
                     ManagerScreen(ManagerState(selectedReader = reader, nfc = false,
                         recognition = cc.cardkey.ui.CardRecognition(reader.routeKey, 1, cc.cardkey.ui.CardFamily.PIV)), clear.intValue,
                         {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, enrollment,
-                        { address, cn -> state.value = state.value.copy(address = address, cn = cn) }, {},
+                        { address, cn -> if (workflow != null) workflow.settings(address, cn) else state.value = state.value.copy(address = address, cn = cn) }, {},
                         { error("A cancelled confirmation must not submit") }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, { selection ->
                             onSelection(selection)
                             if (workflow != null) workflow.selection(selection)
@@ -72,6 +72,50 @@ class EnrollmentPanelTest {
             check { compose.runOnIdle { clear.intValue++ }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
     }
+    @Test fun savedAddressAndInvalidGuidanceRemainReachableInPortrait() {
+        val flow = EnrollmentWorkflow().apply { settings("https://CA.example:8443/", "") }
+        render(360, 640, workflow = flow) {
+            compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("地址会自动保存。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("enrollment-address").performTextReplacement("http://other.example/path")
+            compose.onNodeWithText("输入 HTTPS 服务地址，可包含端口；不要包含路径。").performScrollTo().assertIsDisplayed()
+            compose.runOnIdle { assertEquals("https://ca.example:8443", flow.state.value.savedAddress) }
+            compose.onNodeWithTag("enrollment-address").performTextClearance()
+            compose.onNodeWithText("输入 CA 的 HTTPS 地址。").performScrollTo().assertIsDisplayed()
+            compose.runOnIdle { assertEquals("", flow.state.value.savedAddress) }
+            compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsEnabled()
+        }
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "en-rUS-w800dp-h800dp-mdpi")
+    fun englishSavedAddressGuidanceFitsCompactLandscape() {
+        val flow = EnrollmentWorkflow().apply { settings("https://ca.example:8443", "") }
+        render(800, 240, workflow = flow) {
+            compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Address saved automatically.").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        }
+    }
+
+    @Test fun addressEditClearsTransientTokenAndPinWithTheOldRequest() {
+        val flow = EnrollmentWorkflow().apply {
+            settings("https://localhost", fixture.csr.cn)
+            acceptRoot(rootRequest(), fixture.root)
+            settleCsr(startCsr(), fixture.csr)
+        }
+        render(360, 640, workflow = flow) {
+            compose.onNodeWithTag("enrollment-pin").performScrollTo().performTextInput("123456")
+            compose.onNodeWithTag("enrollment-token").performScrollTo().performTextInput("synthetic-ott")
+            compose.onNodeWithTag("enrollment-address").performScrollTo().performTextReplacement("https://other.example:8443")
+            compose.onNodeWithTag("enrollment-token").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-export-csr").assertDoesNotExist()
+            compose.onNodeWithText("123456").assertDoesNotExist()
+            compose.runOnIdle { assertFalse(flow.state.value.hasRoot) }
+            compose.onNodeWithTag("enrollment-create-csr").performScrollTo().assertIsNotEnabled()
+        }
+    }
+
     @Test fun documentSelectionDefaultsTo9cAndClearsOldCsrAndSecrets() {
         render(360, 640) {
             compose.onNodeWithText("当前 PIV PIN").performScrollTo().performTextInput("123456")
