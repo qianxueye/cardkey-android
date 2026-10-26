@@ -674,3 +674,18 @@ The Owner-approved review correction restores one necessary instruction on the a
 | FIDO credential username update form / `user_updateHelp` | removed | `此卡仅支持修改用户名，不支持修改显示名称。` | removed | `On this card, you can change the username but not the display name.` | Prevent confusing the editable username with the separate display name. Show only for `FIDO_UPDATE`, immediately before the new-username field, in a future application build/install. |
 
 The same key is declared in default Chinese, qualified Chinese and English. Both qualified catalog key sets intentionally grow from 136 to 137; the fixed catalog/default/placeholder checks cover the addition. The exact 179 existing fallback exceptions are unchanged and exclude this translated key. No runtime/card operation, target binding, PIN rule, unknown-write guidance or other notice changes. No installed build is activated by this source change.
+
+## Operation completion haptics
+
+The `feat/operation-haptics-20261026` candidate adds tactile feedback to the existing manager completion path. No app-owned text, locale catalog, layout, permission or setting changes. The existing complete copy review remains the string baseline. This behavior record was reviewed with plain-language-iso-24495.
+
+| Surface / event | Before | After | Activation |
+| --- | --- | --- | --- |
+| User-started FIDO/PIV manager operation, including public recognition, protected PIV and TLS card completion | No application completion haptic | One platform `CONFIRM` for a completed result; one `REJECT` for a failure or unknown effect, while the Activity is resumed and its view visible and focused | Next application build/install; device settings and haptic support determine playback |
+| Cancellation, retired operation, progress, reader refresh, cached receipt and Activity recreation | No application completion haptic | Silent; completion events have no replay | Same candidate |
+
+The feedback uses `View.performHapticFeedback` with no ignore flags. Android handles the user's touch-feedback settings. The application adds no vibration permission, custom waveform, progress pulses or start pulse. Existing operation results and recovery instructions retain their meaning. Physical feel and behavior with device touch feedback disabled require installed-device acceptance.
+
+The PR #50 review correction passes the operation's existing retirement decision into the feedback boundary, so a USB device loss stays silent even before the detach broadcast reaches the Activity. TLS deadline expiry requests one `REJECT` from its concrete `TIMED_OUT` outcome; the existing manager cancellation-shaped receipt remains unchanged. Explicit cancellation remains silent. No strings or display conditions change.
+
+The confirmation-window correction delivers feedback through the currently focused window of the resumed manager Activity, including its confirmation dialog. Window ownership uses the Activity application-window token. If another Activity or application owns focus, the event is discarded; there is no pending feedback to replay after focus or lifecycle changes. Submission timing, confirmation content and operation results remain unchanged.

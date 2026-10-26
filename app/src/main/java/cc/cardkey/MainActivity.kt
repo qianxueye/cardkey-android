@@ -11,6 +11,7 @@ import android.nfc.NfcAdapter
 import android.os.Bundle
 import android.os.Handler
 import android.view.WindowManager
+import android.view.inspector.WindowInspector
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -26,6 +27,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import cc.cardkey.ui.*
 import cc.cardkey.protectedpiv.ProtectedPivDocument
 import cc.cardkey.protocol.FailureCode
@@ -208,6 +210,19 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         model.signingFileRequestId?.let(::signingFilePicker)
         model.signatureSaveRequestId?.let(::signatureExporter)
         model.protectedPiv.value.documentId?.let(::protectedPivPicker)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                model.operationFeedback.collect { feedback ->
+                    val decor = window.decorView
+                    val ownerToken = (decor.layoutParams as? WindowManager.LayoutParams)?.token
+                    val view = WindowInspector.getGlobalWindowViews().firstOrNull {
+                        it.isShown && it.hasWindowFocus() && (it === decor || ownerToken != null &&
+                            (it.layoutParams as? WindowManager.LayoutParams)?.token == ownerToken)
+                    }
+                    view?.performHapticFeedback(feedback)
+                }
+            }
+        }
         setContent {
             val state by model.state.collectAsState()
             val enrollment by model.enrollment.state.collectAsState()
