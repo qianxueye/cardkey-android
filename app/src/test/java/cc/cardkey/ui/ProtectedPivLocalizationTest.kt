@@ -75,7 +75,7 @@ class ProtectedPivLocalizationTest {
             compose.onNodeWithText("Protected PIV").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Issuer: CN=Synthetic").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("File: sample.bin · 3 B").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("The previous operation outcome is unknown. Import the original card configuration again, then read its protected status. Do not repeat the original operation.").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Import the original card configuration again, then read its protected status. Do not repeat the original operation before reading the status.").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("protected-piv-recognize").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("protected-piv-pin").assertDoesNotExist()
         }
@@ -145,7 +145,7 @@ class ProtectedPivLocalizationTest {
             }
         }) {
             compose.onNodeWithText("PIN status").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("Not verified").assertIsDisplayed()
+            compose.onNodeWithText("The PIN has not been verified in this session").assertIsDisplayed()
             compose.onNodeWithText("Remaining PIN attempts read during this authentication").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("The operation is complete.").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Version").performScrollTo().assertIsDisplayed()
@@ -206,7 +206,7 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_pickerScope" to "打开任何文件选择器都会清除现有私有配置。不要分享私有配置或配对码。",
             "protectedPiv_ready" to "配置已就绪。",
             "protectedPiv_guid" to "配置中的卡片 GUID：%1\$s",
-            "protectedPiv_inspection" to "上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。",
+            "protectedPiv_inspection" to "请重新导入原卡片的配置，再读取受保护状态；读取前不要重复执行原操作。",
             "protectedPiv_operation" to "受保护操作",
             "protectedPiv_slot" to "受保护槽位",
             "protectedPiv_csrSubject" to "CSR 主题（例如 CN=CardKey）",
@@ -238,7 +238,7 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_pinStatus" to "PIN 状态",
             "protectedPiv_contactRequired" to "需要接触式连接恢复",
             "protectedPiv_verified" to "当前会话已验证",
-            "protectedPiv_unverified" to "尚未验证",
+            "protectedPiv_unverified" to "本次会话未验证 PIN",
             "protectedPiv_authenticatedRetries" to "本次认证读取的 PIN 剩余重试次数",
             "protectedPiv_count" to "%1\$d 次",
             "protectedPiv_rowVersion" to "版本",
@@ -303,7 +303,7 @@ class ProtectedPivLocalizationTest {
             "reader_nfc" to "选择操作后，将卡片贴近手机。",
             "signing_exportCancelled" to "已取消导出。",
             "signing_exportScope" to "导出的是所选文件的独立签名。",
-            "signing_exportUnknown" to "未确认导出结果。请检查所选文件。",
+            "signing_exportUnknown" to "未收到文件保存结果。请检查所选位置中的文件。",
             "signing_exported" to "已导出签名。",
             "signing_verified" to "签名验证：通过",
             "ssh_publicKeyExported" to "已导出 SSH 公钥。",

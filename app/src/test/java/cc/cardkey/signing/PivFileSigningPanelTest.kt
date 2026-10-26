@@ -138,7 +138,7 @@ class PivFileSigningPanelTest {
             compose.onNodeWithText("导出").performScrollTo().assertIsNotEnabled()
             compose.runOnIdle { files.value = files.value.copy(exportStatus = SignatureExportStatus.UNKNOWN) }
             compose.waitForIdle()
-            compose.onNodeWithText("未确认导出结果。请检查所选文件。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("未收到文件保存结果。请检查所选位置中的文件。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("已导出签名。").assertDoesNotExist()
             compose.runOnIdle {
                 manager.value = manager.value.copy(result = OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN,
@@ -162,7 +162,7 @@ class PivFileSigningPanelTest {
             compose.onNodeWithText("CMS 签名验证：通过").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("导出 .p7s 独立签名，包含签名证书；验证时还需原文件。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("未验证证书信任链、吊销状态或可信时间。").assertDoesNotExist()
-            compose.onNodeWithText("未确认导出结果。请检查所选文件。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("未收到文件保存结果。请检查所选位置中的文件。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("已导出签名。").assertDoesNotExist()
         }
     }

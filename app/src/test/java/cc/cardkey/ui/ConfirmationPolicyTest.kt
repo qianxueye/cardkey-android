@@ -113,8 +113,8 @@ class ConfirmationPolicyTest {
             val code = if (status == 0x2d) FailureCode.CANCELLED else FailureCode.CARD_REJECTED
             val reason = if (status == 0x2d) R.string.error_cancelled else R.string.error_recoveryRequired
             val result = OperationResult.Failed(code, Effect.UNKNOWN, status = status)
-            assertEquals(listOf(R.string.operation_unknown, reason), ConfirmationPolicy.resultMessages(result, CardWire.CTAP))
-            assertEquals(listOf(R.string.operation_appliedReadbackFailed, reason),
+            assertEquals(listOfNotNull(R.string.operation_unknown, reason.takeUnless { code == FailureCode.CANCELLED }), ConfirmationPolicy.resultMessages(result, CardWire.CTAP))
+            assertEquals(listOfNotNull(R.string.operation_appliedReadbackFailed, reason.takeUnless { code == FailureCode.CANCELLED }),
                 ConfirmationPolicy.resultMessages(result.copy(writeAccepted = true), CardWire.CTAP))
         }
     }
@@ -212,7 +212,9 @@ class ConfirmationPolicyTest {
         val known = OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
         assertEquals(listOf(R.string.operation_notDispatched, R.string.error_cancelled), ConfirmationPolicy.resultMessages(known))
         val unknown = OperationResult.Failed(FailureCode.CANCELLED, Effect.UNKNOWN)
-        assertEquals(listOf(R.string.operation_unknown, R.string.error_cancelled), ConfirmationPolicy.resultMessages(unknown))
+        assertEquals(listOf(R.string.operation_unknown), ConfirmationPolicy.resultMessages(unknown))
+        assertEquals(listOf(R.string.operation_appliedReadbackFailed), ConfirmationPolicy.resultMessages(
+            unknown.copy(effect = Effect.APPLIED, writeAccepted = true)))
     }
     @Test fun completedAccountMutationsNameTheirActualResult() {
         val result = OperationResult.Completed(ManagerReport(emptyList()), Effect.APPLIED)

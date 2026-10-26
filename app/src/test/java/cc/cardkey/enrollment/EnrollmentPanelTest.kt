@@ -165,7 +165,7 @@ class EnrollmentPanelTest {
             compose.onNodeWithText("https://new-ca.invalid").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText(fixture.csr.cn).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("https://localhost/1.0/sign").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("未确认签发结果。请先向 CA 管理员核实，勿重复提交。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("未收到签发结果。请先向 CA 管理员核实，勿重复提交。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("导出 CSR").assertDoesNotExist()
         }
     }

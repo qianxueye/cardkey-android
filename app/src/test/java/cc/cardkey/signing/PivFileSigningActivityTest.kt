@@ -420,7 +420,7 @@ class PivFileSigningActivityTest {
                 assertEquals("mode=$mode", if (mode == "null-output") 0 else 1, writes)
                 if (mode == "null-output") assertEquals(1, nullProvider.opens)
                 assertSame(report, (model.state.value.result as OperationResult.Completed).value)
-                compose.onNodeWithText("未确认导出结果。请检查所选文件。").performScrollTo().assertIsDisplayed()
+                compose.onNodeWithText("未收到文件保存结果。请检查所选位置中的文件。").performScrollTo().assertIsDisplayed()
             }
         } finally { controller.pause().stop().destroy() }
     }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="plexo_ca_currentRequest" tools:ignore="MissingTranslation">本次申请</string>
-    <string name="plexo_ca_unknownRequest" tools:ignore="MissingTranslation">CA 签发结果待核实</string>
+    <string name="plexo_ca_unknownRequest" tools:ignore="MissingTranslation">未收到签发结果的申请</string>
     <string name="plexo_ca_identity" tools:ignore="MissingTranslation">申请身份</string>
     <string name="plexo_ca_purpose" tools:ignore="MissingTranslation">用途</string>
     <string name="plexo_ca_documentIdentity" tools:ignore="MissingTranslation">文档签名证书</string>

@@ -156,7 +156,7 @@ class ProtectedPivPanelTest {
             }
         }
         try {
-            compose.onNodeWithText("上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。").assertDoesNotExist()
+            compose.onNodeWithText("请重新导入原卡片的配置，再读取受保护状态；读取前不要重复执行原操作。").assertDoesNotExist()
             compose.onNodeWithText("上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。")
                 .performScrollTo().assertIsDisplayed()
         } finally { host.pause().stop().destroy() }
@@ -175,7 +175,7 @@ class ProtectedPivPanelTest {
             }
         }
         try {
-            compose.onNodeWithText("上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("请重新导入原卡片的配置，再读取受保护状态；读取前不要重复执行原操作。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("protected-piv-issuer").performScrollTo().assertIsEnabled()
             compose.onNodeWithTag("protected-piv-recognize").performScrollTo().performClick()
             compose.runOnIdle { assertEquals(ProtectedPivAction.STATUS, recognized) }
