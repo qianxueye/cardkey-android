@@ -169,6 +169,30 @@ class PlexoProviderTest {
         }
     }
 
+    @Test fun cancellationBeforeDispatchKeepsTheKnownCancellationResult() = cancellationResult(Effect.NONE)
+
+    @Test fun cancellationAfterDispatchKeepsOnlyTheMissingResultNotice() = cancellationResult(Effect.UNKNOWN)
+
+    @Test fun cancellationAfterAcceptedWriteKeepsOnlyTheReadbackNotice() = cancellationResult(Effect.APPLIED)
+
+    private fun cancellationResult(effect: Effect) {
+        render(verified = true, failed = OperationResult.Failed(FailureCode.CANCELLED, effect,
+            dispatch = if (effect == Effect.NONE) cc.cardkey.protocol.Dispatch.NOT_DISPATCHED
+                else cc.cardkey.protocol.Dispatch.RESPONSE_UNAVAILABLE,
+            writeAccepted = effect == Effect.APPLIED)) { _, host, _ ->
+            val expected = when (effect) {
+                Effect.NONE -> R.string.operation_notDispatched
+                Effect.UNKNOWN -> R.string.operation_unknown
+                Effect.APPLIED -> R.string.operation_appliedReadbackFailed
+            }
+            compose.onNodeWithText(host.getString(expected)).performScrollTo().assertIsDisplayed()
+            if (effect == Effect.NONE) compose.onNodeWithText(host.getString(R.string.error_cancelled)).assertExists()
+            else compose.onNodeWithText(host.getString(R.string.error_cancelled)).assertDoesNotExist()
+            compose.onNodeWithText(host.getString(R.string.provider_getAction)).assertDoesNotExist()
+            compose.onNodeWithText(host.getString(R.string.plexo_provider_close)).assertIsDisplayed()
+        }
+    }
+
     private fun savePreview(name: String, host: ComponentActivity) {
         val directory = System.getenv("CARDKEY_PROVIDER_PREVIEW_DIR")?.let(::File) ?: return
         directory.mkdirs()

@@ -73,7 +73,7 @@
     <string name="enrollment_csrReady" tools:ignore="MissingTranslation">CSR 已生成，可导出后交给 CA 管理员。</string>
     <string name="enrollment_issuing" tools:ignore="MissingTranslation">正在向所选 CA 申请证书。</string>
     <string name="enrollment_verified" tools:ignore="MissingTranslation">CA 已签发证书，证书链、用途、身份和公钥验证通过。证书尚未写入卡片。</string>
-    <string name="enrollment_unknown" tools:ignore="MissingTranslation">未确认签发结果。请先向 CA 管理员核实，勿重复提交。</string>
+    <string name="enrollment_unknown" tools:ignore="MissingTranslation">未收到签发结果。请先向 CA 管理员核实，勿重复提交。</string>
     <string name="enrollment_rejected" tools:ignore="MissingTranslation">CA 拒绝了申请，未写入卡片。</string>
     <string name="enrollment_invalid" tools:ignore="MissingTranslation">证书未通过验证，未写入卡片。</string>
     <string name="enrollment_confirmImport" tools:ignore="MissingTranslation">将已验证的证书写入所选 PIV 槽位，替换该槽位的现有证书。私钥不变。确认导入？</string>
@@ -94,7 +94,7 @@
     <string name="tls_cancelled" tools:ignore="MissingTranslation">已取消连接验证。</string>
     <string name="tls_timeout" tools:ignore="MissingTranslation">连接验证已超时。</string>
     <string name="tls_mayHaveSubmitted" tools:ignore="MissingTranslation">认证可能已提交，请核对服务器记录。</string>
-    <string name="tls_unknown" tools:ignore="MissingTranslation">未确认认证结果。请先核对服务器记录，勿重复提交。</string>
+    <string name="tls_unknown" tools:ignore="MissingTranslation">未收到符合要求的服务器响应。请先核对服务器记录，勿重复提交。</string>
     <string name="signing_chooseFile" tools:ignore="MissingTranslation">选择文件</string>
     <string name="signing_limit" tools:ignore="MissingTranslation">选择非空文件，最大 1 MiB。</string>
     <string name="signing_selectedFile" tools:ignore="MissingTranslation">%1$s · %2$d 字节</string>
@@ -102,8 +102,8 @@
     <string name="signing_exportScope">导出的是所选文件的独立签名。</string>
     <string name="signing_exported">已导出签名。</string>
     <string name="signing_exportCancelled">已取消导出。</string>
-    <string name="signing_exportUnknown">未确认导出结果。请检查所选文件。</string>
-    <string name="workspace_inspection" tools:ignore="MissingTranslation">结果待核实；请先读取卡片状态</string>
+    <string name="signing_exportUnknown">未收到文件保存结果。请检查所选位置中的文件。</string>
+    <string name="workspace_inspection" tools:ignore="MissingTranslation">请先读取卡片状态</string>
     <string name="workspace_common" tools:ignore="MissingTranslation">常用任务</string>
     <string name="workspace_advanced" tools:ignore="MissingTranslation">高级与协议诊断</string>
     <string name="workspace_details">技术详情</string>
@@ -158,7 +158,7 @@
     <string name="document_readFailed" tools:ignore="MissingTranslation">文件未能读取，请重新选择文件。</string>
     <string name="document_saved">文件已保存。</string>
     <string name="document_cancelled" tools:ignore="MissingTranslation">已取消文件操作。</string>
-    <string name="document_unknown" tools:ignore="MissingTranslation">未确认文件保存结果。请检查所选位置，勿重复提交卡片操作。</string>
+    <string name="document_unknown" tools:ignore="MissingTranslation">未收到文件保存结果。请检查所选位置，勿重复提交卡片操作。</string>
     <string name="reader_permissionDenied" tools:ignore="MissingTranslation">未获 USB 读卡器访问授权。请重新选择读卡器，或改用 NFC。</string>
     <string name="user_updateHelp" formatted="false">此卡仅支持修改用户名，不支持修改显示名称。</string>
     <string name="manager_fido_unread">尚未读取 FIDO 信息</string>

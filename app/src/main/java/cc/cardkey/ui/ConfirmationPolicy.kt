@@ -92,7 +92,7 @@ object ConfirmationPolicy {
                 FailureCode.CERTIFICATE_KEY_MISMATCH -> R.string.error_keyMismatch
                 FailureCode.INVALID_INPUT -> R.string.error_invalidInput
                 FailureCode.TRANSPORT_FAILURE, FailureCode.BUSY -> R.string.error_transport
-                FailureCode.CANCELLED -> R.string.error_cancelled
+                FailureCode.CANCELLED -> R.string.error_cancelled.takeIf { effect == null || effect == R.string.operation_notDispatched }
                 FailureCode.NFC_UNAVAILABLE -> R.string.error_nfcUnavailable
                 FailureCode.NFC_DISABLED -> R.string.error_nfcDisabled
                 FailureCode.CAPACITY_EXCEEDED -> R.string.error_capacityExceeded

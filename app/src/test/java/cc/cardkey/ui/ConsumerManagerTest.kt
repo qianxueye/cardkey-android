@@ -33,6 +33,41 @@ import cc.cardkey.R
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ConsumerManagerTest {
     @get:Rule val compose = createEmptyComposeRule()
+    @Test fun cancellationReceiptDistinguishesUnsentUnknownAndAcceptedEffects() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        val state = mutableStateOf(ManagerState())
+        activity.get().setContent {
+            MaterialTheme { Box(Modifier.requiredSize(800.dp, 800.dp)) {
+                ManagerScreen(state.value, 0, {}, {}, { fail("Unexpected submission") }, {}, {}, null, {}, {}, {}, {},
+                    EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                    TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
+                    InventoryState(), { _, _ -> }, { _, _ -> }, {}, {},
+                    protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
+                    onProtectedPivDocument = {}, onProtectedPivClear = {},
+                    onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
+            } }
+        }
+        try {
+            for (effect in listOf(Effect.NONE, Effect.UNKNOWN, Effect.APPLIED)) {
+                compose.runOnIdle {
+                    state.value = ManagerState(operation = ManagerOperation.FIDO_DELETE,
+                        requiresInspection = effect != Effect.NONE,
+                        result = OperationResult.Failed(FailureCode.CANCELLED, effect,
+                            dispatch = if (effect == Effect.NONE) Dispatch.NOT_DISPATCHED else Dispatch.RESPONSE_UNAVAILABLE,
+                            writeAccepted = effect == Effect.APPLIED))
+                }
+                val expected = when (effect) {
+                    Effect.NONE -> R.string.operation_notDispatched
+                    Effect.UNKNOWN -> R.string.operation_unknown
+                    Effect.APPLIED -> R.string.operation_appliedReadbackFailed
+                }
+                compose.onNodeWithText(activity.get().getString(expected)).performScrollTo().assertIsDisplayed()
+                if (effect == Effect.NONE) compose.onNodeWithText(activity.get().getString(R.string.error_cancelled)).assertExists()
+                else compose.onNodeWithText(activity.get().getString(R.string.error_cancelled)).assertDoesNotExist()
+            }
+        } finally { activity.pause().stop().destroy() }
+    }
+
     @Test fun protectedPreflightDoesNotRenderPrivateCompletionButExecutionDoes() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val model = ManagerViewModel(RuntimeEnvironment.getApplication())

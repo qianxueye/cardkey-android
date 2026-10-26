@@ -10,7 +10,7 @@
     <string name="protectedPiv_pickerScope">打开任何文件选择器都会清除现有私有配置。不要分享私有配置或配对码。</string>
     <string name="protectedPiv_ready">配置已就绪。</string>
     <string name="protectedPiv_guid">配置中的卡片 GUID：%1$s</string>
-    <string name="protectedPiv_inspection">上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。</string>
+    <string name="protectedPiv_inspection">请重新导入原卡片的配置，再读取受保护状态；读取前不要重复执行原操作。</string>
     <string name="protectedPiv_operation">受保护操作</string>
     <string name="protectedPiv_slot">受保护槽位</string>
     <string name="protectedPiv_csrSubject">CSR 主题（例如 CN=CardKey）</string>
@@ -42,7 +42,7 @@
     <string name="protectedPiv_pinStatus">PIN 状态</string>
     <string name="protectedPiv_contactRequired">需要接触式连接恢复</string>
     <string name="protectedPiv_verified">当前会话已验证</string>
-    <string name="protectedPiv_unverified">尚未验证</string>
+    <string name="protectedPiv_unverified">本次会话未验证 PIN</string>
     <string name="protectedPiv_authenticatedRetries">本次认证读取的 PIN 剩余重试次数</string>
     <string name="protectedPiv_count">%1$d 次</string>
     <string name="protectedPiv_rowVersion">版本</string>
@@ -107,7 +107,7 @@
     <string name="signing_exportScope">导出的是所选文件的独立签名。</string>
     <string name="signing_exported">已导出签名。</string>
     <string name="signing_exportCancelled">已取消导出。</string>
-    <string name="signing_exportUnknown">未确认导出结果。请检查所选文件。</string>
+    <string name="signing_exportUnknown">未收到文件保存结果。请检查所选位置中的文件。</string>
     <string name="ssh_publicKeyScope">已读取 SSH 公钥。导出后可交给 SSH 服务管理员；私钥仍在卡内。</string>
     <string name="ssh_publicKeyExported">已导出 SSH 公钥。</string>
     <string name="workspace_receipt">任务结果</string>

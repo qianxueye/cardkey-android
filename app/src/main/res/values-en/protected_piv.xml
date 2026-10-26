@@ -10,7 +10,7 @@
     <string name="protectedPiv_pickerScope">Opening any file picker clears the current private configuration. Do not share the private configuration or pairing code.</string>
     <string name="protectedPiv_ready">The configuration is ready.</string>
     <string name="protectedPiv_guid">Card GUID in configuration: %1$s</string>
-    <string name="protectedPiv_inspection">The previous operation outcome is unknown. Import the original card configuration again, then read its protected status. Do not repeat the original operation.</string>
+    <string name="protectedPiv_inspection">Import the original card configuration again, then read its protected status. Do not repeat the original operation before reading the status.</string>
     <string name="protectedPiv_operation">Protected operation</string>
     <string name="protectedPiv_slot">Protected slot</string>
     <string name="protectedPiv_csrSubject">CSR subject (for example, CN=CardKey)</string>
@@ -42,7 +42,7 @@
     <string name="protectedPiv_pinStatus">PIN status</string>
     <string name="protectedPiv_contactRequired">Recovery requires a contact connection</string>
     <string name="protectedPiv_verified">Verified in the current session</string>
-    <string name="protectedPiv_unverified">Not verified</string>
+    <string name="protectedPiv_unverified">The PIN has not been verified in this session</string>
     <string name="protectedPiv_authenticatedRetries">Remaining PIN attempts read during this authentication</string>
     <string name="protectedPiv_count">%1$d</string>
     <string name="protectedPiv_rowVersion">Version</string>
@@ -107,7 +107,7 @@
     <string name="signing_exportScope">The export is a detached signature of the selected file.</string>
     <string name="signing_exported">The signature was exported.</string>
     <string name="signing_exportCancelled">Export canceled.</string>
-    <string name="signing_exportUnknown">The export outcome is unconfirmed. Check the selected file.</string>
+    <string name="signing_exportUnknown">No save result was received. Check the file in the selected location.</string>
     <string name="ssh_publicKeyScope">The SSH public key was read. After export, you can give it to the SSH service administrator. The private key remains on the card.</string>
     <string name="ssh_publicKeyExported">The SSH public key was exported.</string>
     <string name="workspace_receipt">Task result</string>

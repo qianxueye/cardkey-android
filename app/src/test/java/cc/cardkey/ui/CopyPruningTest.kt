@@ -74,7 +74,7 @@ class CopyPruningTest {
         } }) {
             compose.onNodeWithText("This certificate supplies the enrolled public key and identifier.", substring = true).assertDoesNotExist()
             compose.onNodeWithText("The configuration is ready.").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("The previous operation outcome is unknown. Import the original card configuration again, then read its protected status. Do not repeat the original operation.").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Import the original card configuration again, then read its protected status. Do not repeat the original operation before reading the status.").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("protected-piv-pin").assertDoesNotExist()
         }
     }
