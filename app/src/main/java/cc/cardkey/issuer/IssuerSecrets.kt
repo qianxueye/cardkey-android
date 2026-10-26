@@ -21,7 +21,7 @@ internal class IssuerSecrets(private val preferences: SharedPreferences, private
         cipher.updateAAD(origin.toByteArray(Charsets.UTF_8))
         return cipher.doFinal(bytes.copyOfRange(12, bytes.size)).toString(Charsets.UTF_8)
     }
-    fun save(origin: String, token: String) {
+    fun save(origin: String, token: String) = synchronized(preferences) {
         require(token.isNotBlank() && token.length <= 4096 && token.all { it.code in 33..126 })
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key())
@@ -29,7 +29,9 @@ internal class IssuerSecrets(private val preferences: SharedPreferences, private
         val encrypted = Base64.getEncoder().encodeToString(cipher.iv + cipher.doFinal(token.toByteArray(Charsets.UTF_8)))
         check(preferences.edit().putString("origin", origin).putString("credential:$origin", encrypted).commit())
     }
-    fun forget(origin: String) { check(preferences.edit().remove("credential:$origin").commit()) }
+    fun forget(origin: String, rejectedToken: String) = synchronized(preferences) {
+        if (token(origin) == rejectedToken) check(preferences.edit().remove("credential:$origin").commit())
+    }
 }
 internal fun issuerKey(alias: String = "cardkey-issuer-operator-v1"): SecretKey {
     val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

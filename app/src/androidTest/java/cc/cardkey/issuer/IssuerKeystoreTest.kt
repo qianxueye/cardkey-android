@@ -20,7 +20,9 @@ class IssuerKeystoreTest {
             val reopened = IssuerSecrets(preferences) { issuerKey(alias) }
             assertEquals("synthetic-instrumentation-token", reopened.token("https://synthetic-a.invalid"))
             assertNull(reopened.token("https://synthetic-b.invalid"))
-            reopened.forget("https://synthetic-a.invalid")
+            reopened.forget("https://synthetic-a.invalid", "rejected-replacement-token")
+            assertEquals("synthetic-instrumentation-token", reopened.token("https://synthetic-a.invalid"))
+            reopened.forget("https://synthetic-a.invalid", "synthetic-instrumentation-token")
             assertNull(reopened.token("https://synthetic-a.invalid"))
         } finally {
             preferences.edit().clear().commit()

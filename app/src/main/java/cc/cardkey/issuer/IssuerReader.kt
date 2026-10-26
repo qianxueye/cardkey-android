@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 internal data class IssuerReaderState(
     val origin: String = "", val actor: String? = null, val busy: Boolean = false, val error: Int? = null,
     val people: List<IssuerPerson> = emptyList(), val peopleCursor: String = "", val person: IssuerPerson? = null,
+    val peopleLoaded: Boolean = false,
     val cards: List<IssuerCard> = emptyList(), val cardsCursor: String = "", val card: IssuerCard? = null,
     val cardsLoaded: Boolean = false, val cardsError: Int? = null,
     val revisions: List<BadgeRevision> = emptyList(), val revisionsCursor: String = "", val current: String? = null,
@@ -19,6 +20,8 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
     private val mutable = MutableStateFlow(IssuerReaderState(origin = secrets.origin()))
     val state = mutable.asStateFlow()
     private var client: IssuerClient? = null
+    private data class Credential(val origin: String, val token: String)
+    private var credential: Credential? = null
     private var job: Job? = null
     private var generation = 0L
     private var artworkClient: IssuerClient? = null
@@ -40,14 +43,15 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
         front.clear(); back.clear(); artworkClient = null; artworkRevision = null
     }
     fun editConnection() {
-        retire(); client = null
+        retire(); client = null; credential = null
         mutable.value = IssuerReaderState(origin = mutable.value.origin)
     }
-    fun close() { retire(); client = null; mutable.value = IssuerReaderState(origin = mutable.value.origin) }
+    fun close() { retire(); client = null; credential = null; mutable.value = IssuerReaderState(origin = mutable.value.origin) }
     private fun unauthorized() {
         val origin = mutable.value.origin
-        retire(); client = null
-        runCatching { secrets.forget(origin) }
+        val rejected = credential
+        retire(); client = null; credential = null
+        rejected?.let { runCatching { secrets.forget(it.origin, it.token) } }
         mutable.value = IssuerReaderState(origin = origin, error = R.string.issuer_unauthorized)
     }
     private enum class Query { CARDS, REVISIONS }
@@ -95,6 +99,7 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
             if (token.isBlank() || token.length > 4096 || token.any { it.code !in 33..126 }) {
                 mutable.value = mutable.value.copy(error = R.string.issuer_token_required); return@run
             }
+            credential = Credential(origin, token)
             val api = makeClient(origin, token)
             val actor = api.me()
             currentCoroutineContext().ensureActive()
@@ -105,7 +110,7 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
             mutable.value = mutable.value.copy(actor = actor)
             val people = api.people()
             currentCoroutineContext().ensureActive()
-            mutable.value = mutable.value.copy(people = people.items, peopleCursor = people.next)
+            mutable.value = mutable.value.copy(people = people.items, peopleCursor = people.next, peopleLoaded = true)
         }
     }
     fun morePeople() {
@@ -115,7 +120,7 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
         run {
             val page = api.people(cursor); currentCoroutineContext().ensureActive()
             require(page.next.isEmpty() || page.next != cursor)
-            mutable.value = mutable.value.copy(people = (mutable.value.people + page.items).distinctBy { it.id }, peopleCursor = page.next)
+            mutable.value = mutable.value.copy(people = (mutable.value.people + page.items).distinctBy { it.id }, peopleCursor = page.next, peopleLoaded = true)
         }
     }
     fun selectPerson(person: IssuerPerson) {

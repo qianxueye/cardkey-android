@@ -36,6 +36,12 @@ internal class IssuerFixture : AutoCloseable {
     var redirect = "https://other.invalid/"
     var delayPath: String? = null
     var delayMillis = 0L
+    var delayToken: String? = null
+    var rejectedTokens: Set<String> = emptySet()
+    var peopleEmpty = false
+    var cardsEmpty = false
+    var historyEmpty = false
+    var historyFirstPageEmpty = false
     var peoplePages = false
     var cardPages = false
     var historyPages = false
@@ -57,14 +63,15 @@ internal class IssuerFixture : AutoCloseable {
             try {
                 val path = exchange.requestURI.path
                 requests.add(exchange.requestURI.toString() to exchange.requestHeaders["authorization"])
-                if (path == delayPath) { enteredDelay.countDown(); Thread.sleep(delayMillis) }
-                if (failure != 0 && (failurePath == null || failurePath == path)) { exchange.responseHeaders["Location"] = redirect; respond(exchange, failure, "application/json", "{}".toByteArray()) }
+                if (path == delayPath && (delayToken == null || exchange.requestHeaders["authorization"] == "Bearer $delayToken")) { enteredDelay.countDown(); Thread.sleep(delayMillis) }
+                if (exchange.requestHeaders["authorization"]?.removePrefix("Bearer ") in rejectedTokens) respond(exchange, 401, "application/json", "{}".toByteArray())
+                else if (failure != 0 && (failurePath == null || failurePath == path)) { exchange.responseHeaders["Location"] = redirect; respond(exchange, failure, "application/json", "{}".toByteArray()) }
                 else when {
                     path == "/v1/me" -> json(exchange, """{"operator":{"id":"test-operator","display_name":"Test Operator","administrator":false},"capabilities":["people:read","cards:read"],"ca_id":"test-ca","ca_url":"https://ca.invalid"}""")
-                    path == "/v1/people" -> json(exchange, page(if (peoplePages && !peopleFirstPageHasPerson && !exchange.requestURI.query.contains("cursor=second")) "" else person(), if (peoplePages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
-                    path == "/v1/cards" -> json(exchange, page(if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "" else card(), if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
+                    path == "/v1/people" -> json(exchange, page(if (peopleEmpty || peoplePages && !peopleFirstPageHasPerson && !exchange.requestURI.query.contains("cursor=second")) "" else person(), if (peoplePages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
+                    path == "/v1/cards" -> json(exchange, page(if (cardsEmpty || cardPages && !exchange.requestURI.query.contains("cursor=second")) "" else card(), if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
                     path.endsWith("/badge-current") -> if (currentMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, revision())
-                    path.endsWith("/badge-revisions") -> if (historyMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, page(if (exchange.requestURI.query.contains("cursor=older")) revision(oldID) else revision(), if (historyPages && !exchange.requestURI.query.contains("cursor=older")) "older" else ""))
+                    path.endsWith("/badge-revisions") -> if (historyMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, page(if (historyEmpty || historyFirstPageEmpty && !exchange.requestURI.query.contains("cursor=older")) "" else if (exchange.requestURI.query.contains("cursor=older")) revision(oldID) else revision(), if (historyPages && !exchange.requestURI.query.contains("cursor=older")) "older" else ""))
                     path.endsWith("/front") || path.endsWith("/back") -> respond(exchange, if (mediaFailure == 0) 200 else mediaFailure, mediaType, mediaBytes ?: png)
                     else -> respond(exchange, 404, "application/json", "{}".toByteArray())
                 }
@@ -88,5 +95,8 @@ internal class IssuerFixture : AutoCloseable {
         val responseHeaders = mutableMapOf<String, String>()
         fun close() = socket.close()
     }
-    override fun close() { server.close(); executor.shutdownNow() }
+    override fun close() {
+        server.close(); executor.shutdownNow()
+        check(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS))
+    }
 }

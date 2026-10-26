@@ -53,7 +53,7 @@ internal fun IssuerBadgePanel(reader: IssuerReader) {
             Text(stringResource(R.string.issuer_operator, actor))
             TextButton(onClick = reader::close) { Text(stringResource(R.string.issuer_disconnect)) }
             Text(stringResource(R.string.issuer_people), style = MaterialTheme.typography.titleLarge)
-            if (state.people.isEmpty() && !state.busy && state.error == null) Text(stringResource(R.string.issuer_no_people))
+            if (state.peopleLoaded && state.people.isEmpty() && state.peopleCursor.isEmpty() && !state.busy && state.error == null) Text(stringResource(R.string.issuer_no_people))
             state.people.forEach { person ->
                 OutlinedButton(onClick = { reader.selectPerson(person) },
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.person?.id == person.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
@@ -73,7 +73,7 @@ internal fun IssuerBadgePanel(reader: IssuerReader) {
                 Text(stringResource(it), color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = reader::retryCards, enabled = !state.busy) { Text(stringResource(R.string.issuer_retry_cards)) }
             }
-            if (state.cardsLoaded && state.cards.isEmpty() && !state.busy && state.cardsError == null) Text(stringResource(R.string.issuer_no_cards))
+            if (state.cardsLoaded && state.cards.isEmpty() && state.cardsCursor.isEmpty() && !state.busy && state.cardsError == null) Text(stringResource(R.string.issuer_no_cards))
             state.cards.forEach { card ->
                 OutlinedButton(onClick = { reader.selectCard(card) },
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.card?.id == card.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
@@ -89,7 +89,7 @@ internal fun IssuerBadgePanel(reader: IssuerReader) {
                 Text(stringResource(it), color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = reader::retryRevisions, enabled = !state.busy) { Text(stringResource(R.string.issuer_retry_revisions)) }
             }
-            if (state.revisionsLoaded && state.revisions.isEmpty() && !state.busy && state.revisionsError == null) Text(stringResource(R.string.issuer_no_badge))
+            if (state.revisionsLoaded && state.revisions.isEmpty() && state.revisionsCursor.isEmpty() && state.current == null && !state.busy && state.revisionsError == null) Text(stringResource(R.string.issuer_no_badge))
             state.revisions.forEach { revision ->
                 OutlinedButton(onClick = { reader.selectRevision(revision) },
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.revision?.id == revision.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),

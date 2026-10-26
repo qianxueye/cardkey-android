@@ -47,7 +47,7 @@ class IssuerReaderTest {
                 assertEquals(fixture.revisionID, reader.state.value.current)
                 assertTrue(fixture.requests.all { it.second == "Bearer synthetic-token" })
                 assertTrue(fixture.requests.any { it.first == "/v1/badge-revisions/${fixture.oldID}/back" })
-            } finally { reader.close(); scope.cancel() }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
     @Test fun endpointAndOperatorEditsRetireDelayedIdenticalRecordLoads() = runBlocking {
@@ -72,7 +72,7 @@ class IssuerReaderTest {
                 assertEquals("Endpoint B Person", reader.state.value.people.single().name)
                 assertNull(reader.state.value.card)
                 assertTrue(b.requests.all { it.second == "Bearer token-b" })
-            } finally { reader.close(); scope.cancel() }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         } }
     }
     @Test fun mediaUnauthorizedClearsIdentityAndSavedCredential() = runBlocking {
@@ -88,7 +88,7 @@ class IssuerReaderTest {
                 withTimeout(5000) { while (reader.state.value.actor != null) delay(10) }
                 assertNull(reader.state.value.revision); assertNull(secrets.token("https://issuer.invalid"))
                 assertEquals(R.string.issuer_unauthorized, reader.state.value.error)
-            } finally { reader.close(); scope.cancel() }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
     @Test fun redirectsAreRefusedWithoutCredentialLeakAndMediaLimitsAreEnforced() = runBlocking {
@@ -127,7 +127,7 @@ class IssuerReaderTest {
                 assertNull(reader.state.value.revision)
                 assertEquals(CardArtworkState.Default, reader.front.state.value)
                 awaitReady(reader)
-            } finally { reader.close(); scope.cancel() }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
     @Test fun missingCardRetiresPriorImagesAndUnauthorizedMetadataClearsSession() = runBlocking {
@@ -146,7 +146,7 @@ class IssuerReaderTest {
                 reader.selectPerson(reader.state.value.people.single()); awaitReady(reader)
                 assertNull(reader.state.value.actor); assertTrue(reader.state.value.people.isEmpty())
                 assertEquals(R.string.issuer_unauthorized, reader.state.value.error)
-            } finally { reader.close(); scope.cancel() }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
     @Test fun failedCardsRemainFailedAfterUnrelatedPeoplePageSucceeds() = runBlocking {
@@ -168,7 +168,7 @@ class IssuerReaderTest {
                 reader.retryCards(); awaitReady(reader)
                 assertNull(reader.state.value.cardsError); assertTrue(reader.state.value.cardsLoaded)
                 assertEquals(fixture.cardID, reader.state.value.cards.single().id)
-            } finally { reader.close(); scope.cancel() }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
     @Test fun failedHistoryRemainsFailedAfterUnrelatedPeoplePageSucceeds() = runBlocking {
@@ -191,7 +191,54 @@ class IssuerReaderTest {
                 reader.retryRevisions(); awaitReady(reader); awaitImages(reader)
                 assertNull(reader.state.value.revisionsError); assertTrue(reader.state.value.revisionsLoaded)
                 assertEquals(fixture.revisionID, reader.state.value.revision!!.id)
-            } finally { reader.close(); scope.cancel() }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun rejectedReplacementRetainsSavedTokenButRejectedSavedTokenIsRemoved() = runBlocking {
+        IssuerFixture().use { fixture ->
+            val store = secrets()
+            store.save("https://issuer.invalid", "token-a")
+            fixture.rejectedTokens = setOf("token-b")
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(store, scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "token-b"); awaitReady(reader)
+                assertEquals(R.string.issuer_unauthorized, reader.state.value.error)
+                assertEquals("token-a", store.token("https://issuer.invalid"))
+                fixture.rejectedTokens = setOf("token-a")
+                reader.connect("https://issuer.invalid", ""); awaitReady(reader)
+                assertEquals(R.string.issuer_unauthorized, reader.state.value.error)
+                assertNull(store.token("https://issuer.invalid"))
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun delayedRejectionCannotEraseNewerSavedCredentialOrChangedConnection() = runBlocking {
+        IssuerFixture().use { fixture ->
+            val store = secrets()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(store, scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                fixture.delayPath = "/v1/me"; fixture.delayToken = "token-a"; fixture.delayMillis = 300
+                fixture.rejectedTokens = setOf("token-a")
+                store.save("https://issuer.invalid", "token-a")
+                reader.connect("https://issuer.invalid", "token-a")
+                withContext(Dispatchers.IO) { assertTrue(fixture.enteredDelay.await(3, java.util.concurrent.TimeUnit.SECONDS)) }
+                store.save("https://issuer.invalid", "token-b")
+                awaitReady(reader)
+                assertEquals(R.string.issuer_unauthorized, reader.state.value.error)
+                assertEquals("token-b", store.token("https://issuer.invalid"))
+                for (nextOrigin in listOf("https://issuer.invalid", "https://other.invalid")) {
+                    fixture.enteredDelay = java.util.concurrent.CountDownLatch(1)
+                    reader.connect("https://issuer.invalid", "token-a")
+                    withContext(Dispatchers.IO) { assertTrue(fixture.enteredDelay.await(3, java.util.concurrent.TimeUnit.SECONDS)) }
+                    reader.connect(nextOrigin, "token-b"); awaitReady(reader)
+                    delay(400)
+                    assertEquals("test-operator", reader.state.value.actor)
+                    assertEquals(nextOrigin, reader.state.value.origin)
+                    assertEquals("token-b", store.token(nextOrigin))
+                    assertEquals("token-b", store.token("https://issuer.invalid"))
+                }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
     @Test fun encryptedCredentialsAreBoundToOriginAndNeverStoredAsPlaintext() {
@@ -205,7 +252,7 @@ class IssuerReaderTest {
         assertNull(store.token("https://b.invalid"))
         prefs.edit().putString("credential:https://b.invalid", prefs.getString("credential:https://a.invalid", null)).commit()
         assertTrue(runCatching { store.token("https://b.invalid") }.isFailure)
-        store.forget("https://a.invalid"); assertNull(store.token("https://a.invalid"))
+        store.forget("https://a.invalid", "synthetic-secret"); assertNull(store.token("https://a.invalid"))
     }
     @Test fun originsRejectCleartextCredentialsPathsQueriesAndFragments() {
         listOf("http://issuer.invalid", "https://u:p@issuer.invalid", "https://issuer.invalid/path", "https://issuer.invalid/?a=b", "https://issuer.invalid/#x").forEach {

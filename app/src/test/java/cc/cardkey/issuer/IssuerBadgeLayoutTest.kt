@@ -106,7 +106,7 @@ class IssuerBadgeLayoutTest {
                 }
                 compose.onNodeWithText("Historical Person · EMP-001").assertDoesNotExist()
                 compose.onAllNodesWithContentDescription("Synthetic portrait card").assertCountEquals(0)
-            } finally { activity.pause().stop().destroy(); reader.close(); scope.cancel() }
+            } finally { activity.pause().stop().destroy(); reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
     @Test fun cardsFailureStaysVisibleAfterSuccessfulPeoplePagination() = renderQueryFailure(false)
@@ -148,7 +148,57 @@ class IssuerBadgeLayoutTest {
                 compose.onNodeWithText(activity.get().getString(R.string.issuer_failed)).assertDoesNotExist()
                 compose.onNodeWithText(activity.get().getString(retry)).assertDoesNotExist()
                 if (history) assertNotNull(reader.state.value.revision) else assertEquals(1, reader.state.value.cards.size)
-            } finally { activity.pause().stop().destroy(); reader.close(); scope.cancel() }
+            } finally { activity.pause().stop().destroy(); reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun emptyPagesKeepPaginationAvailableUntilExhausted() = runBlocking<Unit> {
+        IssuerFixture().use { fixture ->
+            fixture.peoplePages = true; fixture.cardPages = true
+            fixture.historyPages = true; fixture.historyFirstPageEmpty = true
+            val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+            val secrets = IssuerSecrets(RuntimeEnvironment.getApplication().getSharedPreferences("empty-page-layout", Context.MODE_PRIVATE)) { key }
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets, scope) { _, token -> IssuerClient(fixture.origin, token) }
+            val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+            suspend fun settle() {
+                withTimeout(10000) { while (reader.state.value.busy) delay(10) }
+                compose.waitForIdle()
+            }
+            fun text(resource: Int) = compose.onNodeWithText(activity.get().getString(resource))
+            try {
+                reader.connect("https://issuer.invalid", "synthetic-token")
+                withTimeout(10000) { while (reader.state.value.busy) delay(10) }
+                activity.get().setContent { CardKeyTheme {
+                    Column(Modifier.verticalScroll(rememberScrollState())) { IssuerBadgePanel(reader) }
+                } }
+                compose.waitForIdle()
+                text(R.string.issuer_no_people).assertDoesNotExist()
+                text(R.string.issuer_more_people).performScrollTo().performClick(); settle()
+                val person = reader.state.value.people.single()
+                compose.runOnIdle { reader.selectPerson(person) }; settle()
+                text(R.string.issuer_no_cards).assertDoesNotExist()
+                text(R.string.issuer_more_cards).performScrollTo().performClick(); settle()
+                val card = reader.state.value.cards.single()
+                compose.runOnIdle { reader.selectCard(card) }; settle()
+                text(R.string.issuer_no_badge).assertDoesNotExist()
+                text(R.string.issuer_more_history).performScrollTo().performClick(); settle()
+                assertEquals(fixture.oldID, reader.state.value.revisions.single().id)
+
+                fixture.cardsEmpty = true; fixture.cardPages = false
+                compose.runOnIdle { reader.selectPerson(person) }; settle()
+                text(R.string.issuer_no_cards).performScrollTo().assertIsDisplayed()
+                fixture.cardsEmpty = false
+                compose.runOnIdle { reader.selectPerson(person) }; settle()
+                fixture.currentMissing = true; fixture.historyEmpty = true; fixture.historyPages = false
+                compose.runOnIdle { reader.selectCard(card) }; settle()
+                text(R.string.issuer_no_badge).performScrollTo().assertIsDisplayed()
+                fixture.peopleEmpty = true; fixture.peoplePages = false
+                compose.runOnIdle { reader.connect("https://issuer.invalid", "synthetic-token") }; settle()
+                text(R.string.issuer_no_people).performScrollTo().assertIsDisplayed()
+            } finally {
+                activity.pause().stop().destroy(); reader.close()
+                withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() }
+            }
         }
     }
     private fun findEditor(view: android.view.View): android.view.View? {

@@ -610,3 +610,10 @@ All 41 issuer strings were reviewed together in default Chinese, explicit `value
 | `issuer_retry_revisions` | No section-specific retry control | 重新读取卡面版本 | Retry artwork versions | Matching query failure; retry preserves destination and selection |
 
 Native validation includes English and Chinese compact phone, large-text landscape and dark-mode layouts. The test focuses the actual token field, finds the native editor, and obtains its real `EditorInfo` from `onCreateInputConnection`: text/password variation with no autocorrect flag. HTTP/controller and native panel regressions exercise failed card/history reads followed by successful unrelated people pagination, retained errors, no false empty messages, and successful explicit retry. AndroidKeyStore source is unchanged; the root-reported Sony instrumentation pass remains applicable.
+
+
+## PR 54 second review — credential ownership and paged empty states
+
+Candidate: append-only second review fix after `1e61bd3`. Existing reviewed strings and all locale resources are unchanged. The authorization-error wording continues to describe the rejected token without promising that another saved credential was deleted. A 401 removes a stored credential only when it equals the rejected request token; a valid previously saved token or newer replacement remains available for the explicit blank-token connection action.
+
+The no-employee, no-card and no-artwork messages now require a completed successful query, an empty accumulated collection and no next cursor. The no-artwork message also requires no current revision. An empty intermediate page retains its “more” action and displays no terminal-empty claim. Native regression coverage uses empty first pages for all three collections, then verifies genuine exhausted empty results still display their existing message. No new copy, locale or input-authority change is introduced in this round.
