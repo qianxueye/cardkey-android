@@ -50,7 +50,7 @@ class FidoModelCatalogTest {
         assertEquals(original, catalog.lookup(known, "en-US"))
         assertEquals(2, calls)
     }
-    @Test fun rateLimitWaitsForBoundedRetryAfterAndMalformedCatalogFails() = runTest {
+    @Test fun rateLimitWaitsForRetryAfterAndMalformedCatalogFails() = runTest {
         var time = 0L
         var calls = 0
         val catalog = FidoModelCatalog({ calls++; response(429, retry = "600") }, now = { time }, scope = this)
@@ -63,4 +63,49 @@ class FidoModelCatalogTest {
         assertEquals(2, calls)
         assertEquals(FidoModelName.Failed, FidoModelCatalog({ response(body = "{}") }, scope = this).lookup(known, "en-US"))
     }
+    @Test fun zeroAaguidIsMissingWithoutLoadingCatalog() = runTest {
+        val catalog = FidoModelCatalog({ error("Zero AAGUID must not request the catalog") }, scope = this)
+        val zero = "00000000-0000-0000-0000-000000000000"
+        assertEquals(FidoModelName.Missing, catalog.cached(zero, "en-US"))
+        assertEquals(FidoModelName.Missing, catalog.lookup(zero, "en-US"))
+    }
+
+    @Test fun freshnessUsesGreaterOfAgeAndApparentDateAge() = runTest {
+        for (age in listOf(10, 200)) {
+            var time = 200_000L
+            var calls = 0
+            val catalog = FidoModelCatalog({
+                calls++
+                response().newBuilder().header("Age", age.toString())
+                    .header("Date", "Thu, 01 Jan 1970 00:01:40 GMT").build()
+            }, now = { time }, scope = this)
+            catalog.lookup(known, "en-US")
+            val remaining = 300_000L - maxOf(age * 1000L, 100_000L)
+            time += remaining - 1
+            catalog.lookup(known, "en-US")
+            assertEquals(1, calls)
+            time++
+            catalog.lookup(known, "en-US")
+            assertEquals(2, calls)
+        }
+    }
+
+    @Test fun retryAfterLongerThanOneDayIsHonoredForSecondsAndHttpDate() = runTest {
+        for (retry in listOf("172800", "Sat, 03 Jan 1970 00:00:00 GMT")) {
+            var time = 0L
+            var calls = 0
+            val catalog = FidoModelCatalog({ calls++; response(429, retry = retry) }, now = { time }, scope = this)
+            catalog.lookup(known, "en-US")
+            time = 86_400_000
+            catalog.lookup(other, "en-US")
+            assertEquals(1, calls)
+            time = 172_799_999
+            catalog.lookup(other, "en-US")
+            assertEquals(1, calls)
+            time++
+            catalog.lookup(other, "en-US")
+            assertEquals(2, calls)
+        }
+    }
+
 }

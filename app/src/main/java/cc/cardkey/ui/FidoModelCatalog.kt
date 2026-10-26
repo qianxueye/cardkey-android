@@ -30,6 +30,7 @@ internal class FidoModelCatalog(
     private var flight: Deferred<Unit>? = null
 
     suspend fun lookup(aaguid: String, locale: String): FidoModelName {
+        if (aaguid == "00000000-0000-0000-0000-000000000000") return FidoModelName.Missing
         val pending = synchronized(this) {
             if (now() < nextFetch) null else flight ?: scope.async(start = CoroutineStart.LAZY) { refresh() }
                 .also { flight = it; it.start() }
@@ -39,6 +40,7 @@ internal class FidoModelCatalog(
     }
 
     fun cached(aaguid: String, locale: String): FidoModelName? = synchronized(this) {
+            if (aaguid == "00000000-0000-0000-0000-000000000000") return@synchronized FidoModelName.Missing
             val catalog = names ?: return@synchronized null
             val localized = catalog[aaguid] ?: return@synchronized FidoModelName.Missing
             val language = Locale.forLanguageTag(locale).language
@@ -54,9 +56,10 @@ internal class FidoModelCatalog(
             fetch(etag).use { response ->
                 if (response.code == 429) {
                     val retry = response.header("Retry-After")
-                    val seconds = retry?.toLongOrNull()?.coerceIn(0, 86_400)?.times(1000)
-                    val date = retry?.let { runCatching { ZonedDateTime.parse(it, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() - now() }.getOrNull() }
-                    cooldown = (seconds ?: date ?: cooldown).coerceIn(60_000, 86_400_000)
+                    val seconds = retry?.takeIf { it.isNotEmpty() && it.all { digit -> digit in '0'..'9' } }
+                        ?.let { TimeUnit.SECONDS.toMillis(it.toLongOrNull() ?: Long.MAX_VALUE) }
+                    val date = httpDate(retry)?.let { (it - now()).coerceAtLeast(0) }
+                    cooldown = (seconds ?: date ?: cooldown).coerceAtLeast(60_000)
                 } else if (response.code == 304 && names != null) {
                     cooldown = freshness(response)
                 } else {
@@ -81,16 +84,25 @@ internal class FidoModelCatalog(
         } catch (_: Exception) {
             // A failed refresh keeps the last successfully parsed catalog.
         } finally {
-            synchronized(this) { nextFetch = now() + cooldown; flight = null }
+            synchronized(this) {
+                val time = now()
+                nextFetch = time + cooldown.coerceAtMost(Long.MAX_VALUE - time)
+                flight = null
+            }
         }
     }
 
+    private fun httpDate(value: String?): Long? = value?.let {
+        runCatching { ZonedDateTime.parse(it, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }.getOrNull()
+    }
+
     private fun freshness(response: Response): Long {
+        if (response.cacheControl.noCache || response.cacheControl.noStore) return 0
         val maxAge = response.cacheControl.maxAgeSeconds
-        val age = response.header("Age")?.toLongOrNull()?.coerceAtLeast(0) ?: 0
-        return if (response.cacheControl.noCache || response.cacheControl.noStore) 0
-        else if (maxAge >= 0) ((maxAge.toLong() - age).coerceAtLeast(0) * 1000)
-        else TimeUnit.HOURS.toMillis(1)
+        val lifetime = if (maxAge >= 0) TimeUnit.SECONDS.toMillis(maxAge.toLong()) else TimeUnit.HOURS.toMillis(1)
+        val age = response.header("Age")?.toLongOrNull()?.coerceAtLeast(0)?.let(TimeUnit.SECONDS::toMillis) ?: 0
+        val apparentAge = httpDate(response.header("Date"))?.let { (now() - it).coerceAtLeast(0) } ?: 0
+        return (lifetime - maxOf(age, apparentAge)).coerceAtLeast(0)
     }
 
     companion object {
