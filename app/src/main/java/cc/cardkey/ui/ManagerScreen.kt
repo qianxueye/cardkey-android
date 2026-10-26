@@ -280,7 +280,8 @@ fun ManagerScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(managerDestinationIcons[2], contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.weight(1f)) {
-                        Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器",
+                        Text(if (!state.hasSelectedReader) stringResource(R.string.native_reader_missing)
+                            else if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器",
                             style = MaterialTheme.typography.titleMedium)
                         if (tab == 0 && !state.busy && !state.requiresInspection) Text(
                             stringResource(if (state.canEnterFidoSecrets) R.string.manager_fido_observed else R.string.manager_fido_unread),
@@ -389,7 +390,7 @@ fun ManagerScreen(
                                         confirmation = PendingOperation(input)
                                     }
                                 } catch (_: IllegalArgumentException) { invalid = true; validationFailures++ }
-                            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("manager-run"), enabled = !state.busy && !state.permissionPending && (op != ManagerOperation.FIDO_INVENTORY || pin.isNotEmpty()) && (!needsSecretInput(op) || secretInputReady) && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
+                            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("manager-run"), enabled = state.hasSelectedReader && !state.busy && !state.permissionPending && (op != ManagerOperation.FIDO_INVENTORY || pin.isNotEmpty()) && (!needsSecretInput(op) || secretInputReady) && (!op.piv || state.supportsPiv) && (op != ManagerOperation.FIDO_RESET || state.supportsFidoReset) && (!state.requiresInspection || ConfirmationPolicy.canInspect(op)) &&
                                 (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
@@ -464,7 +465,7 @@ fun ManagerScreen(
                                 confirmation?.close(); confirmation = null
                                 onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
                                     inventoryGeneration = inventory.generation, inventorySelection = inventory.credential))
-                            }, enabled = !state.busy && !state.permissionPending &&
+                            }, enabled = state.hasSelectedReader && !state.busy && !state.permissionPending &&
                                 (!state.requiresInspection || ConfirmationPolicy.canInspect(ManagerOperation.FIDO_INFO)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                                 modifier = Modifier.fillMaxWidth().testTag("manager-read-fido")) {

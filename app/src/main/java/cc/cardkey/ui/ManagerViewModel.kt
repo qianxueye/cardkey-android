@@ -54,6 +54,7 @@ data class ManagerState(
     }?.family
     val canEnterFidoSecrets get() = recognizedFamily == CardFamily.FIDO2
     val canEnterPivSecrets get() = recognizedFamily == CardFamily.PIV
+    val hasSelectedReader get() = nfc || selectedReader != null
     val supportsPiv get() = nfc || selectedReader?.wire != CardWire.CTAP
     val supportsFidoReset get() = !nfc && selectedReader?.wire == CardWire.CTAP && ctap2Reader == selectedReader.routeKey
     val presenceMessage get() = ConfirmationPolicy.presenceMessage(userPresenceRequired, busy, resultWire)
@@ -638,6 +639,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun submit(input: OperationInput) {
+        if (!mutable.value.hasSelectedReader) { input.close(); return }
         if (!input.operation.isFileSigning) { submitOwned(input); return }
         if (mutable.value.busy || mutable.value.requiresInspection) { input.close(); return }
         if (!mutable.value.supportsPiv) { submitOwned(input); return }
@@ -663,6 +665,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun submitOwned(input: OperationInput) {
+        if (!mutable.value.hasSelectedReader) { input.close(); return }
         if (input.protectedScan == null && !mutable.value.busy) protectedWorkflow.retire()
         if (mutable.value.busy) { input.close(); return }
         if (mutable.value.requiresInspection && !ConfirmationPolicy.canInspect(input.operation)) {

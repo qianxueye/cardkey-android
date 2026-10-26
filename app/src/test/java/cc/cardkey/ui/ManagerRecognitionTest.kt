@@ -2,6 +2,8 @@ package cc.cardkey.ui
 
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbConfiguration
+import android.hardware.usb.UsbInterface
+import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
 import android.nfc.NfcAdapter
 import android.net.Uri
@@ -226,6 +228,80 @@ class ManagerRecognitionTest {
                 (model.state.value.result as OperationResult.Failed).code)
             assertNull(model.state.value.recognition)
             assertFalse(model.state.value.canEnterFidoSecrets)
+        }
+    }
+
+    @Test fun detachedUsbStaysUnselectedAfterReplugUntilExplicitSelection() {
+        val manager = app.getSystemService(UsbManager::class.java)
+        val model = ManagerViewModel(app)
+        val original = reader()
+        val intf = Shadow.newInstanceOf(UsbInterface::class.java).also {
+            ReflectionHelpers.setField(it, "mId", 1)
+            ReflectionHelpers.setField(it, "mClass", 3)
+            ReflectionHelpers.setField(it, "mSubclass", 0)
+            ReflectionHelpers.setField(it, "mProtocol", 0)
+            ReflectionHelpers.setField(it, "mEndpoints", arrayOf(0x81, 1).map { address ->
+                Shadow.newInstanceOf(UsbEndpoint::class.java).also { endpoint ->
+                    ReflectionHelpers.setField(endpoint, "mAddress", address)
+                    ReflectionHelpers.setField(endpoint, "mAttributes", 3)
+                    ReflectionHelpers.setField(endpoint, "mMaxPacketSize", 64)
+                    ReflectionHelpers.setField(endpoint, "mInterval", 5)
+                }
+            }.toTypedArray())
+        }
+        ReflectionHelpers.setField(original.device, "mInterfaces", arrayOf(intf))
+        model.selectReader(original)
+        model.refreshReaders()
+        assertEquals(original.routeKey, model.state.value.selectedReader?.routeKey)
+        assertTrue(model.state.value.hasSelectedReader)
+        shadowOf(manager).removeUsbDevice(original.device)
+        UsbAuthenticatorReader.invalidate(original)
+        model.refreshReaders()
+        assertNull(model.state.value.selectedReader)
+        assertFalse(model.state.value.nfc)
+        assertFalse(model.state.value.hasSelectedReader)
+        val input = OperationInput(ManagerOperation.FIDO_INFO, pin = "123456".toCharArray())
+        model.submit(input)
+        assertTrue(input.pin.all { it == '\u0000' })
+        assertNull(input.inventoryRequest)
+        assertNull(model.state.value.result)
+        assertFalse(model.state.value.busy)
+        assertFalse(model.state.value.awaitingNfc)
+        assertNull(model.pendingNfcOwner)
+
+        val replacement = reader(name = original.device.deviceName)
+        ReflectionHelpers.setField(replacement.device, "mInterfaces", arrayOf(intf))
+        model.refreshReaders()
+        val discovered = model.state.value.readers.single { it.device.deviceName == original.device.deviceName }
+        assertNotEquals(original.routeKey, discovered.routeKey)
+        assertFalse(UsbAuthenticatorReader.isCurrent(manager, original))
+        assertTrue(UsbAuthenticatorReader.isCurrent(manager, discovered))
+        assertNull(model.state.value.selectedReader)
+        assertFalse(model.state.value.nfc)
+        assertFalse(model.state.value.hasSelectedReader)
+        model.selectReader(discovered)
+        assertEquals(discovered.routeKey, model.state.value.selectedReader?.routeKey)
+        assertTrue(model.state.value.hasSelectedReader)
+        assertFalse(model.state.value.nfc)
+    }
+
+    @Test fun noReaderSubmissionPreservesUnknownEffectGuardAndClosesInput() {
+        val model = ManagerViewModel(app)
+        val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+        val failure = OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN,
+            dispatch = Dispatch.RESPONSE_UNAVAILABLE)
+        state.value = ManagerState(nfc = false, result = failure, requiresInspection = true,
+            operation = ManagerOperation.FIDO_DELETE)
+        val before = state.value
+        for (operation in listOf(ManagerOperation.FIDO_INFO, ManagerOperation.PIV_SIGN)) {
+            val input = OperationInput(operation, pin = "123456".toCharArray(), bytes = byteArrayOf(1, 2))
+            model.submit(input)
+            assertSame(before, model.state.value)
+            assertSame(failure, model.state.value.result)
+            assertTrue(model.state.value.requiresInspection)
+            assertTrue(input.pin.all { it == '\u0000' })
+            assertNull(input.inventoryRequest)
+            if (operation.isFileSigning) assertTrue(input.bytes.all { it == 0.toByte() })
         }
     }
 
