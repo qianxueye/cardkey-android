@@ -455,7 +455,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     CardOperationGate.requireRemoval(reader.routeKey)
                     observeCardRemoval(reader)
                 }
-                finish(report)
+                finish(report, retired = !current, timedOut = settled.outcome == PivTlsOutcome.TIMED_OUT)
             }
         }
     }
@@ -918,7 +918,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                     (result.effect == Effect.UNKNOWN || result.writeAccepted)) inventory.retire()
             }
             finish(if (retired && result is OperationResult.Completed)
-                OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result)
+                OperationResult.Failed(FailureCode.CANCELLED, result.effect, writeAccepted = writeAccepted) else result,
+                retired = retired, timedOut = false)
         }
     }
 
@@ -934,10 +935,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         mutable.update { it.copy(recognition = null) }
     }
 
-    private fun finish(result: OperationResult<ManagerReport>) {
-        if (mutable.value.busy && !cancelled &&
-            !(result is OperationResult.Failed && result.code == FailureCode.CANCELLED)) {
-            feedback.tryEmit(if (result is OperationResult.Completed && result.effect != Effect.UNKNOWN)
+    private fun finish(result: OperationResult<ManagerReport>) = finish(result, retired = false, timedOut = false)
+
+    private fun finish(result: OperationResult<ManagerReport>, retired: Boolean, timedOut: Boolean) {
+        if (mutable.value.busy && !retired && !cancelled &&
+            (timedOut || !(result is OperationResult.Failed && result.code == FailureCode.CANCELLED))) {
+            feedback.tryEmit(if (!timedOut && result is OperationResult.Completed && result.effect != Effect.UNKNOWN)
                 HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.REJECT)
         }
         if (result is OperationResult.Failed) inventory.failedCurrent()

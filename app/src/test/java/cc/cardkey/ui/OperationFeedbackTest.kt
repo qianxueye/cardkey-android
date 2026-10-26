@@ -1,7 +1,10 @@
 package cc.cardkey.ui
 
 import android.view.HapticFeedbackConstants
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import cc.cardkey.protocol.*
+import cc.cardkey.transport.UsbReaderDescriptor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -18,8 +21,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadow.api.Shadow
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -113,6 +119,31 @@ class OperationFeedbackTest {
         state().value = model.state.value.copy(result = OperationResult.Completed(ManagerReport(emptyList()), Effect.NONE))
         model.refreshReaders()
         finish(OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.NONE))
+        assertTrue(events.isEmpty())
+    }
+
+    @Test fun usbFailureAfterDeviceDisappearsBeforeDetachBroadcastStaysSilent() {
+        observe()
+        val usb = RuntimeEnvironment.getApplication().getSystemService(UsbManager::class.java)
+        val device = Shadow.newInstanceOf(UsbDevice::class.java)
+        ReflectionHelpers.setField(device, "mName", "haptic-lost-device")
+        shadowOf(usb).addOrUpdateUsbDevice(device, true)
+        val reader = UsbReaderDescriptor(device, 1, CardWire.CTAP)
+        model.selectReader(reader)
+        begin()
+        ReflectionHelpers.setField(model, "cancelled", false)
+        val channel = ManagerTestChannel(CardWire.CTAP) { _, _ ->
+            shadowOf(usb).removeUsbDevice(device)
+            throw TransportException(Dispatch.NOT_DISPATCHED)
+        }
+        ManagerViewModel::class.java.getDeclaredMethod("run", OperationInput::class.java, Function0::class.java).apply {
+            isAccessible = true
+        }.invoke(model, OperationInput(ManagerOperation.FIDO_INFO), { channel })
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (model.state.value.busy && System.nanoTime() < deadline) Thread.sleep(5)
+        assertFalse(model.state.value.busy)
+        assertSame(reader, model.state.value.selectedReader)
+        assertEquals(FailureCode.TRANSPORT_FAILURE, (model.state.value.result as OperationResult.Failed).code)
         assertTrue(events.isEmpty())
     }
 }

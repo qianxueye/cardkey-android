@@ -685,3 +685,5 @@ The `feat/operation-haptics-20261026` candidate adds tactile feedback to the exi
 | Cancellation, retired operation, progress, reader refresh, cached receipt and Activity recreation | No application completion haptic | Silent; completion events have no replay | Same candidate |
 
 The feedback uses `View.performHapticFeedback` with no ignore flags. Android handles the user's touch-feedback settings. The application adds no vibration permission, custom waveform, progress pulses or start pulse. Existing operation results and recovery instructions retain their meaning. Physical feel and behavior with device touch feedback disabled require installed-device acceptance.
+
+The PR #50 review correction passes the operation's existing retirement decision into the feedback boundary, so a USB device loss stays silent even before the detach broadcast reaches the Activity. TLS deadline expiry requests one `REJECT` from its concrete `TIMED_OUT` outcome; the existing manager cancellation-shaped receipt remains unchanged. Explicit cancellation remains silent. No strings or display conditions change.

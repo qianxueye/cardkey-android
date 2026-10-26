@@ -3,12 +3,16 @@ package cc.cardkey.tls
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.net.Uri
+import android.view.HapticFeedbackConstants
 import cc.cardkey.enrollment.*
 import cc.cardkey.protocol.*
 import cc.cardkey.transport.*
 import cc.cardkey.ui.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.*
@@ -181,37 +185,75 @@ class TlsViewModelTest {
         TlsDnsShadow.defer = true
         val f = TlsFixture()
         val model = model(f)
-        TlsServer(f).use { server ->
-            model.tlsSettings(server.address); root(model, f)
-            val pin = start(model, f.card)
-            await { TlsDnsShadow.answer != null }
-            assertTrue(pin.all { it == '\u0000' })
-            assertTrue(model.state.value.busy)
-            assertTrue(f.card.closed)
-            CardOperationGate.tryAcquire()!!.close()
-            val cancellingThread = Thread.currentThread()
-            val attempt = ReflectionHelpers.getField<java.util.concurrent.atomic.AtomicReference<PivTlsAttempt>>(model, "tlsAttempt").get()
-            val connection = ReflectionHelpers.getField<PivTlsConnection>(attempt, "connection")
-            val dns = ReflectionHelpers.getField<PivTlsDns>(connection, "dns")
-            // Let the real TLS completion publish before the initiating cancellation resumes.
-            ReflectionHelpers.setField(connection, "dns", object : PivTlsDns by dns {
-                override fun close() {
-                    dns.close()
-                    if (Thread.currentThread() === cancellingThread) await { !model.state.value.busy }
-                }
-            })
-            model.cancel()
-            await { !model.state.value.busy }
-            assertTrue(TlsDnsShadow.cancellation!!.isCanceled)
-            assertEquals(PivTlsOutcome.CANCELLED, model.tls.value.result?.outcome)
-            assertEquals(Effect.NONE, (model.state.value.result as OperationResult.Failed).effect)
-            assertFalse(model.state.value.requiresInspection)
-            assertFalse(model.tls.value.running)
-            TlsDnsShadow.answer!!.invoke(listOf(java.net.InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))), 0)
-            assertEquals(0, server.accepted.get())
-            assertEquals(0, f.card.commands.count { it.ins == 0x20 || it.ins == 0x87 })
-            assertEquals(PivTlsOutcome.CANCELLED, model.tls.value.result?.outcome)
-        }
+        val events = mutableListOf<Int>()
+        val feedbackScope = CoroutineScope(UnconfinedTestDispatcher())
+        feedbackScope.launch { model.operationFeedback.collect { events += it } }
+        try {
+            TlsServer(f).use { server ->
+                model.tlsSettings(server.address); root(model, f)
+                val pin = start(model, f.card)
+                await { TlsDnsShadow.answer != null }
+                assertTrue(pin.all { it == '\u0000' })
+                assertTrue(model.state.value.busy)
+                assertTrue(f.card.closed)
+                CardOperationGate.tryAcquire()!!.close()
+                val cancellingThread = Thread.currentThread()
+                val attempt = ReflectionHelpers.getField<java.util.concurrent.atomic.AtomicReference<PivTlsAttempt>>(model, "tlsAttempt").get()
+                val connection = ReflectionHelpers.getField<PivTlsConnection>(attempt, "connection")
+                val dns = ReflectionHelpers.getField<PivTlsDns>(connection, "dns")
+                // Let the real TLS completion publish before the initiating cancellation resumes.
+                ReflectionHelpers.setField(connection, "dns", object : PivTlsDns by dns {
+                    override fun close() {
+                        dns.close()
+                        if (Thread.currentThread() === cancellingThread) await { !model.state.value.busy }
+                    }
+                })
+                model.cancel()
+                await { !model.state.value.busy }
+                assertTrue(TlsDnsShadow.cancellation!!.isCanceled)
+                assertEquals(PivTlsOutcome.CANCELLED, model.tls.value.result?.outcome)
+                assertEquals(Effect.NONE, (model.state.value.result as OperationResult.Failed).effect)
+                assertFalse(model.state.value.requiresInspection)
+                assertFalse(model.tls.value.running)
+                TlsDnsShadow.answer!!.invoke(listOf(java.net.InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))), 0)
+                assertEquals(0, server.accepted.get())
+                assertEquals(0, f.card.commands.count { it.ins == 0x20 || it.ins == 0x87 })
+                assertEquals(PivTlsOutcome.CANCELLED, model.tls.value.result?.outcome)
+                assertTrue(events.isEmpty())
+            }
+        } finally { feedbackScope.cancel() }
+    }
+
+    @Test fun dnsDeadlineRejectsOnceWhilePreservingTheExistingCancellationShapedReceipt() {
+        TlsDnsShadow.defer = true
+        val f = TlsFixture()
+        val model = model(f)
+        val events = mutableListOf<Int>()
+        val feedbackScope = CoroutineScope(UnconfinedTestDispatcher())
+        feedbackScope.launch { model.operationFeedback.collect { events += it } }
+        try {
+            TlsServer(f).use { server ->
+                model.tlsSettings(server.address); root(model, f)
+                ManagerViewModel::class.java.getDeclaredMethod("startTls", CharArray::class.java, Function0::class.java).apply {
+                    isAccessible = true
+                }.invoke(model, "123456".toCharArray(), {
+                    val attempt = ReflectionHelpers.getField<java.util.concurrent.atomic.AtomicReference<PivTlsAttempt>>(model, "tlsAttempt").get()
+                    val connection = ReflectionHelpers.getField<PivTlsConnection>(attempt, "connection")
+                    ReflectionHelpers.setField(connection, "deadlineMillis", 1000L)
+                    f.card
+                })
+                await { TlsDnsShadow.answer != null }
+                await { !model.state.value.busy }
+                assertEquals(PivTlsOutcome.TIMED_OUT, model.tls.value.result?.outcome)
+                assertEquals(OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE), model.state.value.result)
+                assertEquals(listOf(HapticFeedbackConstants.REJECT), events)
+                assertTrue(TlsDnsShadow.cancellation!!.isCanceled)
+                TlsDnsShadow.answer!!.invoke(listOf(java.net.InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))), 0)
+                assertEquals(0, server.accepted.get())
+                assertEquals(0, f.card.commands.count { it.ins == 0x20 || it.ins == 0x87 })
+                assertEquals(listOf(HapticFeedbackConstants.REJECT), events)
+            }
+        } finally { feedbackScope.cancel() }
     }
 
     @Test fun pickerPauseSurvivesButAddressAbaAndRouteAbaRejectPendingRoot() {
