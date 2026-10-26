@@ -116,7 +116,7 @@ class ManagerOperationsTest {
             1 to Cbor.Array(listOf("FIDO_2_0".cbor())), 3 to ByteArray(16).cbor())) }
         val result = CardSession(channel).run { ManagerOperations().execute(it, OperationInput(ManagerOperation.FIDO_INFO)) }
         val rows = (result as OperationResult.Completed).value.rows
-        assertEquals(listOf("支持的协议", "支持的扩展", "PIN · 协议"), rows.map { it.label })
+        assertEquals(listOf("AAGUID", "关联型号", "支持的协议", "支持的扩展", "PIN · 协议"), rows.map { it.label })
         assertEquals("无", rows.first { it.label == "支持的扩展" }.value)
     }
 

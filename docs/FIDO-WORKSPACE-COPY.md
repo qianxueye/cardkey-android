@@ -60,3 +60,19 @@ Refs #45. Root reviewed the exact Chinese/English wording; plain-language review
 | Manager operation failure / `error_pinRequired` | `error_authorization`: 卡片未授权此操作。 / The card did not authorize this operation. | 此操作需要 PIN 验证。 | This operation requires PIN verification. | Only existing AUTHORIZATION_DENIED with preserved CTAP status 0x36. Distinguish required verification from generic rejection. Next application build/install only. |
 
 The public client preserves status 0x36 and currently resolves token acquisition through the PIN-based ClientPIN path. Existing built-in UV request flags remain unchanged; this condition does not redefine every verification path as PIN-only. Status 0x33, other authorization codes and status-less denial retain their exact generic message. Unknown, not-dispatched and accepted-write/readback warnings retain their original conditions and ordering. The text does not request or trigger automatic resubmission. No provider, protocol, consent, retry, effect or state behavior changes.
+
+## AAGUID and associated model
+
+The existing complete manager copy baseline above is reused. This addition applies only to the FIDO information result, including a successful reset's information readback. Activation: the next Android manager build/install. Card operations and PIN submission complete independently of the public catalog lookup.
+
+| Screen / key | Before | Chinese after | English after | Display condition / reason |
+| --- | --- | --- | --- | --- |
+| FIDO result / AAGUID | Omitted | AAGUID | AAGUID | Show the actual 16 reported bytes as a lowercase UUID, including all-zero values. |
+| FIDO result / `fido_associatedModel` | Omitted | 关联型号 | Associated model | Show the complete public friendly name associated with that AAGUID; preserve the published brand and trim surrounding whitespace. |
+| Model value / `fido_modelLoading` | Omitted | 正在查询… | Looking up… | Catalog lookup is pending; the raw AAGUID is already visible. |
+| Model value / `fido_modelMissing` | Omitted | 未收录 | Not listed | A successfully loaded catalog has no matching localized name. |
+| Model value / `fido_modelFailed` | Omitted | 型号查询失败 | Model lookup failed | Catalog retrieval failed and no successful catalog is available. A cached matching name remains visible after refresh failure. |
+
+Chinese default and Chinese/English qualified resources have equivalent conditions. Locale selection uses exact language tag, primary language, then `en-US`; model names are not translated by the client. Existing selectable, vertically stacked fact rows wrap long names and UUIDs without truncation and retain the current theme and typography. No logo, certification, physical manufacturer, card rename, permission, setting or trust claim is added. The public service receives a catalog request without the connected AAGUID. The implementation uses the existing OkHttp dependency and app cache directory. It keeps one shared request and in-memory names across cards/screens, uses conditional refresh, and retains successful names during temporary failures. A lookup has no automatic retry loop.
+
+Validation is recorded against the candidate in the delivery handoff. Installed-device layout, network access and physical card acceptance remain owned by the coordinator; fixture results cover the Android JVM/Compose environment only.

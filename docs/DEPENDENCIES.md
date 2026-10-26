@@ -16,7 +16,7 @@ Original Kotlin protocol and reader implementations were written for this reposi
 | AndroidX Credentials | 1.6.0 | Apache-2.0; Android 14+ provider APIs |
 | AndroidX Fragment constraint | 1.8.9 | Apache-2.0; compatible Activity Result dependency for Credentials |
 | Gson | 2.13.1 | Apache-2.0; strict bounded JSON parsing and response encoding |
-| OkHttp | 4.12.0 | Apache-2.0; native DAL HTTPS only |
+| OkHttp | 4.12.0 | Apache-2.0; native DAL and FIDO model catalog HTTPS |
 | AndroidX Test runner / core / JUnit extension | 1.6.2 / 1.6.1 / 1.2.1 | Apache-2.0; scripted instrumentation only |
 | Robolectric | 4.16 | MIT; JVM Android framework simulation, tests only |
 | Kotlin Coroutines Test | 1.10.2 | Apache-2.0; ViewModel dispatcher control, tests only |

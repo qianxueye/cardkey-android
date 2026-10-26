@@ -331,6 +331,10 @@ class ProtectedPivLocalizationTest {
             "native_certificates" to "证书与签名",
             "native_technical" to "技术信息",
 
+            "fido_associatedModel" to "关联型号",
+            "fido_modelMissing" to "未收录",
+            "fido_modelLoading" to "正在查询…",
+            "fido_modelFailed" to "型号查询失败",
             "manager_fido_unread" to "尚未读取 FIDO 信息",
             "manager_fido_observed" to "已读取 FIDO 信息",
             "manager_read_fido" to "读取 FIDO 信息",

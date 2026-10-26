@@ -162,4 +162,8 @@
     <string name="native_certificates">证书与签名</string>
     <string name="native_technical">技术信息</string>
     <string name="native_back">返回</string>
+    <string name="fido_associatedModel">关联型号</string>
+    <string name="fido_modelMissing">未收录</string>
+    <string name="fido_modelLoading">正在查询…</string>
+    <string name="fido_modelFailed">型号查询失败</string>
 </resources>

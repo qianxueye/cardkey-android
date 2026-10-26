@@ -1,13 +1,37 @@
 package cc.cardkey.ui
 
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import cc.cardkey.R
 import androidx.compose.ui.res.stringResource
+
+internal val LocalFidoModelCatalog = staticCompositionLocalOf<FidoModelCatalog?> { null }
 
 @Composable
 internal fun ResultFactRow(row: ResultRow) {
     val label = row.labelResource?.let { stringResource(it) } ?: row.label
     val value = row.valueResource?.let { stringResource(it, *row.valueArguments.toTypedArray()) } ?: row.value
-    PlexoFactRow(label, value)
+    if (row.fidoModel) {
+        FidoModelFactRow(row.value)
+    } else PlexoFactRow(label, value)
+}
+
+@Composable
+internal fun FidoModelFactRow(aaguid: String, catalog: FidoModelCatalog = LocalFidoModelCatalog.current ?: FidoModelCatalog.shared(LocalContext.current.cacheDir)) {
+    val locale = LocalConfiguration.current.locales[0].toLanguageTag()
+    key(aaguid, locale, catalog) {
+        val result by produceState<FidoModelName?>(catalog.cached(aaguid, locale), aaguid, locale, catalog) {
+            value = catalog.lookup(aaguid, locale)
+        }
+        val value = when (val name = result) {
+            is FidoModelName.Known -> name.name
+            FidoModelName.Missing -> stringResource(R.string.fido_modelMissing)
+            FidoModelName.Failed -> stringResource(R.string.fido_modelFailed)
+            null -> stringResource(R.string.fido_modelLoading)
+        }
+        PlexoFactRow(stringResource(R.string.fido_associatedModel), value)
+    }
 }
 
 internal fun protectedPivOperationTitleResource(operation: ManagerOperation): Int? = when (operation) {
