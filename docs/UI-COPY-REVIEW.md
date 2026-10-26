@@ -689,3 +689,14 @@ The feedback uses `View.performHapticFeedback` with no ignore flags. Android han
 The PR #50 review correction passes the operation's existing retirement decision into the feedback boundary, so a USB device loss stays silent even before the detach broadcast reaches the Activity. TLS deadline expiry requests one `REJECT` from its concrete `TIMED_OUT` outcome; the existing manager cancellation-shaped receipt remains unchanged. Explicit cancellation remains silent. No strings or display conditions change.
 
 The confirmation-window correction delivers feedback through the currently focused window of the resumed manager Activity, including its confirmation dialog. Window ownership uses the Activity application-window token. If another Activity or application owns focus, the event is discarded; there is no pending feedback to replay after focus or lifecycle changes. Submission timing, confirmation content and operation results remain unchanged.
+
+
+## Home task decorative-chevron semantics (2026-10-26)
+
+The `fix/ui-review-refinements-20261026` candidate reuses the complete Android copy baseline above and the focused A1 review in workspace `evidence/cardkey-uiux-review-20261026/android-browser.en.md`. No localized wording changes. This increment follows plain-language-iso-24495 and the UI/UX contextual-semantics guidance already searched for that review.
+
+| Client / screen / key | Before | After | Reason and activation |
+| --- | --- | --- | --- |
+| Android manager / card home / `HomeTask` decorative chevron, Chinese and English | Visible `›` also contributes text to task accessibility semantics. | Visible `›` remains; its text semantics are cleared. Existing task labels, subtitles, status, click actions and Prepare button remain. | Avoid an extra arrow announcement beside named navigation tasks. Applies to all three home task rows on the next application build/install. |
+
+Coverage: only the decorative glyph semantics reopen A1. The existing copy inventory, layout, palette, read button and navigation remain the baseline. The real Compose regression checks the Chinese and English task labels, enabled click actions, dispatched callbacks and the absence of arrow text in merged and unmerged semantics trees. Installed TalkBack traversal remains a separate root-owned acceptance step.
