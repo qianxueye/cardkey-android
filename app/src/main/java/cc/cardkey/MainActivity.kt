@@ -26,6 +26,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import cc.cardkey.ui.*
 import cc.cardkey.protectedpiv.ProtectedPivDocument
 import cc.cardkey.protocol.FailureCode
@@ -208,6 +209,14 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         model.signingFileRequestId?.let(::signingFilePicker)
         model.signatureSaveRequestId?.let(::signatureExporter)
         model.protectedPiv.value.documentId?.let(::protectedPivPicker)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                model.operationFeedback.collect { feedback ->
+                    val view = window.decorView
+                    if (view.isShown && view.hasWindowFocus()) view.performHapticFeedback(feedback)
+                }
+            }
+        }
         setContent {
             val state by model.state.collectAsState()
             val enrollment by model.enrollment.state.collectAsState()

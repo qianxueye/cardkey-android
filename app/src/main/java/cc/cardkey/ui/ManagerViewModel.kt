@@ -5,6 +5,7 @@ import android.hardware.usb.UsbManager
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.net.Uri
+import android.view.HapticFeedbackConstants
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cc.cardkey.protocol.*
@@ -20,6 +21,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -69,6 +72,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val usb = application.getSystemService(UsbManager::class.java)
     private val mutable = MutableStateFlow(ManagerState())
     val state = mutable.asStateFlow()
+    private val feedback = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val operationFeedback = feedback.asSharedFlow()
     val enrollment = EnrollmentWorkflow()
     val signingFiles = PivSigningFiles()
     val inventory = FidoInventory()
@@ -930,6 +935,11 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun finish(result: OperationResult<ManagerReport>) {
+        if (mutable.value.busy && !cancelled &&
+            !(result is OperationResult.Failed && result.code == FailureCode.CANCELLED)) {
+            feedback.tryEmit(if (result is OperationResult.Completed && result.effect != Effect.UNKNOWN)
+                HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.REJECT)
+        }
         if (result is OperationResult.Failed) inventory.failedCurrent()
         if (result is OperationResult.Failed) protectedWorkflow.retire()
         presenceGeneration++
