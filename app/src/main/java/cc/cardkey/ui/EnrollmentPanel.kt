@@ -96,6 +96,12 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
             } else Text("P-256 · 9A")
             OutlinedTextField(state.address, { onSettings(it, state.cn) }, enabled = !busy,
                 label = { Text(stringResource(R.string.enrollment_address)) }, singleLine = true,
+                supportingText = {
+                    val valid = state.address.isEmpty() || runCatching { enrollmentOrigin(state.address) }.isSuccess
+                    Text(stringResource(if (!valid) R.string.enrollment_addressInvalid
+                        else if (state.address.isEmpty()) R.string.enrollment_addressEmpty else R.string.enrollment_addressSaved))
+                },
+                isError = state.address.isNotEmpty() && runCatching { enrollmentOrigin(state.address) }.isFailure,
                 modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-address"))
             OutlinedTextField(state.cn, { onSettings(state.address, it) }, enabled = !busy,
                 label = { Text(stringResource(R.string.enrollment_cn)) }, singleLine = true,
