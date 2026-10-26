@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import cc.cardkey.R
 
 @Composable
-internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit, nfc: Boolean = false) {
+internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state is CardArtworkState.Loaded) {
             val ratio = state.bitmap.width.toFloat() / state.bitmap.height
@@ -26,8 +26,7 @@ internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit, nfc: 
                 Image(state.bitmap.asImageBitmap(), state.label, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             }
         } else {
-            SmartCardGlyph(Modifier.size(if (nfc) 112.dp else 88.dp, 56.dp), nfc = nfc,
-                waveColor = MaterialTheme.colorScheme.primary, label = stringResource(R.string.artwork_generic))
+            ApprovedCardHero(Modifier.size(112.dp, 70.dp), label = stringResource(R.string.artwork_generic))
         }
         when (state) {
             CardArtworkState.Default -> Unit
@@ -45,28 +44,25 @@ internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit, nfc: 
 }
 
 @Composable
-internal fun SmartCardGlyph(modifier: Modifier = Modifier, nfc: Boolean = false,
-    color: Color = MaterialTheme.colorScheme.onSurface, chip: Color = Color(0xFFBEA25B),
-    waveColor: Color = color, label: String? = null) {
+internal fun ApprovedCardHero(modifier: Modifier = Modifier, label: String? = null) {
+    val signal = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF8EAFFF) else Color(0xFF2358C4)
     androidx.compose.foundation.Canvas(if (label != null) modifier.semantics { contentDescription = label } else modifier) {
-        val scale = size.width / (if (nfc) 112f else 88f)
-        val cardWidth = 82f * scale
-        val cardHeight = 50f * scale
-        val top = (size.height - cardHeight) / 2f
-        drawRoundRect(color, androidx.compose.ui.geometry.Offset(2f * scale, top),
-            androidx.compose.ui.geometry.Size(cardWidth, cardHeight),
-            androidx.compose.ui.geometry.CornerRadius(5f * scale), style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f * scale))
-        drawRoundRect(chip, androidx.compose.ui.geometry.Offset(12f * scale, top + 17f * scale),
-            androidx.compose.ui.geometry.Size(14f * scale, 17f * scale), androidx.compose.ui.geometry.CornerRadius(2f * scale))
-        drawLine(color, androidx.compose.ui.geometry.Offset(19f * scale, top + 17f * scale),
-            androidx.compose.ui.geometry.Offset(19f * scale, top + 34f * scale), scale)
-        drawLine(color, androidx.compose.ui.geometry.Offset(12f * scale, top + 25.5f * scale),
-            androidx.compose.ui.geometry.Offset(26f * scale, top + 25.5f * scale), scale)
-        if (nfc) for (radius in listOf(12f, 22f)) {
-            drawArc(waveColor, -45f, 90f, false,
-                androidx.compose.ui.geometry.Offset((78f - radius) * scale, size.height / 2f - radius * scale),
-                androidx.compose.ui.geometry.Size(radius * 2f * scale, radius * 2f * scale),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(3f * scale, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        val scale = minOf(size.width / 160f, size.height / 100f)
+        val left = (size.width - 160f * scale) / 2f
+        val top = (size.height - 100f * scale) / 2f
+        with(androidx.compose.ui.graphics.drawscope.Stroke(2.5f * scale)) {
+            val origin = androidx.compose.ui.geometry.Offset(left + 2f * scale, top + 2f * scale)
+            val body = androidx.compose.ui.geometry.Size(156f * scale, 96f * scale)
+            val radius = androidx.compose.ui.geometry.CornerRadius(11f * scale)
+            drawRoundRect(signal.copy(alpha = 0.10f), origin, body, radius)
+            drawRoundRect(signal, origin, body, radius, style = this)
         }
+        drawRoundRect(Color(0xFFB28C39), androidx.compose.ui.geometry.Offset(left + 25f * scale, top + 33f * scale),
+            androidx.compose.ui.geometry.Size(27f * scale, 30f * scale), androidx.compose.ui.geometry.CornerRadius(4f * scale))
+        val division = Color(0xFF725B2B)
+        drawLine(division, androidx.compose.ui.geometry.Offset(left + 38.5f * scale, top + 33f * scale),
+            androidx.compose.ui.geometry.Offset(left + 38.5f * scale, top + 63f * scale), 1.6f * scale)
+        drawLine(division, androidx.compose.ui.geometry.Offset(left + 25f * scale, top + 48f * scale),
+            androidx.compose.ui.geometry.Offset(left + 52f * scale, top + 48f * scale), 1.6f * scale)
     }
 }

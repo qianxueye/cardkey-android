@@ -240,7 +240,7 @@ fun ManagerScreen(
         TopAppBar(title = {
             if (focusedInventory && tab == 0) Text(stringResource(R.string.native_inventory_title))
             else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SmartCardGlyph(Modifier.size(30.dp, 22.dp))
+                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card), null, Modifier.size(24.dp))
                 Text(stringResource(R.string.app_name))
             }
         }, navigationIcon = {
@@ -268,7 +268,7 @@ fun ManagerScreen(
                     if (index < 2) {
                         operation = if (index == 0) ManagerOperation.FIDO_INVENTORY else ManagerOperation.PIV_INFO
                     }
-                }, icon = { Icon(managerDestinationIcons[when (index) { 0 -> 0; 1 -> 1; 4 -> 3; else -> 2 }], contentDescription = null) },
+                }, icon = { Icon(managerDestinationIcons[when (index) { 0 -> 0; 1 -> 1; 4 -> 3; else -> 4 }], contentDescription = null) },
                     label = { Text(stringResource(label)) })
             }
         }
@@ -393,7 +393,12 @@ fun ManagerScreen(
                                 (op != ManagerOperation.FIDO_CREDENTIALS || inventory.rp != null) &&
                                 (op != ManagerOperation.FIDO_VERIFY_CREDENTIAL || inventory.credential != null && pin.isNotEmpty()) &&
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
-                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) { Text(if (focusedInventory && state.nfc) stringResource(R.string.native_submit_tap)
+                                (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) {
+                                if (op in setOf(ManagerOperation.FIDO_ASSERT, ManagerOperation.U2F_ASSERT, ManagerOperation.FIDO_VERIFY_CREDENTIAL)) {
+                                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_fido_auth), null, Modifier.size(24.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(if (focusedInventory && state.nfc) stringResource(R.string.native_submit_tap)
                                     else if (op == ManagerOperation.FIDO_INVENTORY) stringResource(R.string.manager_inventory_action)
                                     else op.title.substringAfter("·").trim()) }
                             if (state.busy) OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
@@ -588,7 +593,7 @@ fun ManagerScreen(
                         Text(stringResource(R.string.device_reader), style = MaterialTheme.typography.titleMedium)
                         if (state.readers.isEmpty()) Text(stringResource(R.string.reader_empty))
                         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            ReaderOption("NFC", null, state.nfc, !state.busy && !state.permissionPending) { onReader(null) }
+                            ReaderOption("NFC", null, state.nfc, !state.busy && !state.permissionPending, contactless = true) { onReader(null) }
                             state.readers.forEach { reader ->
                                 ReaderOption(reader.device.productName ?: "USB",
                                     "USB · %04x:%04x".format(reader.device.vendorId, reader.device.productId),
@@ -601,8 +606,7 @@ fun ManagerScreen(
                         if (focusedInventory) {
                             Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                                SmartCardGlyph(Modifier.size(112.dp, 64.dp), nfc = state.nfc,
-                                    waveColor = MaterialTheme.colorScheme.primary)
+                                ApprovedCardHero(Modifier.size(112.dp, 70.dp))
                                 Text(stringResource(if (state.canEnterFidoSecrets) R.string.native_target_observed else R.string.native_target_unread),
                                     style = MaterialTheme.typography.titleMedium)
                             }
@@ -829,14 +833,14 @@ private fun OperationChoice(value: ManagerOperation, values: List<ManagerOperati
 }
 
 @Composable
-private fun ReaderOption(title: String, detail: String?, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun ReaderOption(title: String, detail: String?, selected: Boolean, enabled: Boolean, contactless: Boolean = false, onClick: () -> Unit) {
     Surface(Modifier.fillMaxWidth().selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
         shape = MaterialTheme.shapes.medium,
         color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = if (!enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             else if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Icon(managerDestinationIcons[2], contentDescription = null)
+            Icon(androidx.compose.ui.res.painterResource(if (contactless) R.drawable.ic_approved_reader_contactless else R.drawable.ic_approved_reader), contentDescription = null)
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
@@ -846,44 +850,14 @@ private fun ReaderOption(title: String, detail: String?, selected: Boolean, enab
     }
 }
 
-internal val managerDestinationIcons = listOf(
-    ImageVector.Builder("Key", 24.dp, 24.dp, 24f, 24f).apply {
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(7f, 14f); arcTo(3f, 3f, 0f, true, true, 7f, 8f); arcTo(3f, 3f, 0f, false, true, 7f, 14f); close()
-            moveTo(7f, 6f); arcTo(5f, 5f, 0f, true, false, 11.58f, 13f)
-            lineTo(15f, 13f); lineTo(15f, 16f); lineTo(18f, 16f); lineTo(18f, 13f); lineTo(21f, 13f)
-            lineTo(21f, 9f); lineTo(11.58f, 9f); arcTo(5f, 5f, 0f, false, false, 7f, 6f); close()
-        }
-    }.build(),
-    ImageVector.Builder("IdentityCard", 24.dp, 24.dp, 24f, 24f).apply {
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(3f, 4f); lineTo(21f, 4f); lineTo(21f, 20f); lineTo(3f, 20f); close()
-            moveTo(5f, 6f); lineTo(5f, 18f); lineTo(19f, 18f); lineTo(19f, 6f); close()
-            moveTo(8f, 12f); arcTo(2f, 2f, 0f, true, true, 8f, 8f); arcTo(2f, 2f, 0f, false, true, 8f, 12f); close()
-            moveTo(5.5f, 16f); lineTo(10.5f, 16f); lineTo(10.5f, 14f); lineTo(5.5f, 14f); close()
-            moveTo(13f, 8f); lineTo(17f, 8f); lineTo(17f, 10f); lineTo(13f, 10f); close()
-            moveTo(13f, 13f); lineTo(17f, 13f); lineTo(17f, 15f); lineTo(13f, 15f); close()
-        }
-    }.build(),
-    ImageVector.Builder("Reader", 24.dp, 24.dp, 24f, 24f).apply {
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(4f, 3f); lineTo(20f, 3f); lineTo(20f, 21f); lineTo(4f, 21f); close()
-            moveTo(6f, 5f); lineTo(6f, 19f); lineTo(18f, 19f); lineTo(18f, 5f); close()
-            moveTo(8f, 7f); lineTo(16f, 7f); lineTo(16f, 9f); lineTo(8f, 9f); close()
-            moveTo(8f, 12f); lineTo(12f, 12f); lineTo(12f, 16f); lineTo(8f, 16f); close()
-        }
-    }.build(),
-    ImageVector.Builder("Settings", 24.dp, 24.dp, 24f, 24f).apply {
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(4f, 5f); lineTo(20f, 5f); lineTo(20f, 7f); lineTo(4f, 7f); close()
-            moveTo(4f, 11f); lineTo(20f, 11f); lineTo(20f, 13f); lineTo(4f, 13f); close()
-            moveTo(4f, 17f); lineTo(20f, 17f); lineTo(20f, 19f); lineTo(4f, 19f); close()
-            moveTo(8f, 3f); lineTo(10f, 3f); lineTo(10f, 9f); lineTo(8f, 9f); close()
-            moveTo(14f, 9f); lineTo(16f, 9f); lineTo(16f, 15f); lineTo(14f, 15f); close()
-            moveTo(8f, 15f); lineTo(10f, 15f); lineTo(10f, 21f); lineTo(8f, 21f); close()
-        }
-    }.build(),
-)
+internal val managerDestinationIcons: List<androidx.compose.ui.graphics.painter.Painter>
+    @Composable get() = listOf(
+        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_passkey),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_certificate),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_reader),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_settings),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card),
+    )
 
 private val expandMoreIcon = ImageVector.Builder("ExpandMore", 24.dp, 24.dp, 24f, 24f).apply {
     path(fill = SolidColor(Color.Black)) {

@@ -30,7 +30,7 @@ internal fun NativeCardHome(
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     if (artwork !is CardArtworkState.Loaded) Box(Modifier.width(112.dp)) {
-                        CardArtworkHero(artwork, onRetry, nfc = state.nfc)
+                        CardArtworkHero(artwork, onRetry)
                     }
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(if (state.canEnterFidoSecrets || state.canEnterPivSecrets)
@@ -40,15 +40,14 @@ internal fun NativeCardHome(
                         }
                     }
                 }
-                if (artwork is CardArtworkState.Loaded) CardArtworkHero(artwork, onRetry, nfc = state.nfc)
+                if (artwork is CardArtworkState.Loaded) CardArtworkHero(artwork, onRetry)
                 Text(stringResource(if (state.nfc) R.string.native_tap else R.string.native_usb),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(onClick = onRead, enabled = enabled && (!state.requiresInspection || ConfirmationPolicy.canInspect(ManagerOperation.FIDO_INFO)),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2358C4), contentColor = Color.White),
                     shape = RoundedCornerShape(50), modifier = Modifier.align(Alignment.CenterHorizontally)
                         .widthIn(min = 200.dp, max = 260.dp).heightIn(min = 48.dp).testTag("native-read-card")) {
-                    SmartCardGlyph(Modifier.size(32.dp, 24.dp), nfc = state.nfc,
-                        color = Color.White, chip = Color.White)
+                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_read), null, Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
                     Text(stringResource(R.string.native_read))
                 }
