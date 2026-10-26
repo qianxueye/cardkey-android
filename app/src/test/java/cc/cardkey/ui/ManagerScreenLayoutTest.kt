@@ -363,7 +363,7 @@ class ManagerScreenLayoutTest {
         render(800, 800) { activity, update ->
             compose.onNode((hasText("证书") or hasText("证书与签名")) and hasClickAction()).performClick()
             val ordinary = activity.getString(R.string.protectedPiv_ordinaryInspection)
-            val protectedWarning = "上次操作结果未知。请重新导入原卡片的配置，再读取受保护状态；不要重复执行原操作。"
+            val protectedWarning = "请重新导入原卡片的配置，再读取受保护状态；读取前不要重复执行原操作。"
             update(ManagerState(requiresInspection = true))
             compose.onNodeWithText(ordinary).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText(protectedWarning).assertDoesNotExist()
