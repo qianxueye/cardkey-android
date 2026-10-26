@@ -74,7 +74,7 @@ class OperationInput(
 }
 
 data class ResultRow(val label: String, val value: String, val labelResource: Int? = null,
-                     val valueResource: Int? = null, val valueArguments: List<Any> = emptyList())
+                     val valueResource: Int? = null, val valueArguments: List<Any> = emptyList(), val fidoModel: Boolean = false)
 class SecretOutputs(val hmac: ByteArray?, val blobKey: ByteArray?, val credBlob: ByteArray? = null) : AutoCloseable {
     override fun close() { hmac?.fill(0); blobKey?.fill(0); credBlob?.fill(0) }
 }
@@ -357,7 +357,9 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
     }
 
     private fun info(info: FidoInfo) = ManagerReport(
-        listOf(ResultRow("支持的协议", info.versions.joinToString()),
+        listOf(ResultRow("AAGUID", aaguid(info)),
+            ResultRow("关联型号", aaguid(info), labelResource = R.string.fido_associatedModel, fidoModel = true),
+            ResultRow("支持的协议", info.versions.joinToString()),
             ResultRow("支持的扩展", info.extensions.joinToString().ifEmpty { "无" }),
             ResultRow("PIN · 协议", info.pinProtocols.joinToString())) +
             listOfNotNull(
@@ -370,6 +372,12 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
                 info.options["alwaysUv"]?.let { ResultRow("始终验证", if (it) "开启" else "关闭") },
                 info.options["ep"]?.let { ResultRow("企业证明", if (it) "开启" else "关闭") },
                 info.raw[13]?.let { ResultRow("最短 PIN 长度", "${it.number()} 个字符") }))
+
+    private fun aaguid(info: FidoInfo): String {
+        val bytes = requireNotNull(info.raw[3]).bytes()
+        val buffer = java.nio.ByteBuffer.wrap(bytes)
+        return java.util.UUID(buffer.long, buffer.long).toString()
+    }
 
     private fun diagnostic(fido: FidoClient, input: OperationInput): ManagerReport {
         val rpId = "cardkey.example"

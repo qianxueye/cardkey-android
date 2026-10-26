@@ -162,4 +162,8 @@
     <string name="native_certificates">Certificates and signing</string>
     <string name="native_technical">Technical information</string>
     <string name="native_back">Back</string>
+    <string name="fido_associatedModel">Associated model</string>
+    <string name="fido_modelMissing">Not listed</string>
+    <string name="fido_modelLoading">Looking up…</string>
+    <string name="fido_modelFailed">Model lookup failed</string>
 </resources>
