@@ -11,6 +11,7 @@ import android.nfc.NfcAdapter
 import android.os.Bundle
 import android.os.Handler
 import android.view.WindowManager
+import android.view.inspector.WindowInspector
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -212,8 +213,13 @@ class MainActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 model.operationFeedback.collect { feedback ->
-                    val view = window.decorView
-                    if (view.isShown && view.hasWindowFocus()) view.performHapticFeedback(feedback)
+                    val decor = window.decorView
+                    val ownerToken = (decor.layoutParams as? WindowManager.LayoutParams)?.token
+                    val view = WindowInspector.getGlobalWindowViews().firstOrNull {
+                        it.isShown && it.hasWindowFocus() && (it === decor || ownerToken != null &&
+                            (it.layoutParams as? WindowManager.LayoutParams)?.token == ownerToken)
+                    }
+                    view?.performHapticFeedback(feedback)
                 }
             }
         }
