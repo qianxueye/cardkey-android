@@ -500,3 +500,58 @@ The affected suites passed all 28 cases (ProtectedPivPanelTest 8, ManagerScreenL
 
 
 The complete `testDebugUnitTest --offline --no-daemon --no-watch-fs --max-workers=2 -Pkotlin.incremental=false` gate passed in Gradle 1m09s: 975 cases across 95 suites, 974 passed, zero failures/errors, one existing optional skip (`PivSshPublicKeyTest.sshKeygenInteroperabilityExplicitGate`, CARDKEY_SSH_KEYGEN unset as in CI). Summed test execution was 61.073 seconds. The pinned Smallstep CLI 0.31.0 and step-ca 0.30.2 inputs enabled the required loopback-CA tests. No new skip, removed assertion or weakened test was introduced. This result replaces the earlier targeted-only boundary for JVM tests; APK/lint and device acceptance boundaries remain as recorded above.
+
+
+## Issuer record reader — 2026-10-26
+
+Candidate: `feat/issuer-badge-reader-20261026`, stacked on Android CA settings `1df455f` (PR 53). Owning delivery: issuer issue 3; hub issues 35, 37 and 39. This increment reuses the complete manager/resource baseline above and subsequent native-workspace records. It reviews every added string in `values/issuer.xml`, all dynamic labels, selection conditions and image accessibility labels. The maintained UI locale is Chinese; no English UI locale is introduced.
+
+The home action opens an operator's server-record reader. Current personnel fields and publication-time fields have separate headings. Selecting a server record never claims a connected or authenticated physical card. Employee/card/history controls perform reads only. Connection edits immediately retire the prior identity, record and images. A 401 returns the operator to connection entry; saved CA settings and unresolved enrollment receipts remain owned by the existing enrollment workflow.
+
+The password field names the operator token, distinguishes its service-wide authority, and states endpoint-scoped storage and blank-field reuse. Normal failures name the failed read, credential or redirect and an available action; raw server error bodies and protocol status names are not displayed. Server-owned person names, serials, timestamps and accessibility labels remain data. Missing publication and missing records have distinct display conditions.
+
+| Resource key | Before | After | Trigger / review reason |
+|---|---|---|---|
+| `issuer_title` | Absent | 工卡记录 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_intro` | Absent | 连接工卡服务，选择员工并查看已发布的卡面。 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_address` | Absent | 工卡服务地址（HTTPS） | Connection form or authenticated session; preserve destination and operator authority. |
+| `issuer_token` | Absent | 操作员访问令牌 | Connection form or authenticated session; preserve destination and operator authority. |
+| `issuer_token_hint` | Absent | 令牌保存在此设备，仅用于对应服务。留空可使用已保存的令牌。操作员令牌也具有服务端管理权限。 | Connection form or authenticated session; preserve destination and operator authority. |
+| `issuer_connect` | Absent | 连接并刷新 | Connection form or authenticated session; preserve destination and operator authority. |
+| `issuer_disconnect` | Absent | 断开连接 | Connection form or authenticated session; preserve destination and operator authority. |
+| `issuer_operator` | Absent | 操作员：%1$s | Connection form or authenticated session; preserve destination and operator authority. |
+| `issuer_people` | Absent | 选择员工 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_no_people` | Absent | 服务中没有员工记录。 | Completed successful empty read; hidden while loading or after an error. |
+| `issuer_more_people` | Absent | 更多员工 | Only when the server returns a next cursor; explicit bounded page read. |
+| `issuer_person_current` | Absent | 当前员工资料 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_active` | Absent | 在职 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_inactive` | Absent | 已停用 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_no_cards` | Absent | 此员工没有工卡记录。 | Completed successful empty read; hidden while loading or after an error. |
+| `issuer_more_cards` | Absent | 更多工卡 | Only when the server returns a next cursor; explicit bounded page read. |
+| `issuer_card` | Absent | 工卡 %1$s · %2$s | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_issued` | Absent | 已登记 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_lost` | Absent | 已挂失 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_revoked` | Absent | 已撤销 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_other_status` | Absent | 其他状态 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_no_badge` | Absent | 此工卡还没有发布的卡面。 | Completed successful empty read; hidden while loading or after an error. |
+| `issuer_current` | Absent | 当前卡面 · %1$s | Selected immutable publication; separate current server fields from historical snapshot. |
+| `issuer_history` | Absent | 历史卡面 · %1$s | Selected immutable publication; separate current server fields from historical snapshot. |
+| `issuer_more_history` | Absent | 更多历史卡面 | Only when the server returns a next cursor; explicit bounded page read. |
+| `issuer_snapshot` | Absent | 卡面发布时的资料 | Selected immutable publication; separate current server fields from historical snapshot. |
+| `issuer_published` | Absent | 发布时间：%1$s / 发布操作员：%2$s | Selected immutable publication; separate current server fields from historical snapshot. |
+| `issuer_archived` | Absent | 卡面存档时间：%1$s | Selected immutable publication; separate current server fields from historical snapshot. |
+| `issuer_front` | Absent | 正面 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_back` | Absent | 背面 | Relevant record selection or metadata field; ordinary task vocabulary. |
+| `issuer_address_error` | Absent | 请输入 HTTPS 服务地址，不含路径、查询参数或登录信息。 | Relevant failure only; concrete event and next action. |
+| `issuer_token_required` | Absent | 请输入此服务的操作员访问令牌。 | Relevant failure only; concrete event and next action. |
+| `issuer_unauthorized` | Absent | 服务拒绝了访问令牌。请输入有效令牌后重新连接。 | Relevant failure only; concrete event and next action. |
+| `issuer_missing` | Absent | 服务中已没有所选记录。请重新连接并选择记录。 | Relevant failure only; concrete event and next action. |
+| `issuer_redirect` | Absent | 服务返回了跳转地址。请核对服务地址后重新连接。 | Relevant failure only; concrete event and next action. |
+| `issuer_invalid_response` | Absent | 服务返回的记录或图片格式有误。请联系服务管理员。 | Relevant failure only; concrete event and next action. |
+| `issuer_failed` | Absent | 读取服务失败。请检查网络后重新连接。 | Relevant failure only; concrete event and next action. |
+| `issuer_secret_read_failed` | Absent | 此设备保存的访问令牌读取失败。请重新输入令牌。 | Relevant failure only; concrete event and next action. |
+| `issuer_secret_save_failed` | Absent | 访问令牌保存失败。请重试连接。 | Relevant failure only; concrete event and next action. |
+
+Dynamic coverage: person controls show server display name and employee reference; the selected personnel summary shows department, title and badge number only when nonempty. Card controls show serial and a translated server-record status. Revision controls show current/history and server publication time. The selected revision shows its historical name/reference/department/title/badge number, publisher and source creation time. Front/back images retain the server accessibility labels and real image aspect ratio, including portrait output. Existing image loading/failure/retry strings are reused unchanged.
+
+Native layout acceptance is recorded in the Android badge evidence handoff. Device installation, real issuer data and physical-card acceptance are separate root-owned gates.

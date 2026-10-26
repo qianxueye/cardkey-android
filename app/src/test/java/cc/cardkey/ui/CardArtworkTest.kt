@@ -25,6 +25,12 @@ class CardArtworkTest {
         return CardArtworkPayload(bytes, "Synthetic card artwork")
     }
 
+    @Test fun accessibilityLabelLimitCountsUnicodeScalars() {
+        val image = payload()
+        assertEquals("😀".repeat(200), decodeCardArtwork(image.copy(accessibilityLabel = "😀".repeat(200))).label)
+        assertTrue(runCatching { decodeCardArtwork(image.copy(accessibilityLabel = "😀".repeat(201))) }.isFailure)
+    }
+
     @Before fun initializeNativeCodec() {
         decodeCardArtwork(payload())
     }
