@@ -13,7 +13,7 @@
     <string name="protectedPiv_inspection">Import the original card configuration again, then read its protected status. Do not repeat the original operation before reading the status.</string>
     <string name="protectedPiv_operation">Protected operation</string>
     <string name="protectedPiv_slot">Protected slot</string>
-    <string name="protectedPiv_csrSubject">CSR subject (for example, CN=CardKey)</string>
+    <string name="protectedPiv_csrSubject">CSR subject (for example, CN=DecisiveCard)</string>
     <string name="protectedPiv_recognize">Identify card and read</string>
     <string name="protectedPiv_recognized">The first scan is complete. Move the card away, then enter the PIN and confirm the second scan.</string>
     <string name="protectedPiv_pending">Pending: %1$s · slot %2$s</string>

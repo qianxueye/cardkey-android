@@ -713,3 +713,25 @@ Candidate branch: `feat/ca-connection-settings-20261026`, based on `2196eef`. Re
 | Enrollment / `enrollment_addressEmpty` | Absent | 输入 CA 的 HTTPS 地址。 | Enter the CA HTTPS address. | Empty address; clearing the input removes the saved origin. |
 
 The public origin is saved automatically, including a non-default port. OTT, PIN, CN, root certificate and enrollment state stay transient. Editing the address clears selected root trust and retires unsubmitted request/picker generations; submitted or unknown receipts keep their original endpoint. Save/load performs no network or card operation. Activation: next build and installation. Source copy review and Robolectric Compose checks are separate from installed-device or physical-card acceptance.
+
+
+## DecisiveCard display name (2026-10-27)
+
+Client/candidate: Android manager and credential provider, `feat/decisivecard-brand-20261027`, based on `ec2f91f9e3af7c361ff5381959946bc20b763738`. Owning issue: #45. This scoped review reuses the complete baseline above, the provider consumer ledger and the protected-PIV localization ledger. The approved product spelling is the joined `DecisiveCard` with capital D and C. Activation requires a build containing this change.
+
+| Screen / key and condition | Before | After | Reason |
+| --- | --- | --- | --- |
+| Launcher, manager heading, credential-provider app bar and system Create/Get entries / `app_name` | `CardKey` | `DecisiveCard` | Use the approved product name in system and app surfaces, including native text semantics. |
+| USB permission help / `reader_usbPermission`, when permission is pending | `请在系统提示中允许 CardKey 访问此 USB 读卡器。` | `请在系统提示中允许 DecisiveCard 访问此 USB 读卡器。` | Existing resource interpolation follows `app_name`. |
+| Provider settings help / `provider_settings` | `在 Android 设置中选择并启用 CardKey，然后返回。` | `在 Android 设置中选择并启用 DecisiveCard，然后返回。` | Match the provider label in system settings. |
+| Provider USB permission / `plexo_provider_permission_prompt` | `在系统提示中决定是否允许 CardKey 访问此 USB 读卡器。` | `在系统提示中决定是否允许 DecisiveCard 访问此 USB 读卡器。` | Keep the existing permission action and resource template. |
+| Provider create / `plexo_provider_create_consequence`, before consenting to creation | `将在连接的卡片上创建通行密钥。存储在卡片上的凭据会占用卡内空间，无法由 CardKey 复制到另一张卡。` | `将在连接的卡片上创建通行密钥。存储在卡片上的凭据会占用卡内空间，无法由 DecisiveCard 复制到另一张卡。` | Preserve the card-storage consequence and copying limit. |
+| Provider result / `provider_pinSetup`, after a PIN-setup-required result | `请先在 CardKey 管理界面设置 FIDO PIN，再重新发起本次请求。本次未验证 PIN。` | `请先在 DecisiveCard 管理界面设置 FIDO PIN，再重新发起本次请求。本次未验证 PIN。` | Name the manager used for the next action. |
+| Provider result / `provider_pinChange`, after a PIN-change-required result | `请先在 CardKey 管理界面更改 FIDO PIN，再重新发起本次请求。本次未验证 PIN。` | `请先在 DecisiveCard 管理界面更改 FIDO PIN，再重新发起本次请求。本次未验证 PIN。` | Preserve the actual PIN result and next action. |
+| Protected-PIV CSR input / `protectedPiv_csrSubject`, default and Chinese | `CSR 主题（例如 CN=CardKey）` | `CSR 主题（例如 CN=DecisiveCard）` | Update the visible instructional example; no entered or generated certificate identity is rewritten. |
+| Protected-PIV CSR input / `protectedPiv_csrSubject`, English | `CSR subject (for example, CN=CardKey)` | `CSR subject (for example, CN=DecisiveCard)` | Keep maintained English and Chinese examples equivalent. |
+| Advanced CSR label / `ManagerScreen` | `Subject · CN=CardKey` | `Subject · CN=DecisiveCard` | Existing interpolation follows `app_name`; user input and certificate content remain unchanged. |
+| Bundled notice heading and current README heading | `CardKey for Android` | `DecisiveCard for Android` | Match the product name; preserve dependency notices and repository links. |
+| Current README provider activation instructions | `Enable CardKey through its Android provider-settings entry` | `Enable DecisiveCard through its Android provider-settings entry` | Match the displayed settings entry. |
+
+Coverage: traced manifest inheritance, the nontranslatable shared `app_name`, manager/provider navigation and platform accessibility semantics, system credential entries, manager/provider USB prompts, provider settings help, create/PIN result conditions and default/Chinese/English protected-PIV labels. All current product-name resource matches were reviewed in their consumers. Existing localization expectations are updated; no new rename-only tests were added. Application/package/component/theme names, persistence keys, diagnostic RP identities, external account/card data, protocol profile names and historical copy/acceptance records remain stable. Source review is complete for this rename. Native rendered layouts, installed launcher/settings/provider labels and physical-device acceptance remain pending on the candidate built on an Owner MacBook; source review alone cannot establish them.

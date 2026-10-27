@@ -1,8 +1,10 @@
-# CardKey for Android
+# DecisiveCard for Android
 
 A native Kotlin and Jetpack Compose Material 3 manager for FIDO2 and PIV smart cards, with an interactive Android Credential Provider. The Android application has its own public protocol implementation and builds without private repositories, applet binaries, provisioning secrets, or private CI artifacts.
 
 The application targets Android 14 and later. NFC uses Android IsoDep. USB FIDO HID interfaces with matching 64-byte input/output reports use direct CTAP2 and U2F interrupt transfers for both the Manager and Credential Provider; PIV is unavailable on this route. [CTAPHID scope and ownership](docs/CTAPHID-TRANSPORT.md) The USB adapter handles the Identiv uTrust 2700R (`04e6:5810`) through reader-managed APDU exchange or host-managed T=1 TPDU exchange. The recorded TPDU profile (`bcdDevice=0202`, features `0x100BA`) requires valid current T=1 parameters, successful link synchronization, and an acknowledged IFSD of 32 before any APDU. T=0 TPDU exchange is unsupported. Physical reader and phone qualification must be recorded separately from a successful build. [Transport scope](docs/T1-TRANSPORT.md)
+
+The product display name is `DecisiveCard`, supplied by `app_name` to the launcher, manager, credential-provider entries and permission prompts. Application IDs, component names and card protocol identities keep their existing values.
 
 ## Build
 
@@ -39,7 +41,7 @@ Each operation owns one session. PIN tokens and administrative authorization are
 
 When the authenticator returns a terminal physical-presence requirement, the session ends. HID KEEPALIVE responses remain part of the current operation. The app does not reconnect with reset or power-cycle the card to satisfy presence. USB close releases the interface without sending power-off. FIDO reset is available only on a selected HID attachment with observed CTAP2 support and the approved destructive confirmation. It sends one reset and reads current status after acknowledgement, without PIN exchange or replay. APDU/NFC reset remains unavailable; applet replacement belongs to a separate desktop provisioning workflow. [Reset scope](docs/manager-fido.md) AAGUID, attestation keys and enterprise allowlists are not daily management controls.
 
-The Android Credential Provider creates and retrieves ES256 passkeys after a verified, named user task action. Card recognition is internal; actual no-PIN policy continues within that consent, while a required FIDO PIN waits for secure submission on the same leased session. Enable CardKey through its Android provider-settings entry; opening settings does not prove activation. [Provider consumer copy and workflow](docs/PROVIDER-CONSUMER-COPY-REVIEW.md) Get uses an interactive system Action; it does not maintain an on-phone credential database. Native app requests require a verified Digital Asset Links association; the initial delegated browser policy accepts Chrome Stable with its pinned release signer. [Provider security, privacy and acceptance](docs/CREDENTIAL-PROVIDER.md)
+The Android Credential Provider creates and retrieves ES256 passkeys after a verified, named user task action. Card recognition is internal; actual no-PIN policy continues within that consent, while a required FIDO PIN waits for secure submission on the same leased session. Enable DecisiveCard through its Android provider-settings entry; opening settings does not prove activation. [Provider consumer copy and workflow](docs/PROVIDER-CONSUMER-COPY-REVIEW.md) Get uses an interactive system Action; it does not maintain an on-phone credential database. Native app requests require a verified Digital Asset Links association; the initial delegated browser policy accepts Chrome Stable with its pinned release signer. [Provider security, privacy and acceptance](docs/CREDENTIAL-PROVIDER.md)
 
 ## License and validation
 

@@ -1,4 +1,4 @@
-CardKey for Android
+DecisiveCard for Android
 Original code: Apache License 2.0.
 
 AndroidX (including Jetpack Compose and Material 3), Kotlin, Kotlin Coroutines,
