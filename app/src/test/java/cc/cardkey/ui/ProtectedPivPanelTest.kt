@@ -27,6 +27,32 @@ import org.robolectric.annotation.*
 class ProtectedPivPanelTest {
     @get:Rule val compose = createEmptyComposeRule()
 
+    @Test fun noReaderDisablesProtectedScansWhileImportsAndClearRemainAvailable() {
+        val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        val readerSelected = mutableStateOf(false)
+        var recognitions = 0
+        host.get().setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ProtectedPivPanel(readerSelected.value, ProtectedPivState(profileReady = true, issuerSubject = "Synthetic issuer"),
+                        false, false, 0, {}, {}, { _, _, _ -> recognitions++ }, { fail("Unexpected execution") })
+                }
+            }
+        }
+        try {
+            compose.onNodeWithTag("protected-piv-recognize").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithTag("protected-piv-issuer").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("protected-piv-profile").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("protected-piv-clear").performScrollTo().assertIsEnabled()
+            assertEquals(0, recognitions)
+            compose.runOnIdle { readerSelected.value = true }
+            compose.onNodeWithTag("protected-piv-recognize").performScrollTo().assertIsEnabled().performClick()
+            assertEquals(1, recognitions)
+            compose.runOnIdle { readerSelected.value = false }
+            compose.onNodeWithTag("protected-piv-recognize").assertIsNotEnabled()
+        } finally { host.pause().stop().destroy() }
+    }
+
     @Test fun issuerLineIsOmittedWhenDisplayFilteringLeavesNoText() {
         val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val rawSubject = "\u202e\u200d\u200c\n"
@@ -34,7 +60,7 @@ class ProtectedPivPanelTest {
         host.get().setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ProtectedPivPanel(state, false, false, 0, {}, {}, { _, _, _ -> }, {})
+                    ProtectedPivPanel(true, state, false, false, 0, {}, {}, { _, _, _ -> }, {})
                 }
             }
         }
@@ -61,7 +87,7 @@ class ProtectedPivPanelTest {
         host.get().setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ProtectedPivPanel(state, false, false, 0, {}, {}, { _, _, _ -> }, {})
+                    ProtectedPivPanel(true, state, false, false, 0, {}, {}, { _, _, _ -> }, {})
                 }
             }
         }
@@ -81,7 +107,7 @@ class ProtectedPivPanelTest {
         host.get().setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ProtectedPivPanel(ProtectedPivState(profileReady = true, issuerSubject = "Synthetic issuer"),
+                    ProtectedPivPanel(true, ProtectedPivState(profileReady = true, issuerSubject = "Synthetic issuer"),
                         false, false, 0, {}, {}, { action, _, _ -> recognized = action }, { fail("Recognition sent PIN") })
                 }
             }
@@ -104,7 +130,7 @@ class ProtectedPivPanelTest {
         host.get().setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ProtectedPivPanel(state.value, false, false, clear.intValue, {}, {}, { _, _, _ -> fail("Unexpected recognition") },
+                    ProtectedPivPanel(true, state.value, false, false, clear.intValue, {}, {}, { _, _, _ -> fail("Unexpected recognition") },
                         { pin -> assertArrayEquals("123456".toCharArray(), pin); pin.fill('\u0000'); executions++ })
                 }
             }
@@ -133,7 +159,7 @@ class ProtectedPivPanelTest {
         host.get().setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ProtectedPivPanel(state.value, false, false, 0, {}, {}, { _, _, _ -> fail("Ineligible scan") }, { fail("Ineligible execution") })
+                    ProtectedPivPanel(true, state.value, false, false, 0, {}, {}, { _, _, _ -> fail("Ineligible scan") }, { fail("Ineligible execution") })
                 }
             }
         }
@@ -150,7 +176,7 @@ class ProtectedPivPanelTest {
         host.get().setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ProtectedPivPanel(ProtectedPivState(), false, true, 0,
+                    ProtectedPivPanel(true, ProtectedPivState(), false, true, 0,
                         {}, {}, { _, _, _ -> }, { fail("Unknown operation was replayed") })
                 }
             }
@@ -168,7 +194,7 @@ class ProtectedPivPanelTest {
         host.get().setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ProtectedPivPanel(ProtectedPivState(profileReady = true), false, true, 0,
+                    ProtectedPivPanel(true, ProtectedPivState(profileReady = true), false, true, 0,
                         {}, {}, { action, _, _ -> recognized = action }, { fail("Unknown operation was replayed") },
                         protectedInspectionRequired = true)
                 }

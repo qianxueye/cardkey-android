@@ -166,4 +166,7 @@
     <string name="fido_modelMissing">未收录</string>
     <string name="fido_modelLoading">正在查询…</string>
     <string name="fido_modelFailed">型号查询失败</string>
+    <string name="native_reader_missing">未选择读卡器</string>
+    <string name="native_choose_reader">选择读卡器</string>
+    <string name="native_choose_reader_hint">选择 NFC 或已连接的 USB 读卡器</string>
 </resources>

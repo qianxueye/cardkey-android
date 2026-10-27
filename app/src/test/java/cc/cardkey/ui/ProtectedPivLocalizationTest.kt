@@ -49,7 +49,7 @@ class ProtectedPivLocalizationTest {
     private fun render(locale: String, state: ProtectedPivState, inspection: Boolean = false,
                        protectedInspection: Boolean = false, check: () -> Unit) {
         renderContent(locale, {
-            ProtectedPivPanel(state, false, inspection, 0, {}, {}, { _, _, _ -> }, {}, protectedInspection)
+            ProtectedPivPanel(true, state, false, inspection, 0, {}, {}, { _, _, _ -> }, {}, protectedInspection)
         }, check)
     }
 
@@ -321,6 +321,9 @@ class ProtectedPivLocalizationTest {
             "native_read_scope" to "读取 FIDO 公开信息；证书信息请到“证书与签名”读取。",
             "native_tap" to "贴近手机的 NFC 感应区",
             "native_usb" to "选择已连接的 USB 读卡器",
+            "native_reader_missing" to "未选择读卡器",
+            "native_choose_reader" to "选择读卡器",
+            "native_choose_reader_hint" to "选择 NFC 或已连接的 USB 读卡器",
             "native_prepare" to "准备 PIN",
             "native_inventory_title" to "查看通行密钥",
             "native_target_unread" to "目标卡片尚未识别",

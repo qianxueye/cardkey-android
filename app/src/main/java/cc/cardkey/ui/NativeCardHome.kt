@@ -33,17 +33,19 @@ internal fun NativeCardHome(
                         CardArtworkHero(artwork, onRetry)
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(stringResource(if (state.canEnterFidoSecrets || state.canEnterPivSecrets)
-                            R.string.native_observed else R.string.native_unread), style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(if (!state.hasSelectedReader) R.string.native_reader_missing
+                            else if (state.canEnterFidoSecrets || state.canEnterPivSecrets) R.string.native_observed else R.string.native_unread), style = MaterialTheme.typography.titleLarge)
                         TextButton(onClick = onReaders, enabled = enabled, contentPadding = PaddingValues(0.dp)) {
-                            Text(if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "USB")
+                            Text(if (!state.hasSelectedReader) stringResource(R.string.native_choose_reader)
+                                else if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "USB")
                         }
                     }
                 }
                 if (artwork is CardArtworkState.Loaded) CardArtworkHero(artwork, onRetry)
-                Text(stringResource(if (state.nfc) R.string.native_tap else R.string.native_usb),
+                Text(stringResource(if (!state.hasSelectedReader) R.string.native_choose_reader_hint
+                    else if (state.nfc) R.string.native_tap else R.string.native_usb),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = onRead, enabled = enabled && (!state.requiresInspection || ConfirmationPolicy.canInspect(ManagerOperation.FIDO_INFO)),
+                Button(onClick = onRead, enabled = enabled && state.hasSelectedReader && (!state.requiresInspection || ConfirmationPolicy.canInspect(ManagerOperation.FIDO_INFO)),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2358C4), contentColor = Color.White),
                     shape = RoundedCornerShape(50), modifier = Modifier.align(Alignment.CenterHorizontally)
                         .widthIn(min = 200.dp, max = 260.dp).heightIn(min = 48.dp).testTag("native-read-card")) {

@@ -166,4 +166,7 @@
     <string name="fido_modelMissing">Not listed</string>
     <string name="fido_modelLoading">Looking up…</string>
     <string name="fido_modelFailed">Model lookup failed</string>
+    <string name="native_reader_missing">No reader selected</string>
+    <string name="native_choose_reader">Choose a reader</string>
+    <string name="native_choose_reader_hint">Choose NFC or a connected USB reader</string>
 </resources>

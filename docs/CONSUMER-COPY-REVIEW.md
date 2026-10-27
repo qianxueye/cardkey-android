@@ -626,3 +626,21 @@ This change reuses the complete manager copy baseline above and its later native
 ## Generic IC-card artwork correction (2026-10-26)
 
 Client/candidate: Android manager, `feat/correct-generic-card-chip-20261026`, based on `589dc38`. Reuses the complete copy baseline and existing artwork labels. Generic default/loading/failed and focused-card illustrations now use the approved neutral card face and curved segmented IC module, preserving the 85.60 × 53.98mm face and 13 × 11.8mm module proportions. This supersedes the earlier blue C fallback artwork only. Loaded issuer artwork, visible strings, accessibility descriptions, action conditions, launcher/reader icons and navigation remain unchanged. Activation requires installing this candidate.
+
+## USB detach and explicit reader selection (2026-10-26)
+
+Client/candidate: Android manager, `fix/usb-detach-read-state-20261026`, based on `eb0c2ed`. Reuses the complete manager copy baseline. Trigger: USB mode has no selected reader after detach, including discovery after replug before explicit selection. NFC is not selected automatically. Existing selected-reader, permission, pending-operation and unknown-effect conditions remain in force.
+
+| Screen/key | Before (Chinese / English) | After (Chinese / English) | Reason and activation |
+|---|---|---|---|
+| Home status / `native_reader_missing` | 尚未读取 / Not read | 未选择读卡器 / No reader selected | Show the actual missing selection; candidate installation |
+| Home reader control / `native_choose_reader` | USB / USB | 选择读卡器 / Choose a reader | Opens the existing reader selector; candidate installation |
+| Home guidance / `native_choose_reader_hint` | 选择已连接的 USB 读卡器 / Select a connected USB reader | 选择 NFC 或已连接的 USB 读卡器 / Choose NFC or a connected USB reader | Name both existing explicit choices; candidate installation |
+| Task reader context / `native_reader_missing` | 读卡器 / 读卡器 | 未选择读卡器 / No reader selected | Use the same explicit selection state in task context; candidate installation |
+| Read card control | 读取卡片 / Read card (enabled) | 读取卡片 / Read card (disabled while no reader is selected) | Preserve the action label and prevent an ineligible submission; candidate installation |
+
+Coverage: all three added keys in default Chinese, maintained Chinese and English resources, their no-selection conditions and both native home layouts. Replug discovery leaves the selector available and Read disabled until an explicit USB or NFC choice. PIN preparation and navigation remain available. A raced no-selection submission closes its input without replacing an existing unknown-effect result or starting NFC/card work. Native synthetic render evidence and physical installed-device acceptance are recorded separately in the package handoff; root owns phone capture.
+
+PR #57 localization-gate correction on `fix/usb-detach-read-state-20261026`, parent `79c28b7`: the explicit expected localization scope now includes the three reviewed no-reader keys above, increasing the exact catalog count from 167 to 170. Exact Chinese values, English/Chinese key equality, placeholders, qualified Chinese ownership, locale-list selection and fallback checks remain required. This correction changes only tests and this record; product wording, resources, display conditions and activation are unchanged. The existing 42-case behavior/native UI evidence is reused; the two failed localization suites are checked separately for the corrected candidate.
+
+PR #57 protected-PIV selection correction, parent `85de1f4`: product strings and localization scope remain unchanged. The existing protected recognition and execution controls now require a selected reader in addition to their original profile, permission, inspection and confirmation conditions. Import and clear controls remain available without a reader. Selection is checked before creating a protected scan; a scan whose selection disappears before submission is settled only for its matching owner as cancelled/not dispatched, allowing re-import. Existing no-reader state text above remains the applicable guidance. Activation requires installing the corrected APK; phone acceptance remains separate.

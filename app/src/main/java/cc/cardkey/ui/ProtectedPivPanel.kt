@@ -19,6 +19,7 @@ import cc.cardkey.R
 
 @Composable
 fun ProtectedPivPanel(
+    readerSelected: Boolean,
     state: ProtectedPivState,
     blocked: Boolean,
     inspectionRequired: Boolean,
@@ -80,7 +81,7 @@ fun ProtectedPivPanel(
                 label = { Text(stringResource(R.string.protectedPiv_csrSubject)) }, enabled = selecting, modifier = Modifier.fillMaxWidth())
             if (!state.awaitingPin || inspectionRequired) {
                 Button(onClick = { pin = ""; confirm = false; onRecognize(selectedAction, slot, subject) },
-                    enabled = selecting && state.profileReady && (selectedAction != ProtectedPivAction.RAW_SIGN || state.fileSize != null) &&
+                    enabled = readerSelected && selecting && state.profileReady && (selectedAction != ProtectedPivAction.RAW_SIGN || state.fileSize != null) &&
                         (selectedAction != ProtectedPivAction.CSR || subject.isNotBlank()), modifier = Modifier.testTag("protected-piv-recognize")) {
                     Text(stringResource(R.string.protectedPiv_recognize))
                 }
@@ -95,7 +96,7 @@ fun ProtectedPivPanel(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     modifier = Modifier.fillMaxWidth().testTag("protected-piv-pin"))
                 Text(stringResource(R.string.protectedPiv_pinScope), style = MaterialTheme.typography.bodySmall)
-                Button(onClick = { confirm = true }, enabled = enabled && pin.length in 6..8 && pin.all { it in '0'..'9' },
+                Button(onClick = { confirm = true }, enabled = readerSelected && enabled && pin.length in 6..8 && pin.all { it in '0'..'9' },
                     modifier = Modifier.testTag("protected-piv-execute")) { Text(stringResource(R.string.protectedPiv_execute)) }
             }
             OutlinedButton(onClick = { pin = ""; confirm = false; onClear() }, enabled = !blocked,
@@ -104,7 +105,7 @@ fun ProtectedPivPanel(
                 style = MaterialTheme.typography.bodySmall)
         }
     }
-    if (confirm && state.awaitingPin && enabled && !inspectionRequired) AlertDialog(
+    if (confirm && readerSelected && state.awaitingPin && enabled && !inspectionRequired) AlertDialog(
         onDismissRequest = { confirm = false; pin = "" },
         title = { Text(stringResource(R.string.protectedPiv_confirmTitle)) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

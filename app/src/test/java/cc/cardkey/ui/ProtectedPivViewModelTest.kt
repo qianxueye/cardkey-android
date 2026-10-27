@@ -22,6 +22,24 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbConfiguration
+import android.hardware.usb.UsbManager
+import cc.cardkey.transport.UsbReaderDescriptor
+import cc.cardkey.transport.UsbAuthenticatorReader
+import org.robolectric.shadow.api.Shadow
+import com.google.gson.JsonParser
+import cc.cardkey.protocol.piv.Cs7
+import org.bouncycastle.asn1.x500.X500Name
+import org.bouncycastle.asn1.x509.Extension
+import org.bouncycastle.asn1.x509.SubjectKeyIdentifier
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import java.io.File
+import java.math.BigInteger
+import java.security.KeyFactory
+import java.security.spec.ECPrivateKeySpec
+import java.util.Date
 import android.provider.OpenableColumns
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowContentResolver
@@ -43,6 +61,89 @@ class ProtectedPivViewModelTest {
         ManagerViewModel::class.java.getDeclaredMethod("finish", OperationResult::class.java).apply { isAccessible = true }
             .invoke(model, result)
     }
+    private fun importProtectedDocument(model: ManagerViewModel, kind: ProtectedPivDocument, bytes: ByteArray) {
+        model.resumeProtectedPiv()
+        val id = requireNotNull(model.requestProtectedPivDocument(kind))
+        val uri = Uri.parse("content://synthetic-protected-profile/$id")
+        shadowOf(RuntimeEnvironment.getApplication().contentResolver).registerInputStream(uri, ByteArrayInputStream(bytes))
+        model.receiveProtectedPivDocument(id, uri)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while ((model.protectedPiv.value.documentId != null ||
+                if (kind == ProtectedPivDocument.ISSUER) model.protectedPiv.value.issuerSubject == null
+                else !model.protectedPiv.value.profileReady) && model.state.value.result == null &&
+            System.nanoTime() < deadline) Thread.sleep(5)
+        assertNull(model.protectedPiv.value.documentId)
+        assertNull(model.state.value.result)
+        if (kind == ProtectedPivDocument.ISSUER) assertNotNull(model.protectedPiv.value.issuerSubject)
+        else assertTrue(model.protectedPiv.value.profileReady)
+    }
+
+    private fun importSyntheticProfile(model: ManagerViewModel): ByteArray {
+        val fixture = JsonParser.parseString(File("../fixtures/cs7-v1.json").readText()).asJsonObject
+        fun bytes(name: String) = fixture[name].asString.hexBytes()
+        val key = KeyFactory.getInstance("EC").generatePrivate(ECPrivateKeySpec(BigInteger.valueOf(3), Cs7.curve))
+        val name = X500Name("CN=Synthetic issuer")
+        val issuer = JcaX509v3CertificateBuilder(name, BigInteger.ONE, Date(0), Date(1000), name, Cs7.publicKey(bytes("issuer_point")))
+            .addExtension(Extension.subjectKeyIdentifier, false, SubjectKeyIdentifier(bytes("issuer_id") + ByteArray(12)))
+            .build(JcaContentSignerBuilder("SHA384withECDSA").build(key)).encoded
+        val profile = """{"guid":"${fixture["guid"].asString}","issuer_id":"${fixture["issuer_id"].asString}","card_public":"${fixture["card_point"].asString}","pairing":"12345678"}""".toByteArray()
+        importProtectedDocument(model, ProtectedPivDocument.ISSUER, issuer)
+        importProtectedDocument(model, ProtectedPivDocument.PROFILE, profile)
+        return profile
+    }
+
+    @Test fun detachedUsbCannotCreateProtectedScanOrBlockRepeatedProfileImports() {
+        val app = RuntimeEnvironment.getApplication()
+        val usb = app.getSystemService(UsbManager::class.java)
+        val model = model()
+        val device = Shadow.newInstanceOf(UsbDevice::class.java)
+        ReflectionHelpers.setField(device, "mName", "synthetic-protected-reader")
+        ReflectionHelpers.setField(device, "mConfigurations", emptyArray<UsbConfiguration>())
+        shadowOf(usb).addOrUpdateUsbDevice(device, true)
+        val reader = UsbReaderDescriptor(device, 1)
+        model.selectReader(reader)
+        shadowOf(usb).removeUsbDevice(device)
+        UsbAuthenticatorReader.invalidate(reader)
+        model.refreshReaders()
+        assertFalse(model.state.value.hasSelectedReader)
+        assertFalse(model.state.value.nfc)
+        val profile = importSyntheticProfile(model)
+        try {
+            repeat(2) {
+                val before = model.protectedPiv.value
+                model.recognizeProtectedPiv(ProtectedPivAction.STATUS, 0x9a, "")
+                assertSame(before, model.protectedPiv.value)
+                assertNull(model.state.value.result)
+                assertFalse(model.state.value.busy)
+            }
+            importProtectedDocument(model, ProtectedPivDocument.PROFILE, profile)
+            val pin = "123456".toCharArray()
+            model.executeProtectedPiv(pin)
+            assertArrayEquals(CharArray(6), pin)
+            assertNull(model.state.value.result)
+            assertTrue(model.protectedPiv.value.profileReady)
+            assertFalse(model.state.value.awaitingNfc)
+            assertNull(model.pendingNfcOwner)
+        } finally { profile.fill(0); model.clearProtectedPiv() }
+    }
+
+    @Test fun selectionLostAfterProtectedScanCreationSettlesItsOwnerBeforeReimport() {
+        val model = model()
+        val profile = importSyntheticProfile(model)
+        try {
+            val workflow = ReflectionHelpers.getField<ProtectedPivWorkflow>(model, "protectedWorkflow")
+            val input = workflow.recognize(ProtectedPivAction.STATUS, 0x9a, "")
+            val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
+            state.value = state.value.copy(nfc = false)
+            model.submit(input)
+            assertFalse(model.protectedPiv.value.profileReady)
+            assertNull(model.state.value.result)
+            assertFalse(model.state.value.busy)
+            assertNull(model.pendingNfcOwner)
+            importProtectedDocument(model, ProtectedPivDocument.PROFILE, profile)
+        } finally { profile.fill(0); model.clearProtectedPiv() }
+    }
+
     @Test fun unknownProtectedOperationRequiresAuthenticatedOriginalIdentityInspection() {
         val model = model()
         ReflectionHelpers.setField(model, "operationProtectedIdentity", "original-guid:issuer-fingerprint")
