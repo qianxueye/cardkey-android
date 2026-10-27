@@ -1,6 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="protectedPiv_ordinaryInspection">上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。</string>
-    <string name="app_name" translatable="false">CardKey</string>
+    <string name="app_name" translatable="false">DecisiveCard</string>
     <string name="operation_completed" formatted="false">操作已完成。</string>
     <string name="operation_notDispatched" formatted="false">指令未发送到卡片。</string>
     <string name="operation_unknown" formatted="false">指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。</string>

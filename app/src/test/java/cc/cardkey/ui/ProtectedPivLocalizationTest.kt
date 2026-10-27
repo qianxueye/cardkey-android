@@ -209,7 +209,7 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_inspection" to "请重新导入原卡片的配置，再读取受保护状态；读取前不要重复执行原操作。",
             "protectedPiv_operation" to "受保护操作",
             "protectedPiv_slot" to "受保护槽位",
-            "protectedPiv_csrSubject" to "CSR 主题（例如 CN=CardKey）",
+            "protectedPiv_csrSubject" to "CSR 主题（例如 CN=DecisiveCard）",
             "protectedPiv_recognize" to "识别卡片并读取",
             "protectedPiv_recognized" to "首次扫描已完成。请先移开卡片，再输入 PIN 并确认第二次扫描。",
             "protectedPiv_pending" to "待执行：%1\$s · 槽位 %2\$s",

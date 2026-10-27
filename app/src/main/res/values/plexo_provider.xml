@@ -14,7 +14,7 @@
     <string name="plexo_provider_permission" tools:ignore="MissingTranslation">等待 USB 访问授权</string>
     <string name="plexo_provider_permission_prompt" tools:ignore="MissingTranslation">在系统提示中决定是否允许 %1$s 访问此 USB 读卡器。</string>
     <string name="plexo_provider_get_consequence" tools:ignore="MissingTranslation">将向所列网站提供一次登录验证。</string>
-    <string name="plexo_provider_create_consequence" tools:ignore="MissingTranslation">将在连接的卡片上创建通行密钥。存储在卡片上的凭据会占用卡内空间，无法由 CardKey 复制到另一张卡。</string>
+    <string name="plexo_provider_create_consequence" tools:ignore="MissingTranslation">将在连接的卡片上创建通行密钥。存储在卡片上的凭据会占用卡内空间，无法由 DecisiveCard 复制到另一张卡。</string>
     <string name="plexo_provider_cancel" tools:ignore="MissingTranslation">取消</string>
     <string name="plexo_provider_close" tools:ignore="MissingTranslation">关闭</string>
     <string name="plexo_provider_recognizing" tools:ignore="MissingTranslation">正在连接卡片…</string>
@@ -32,6 +32,6 @@
     <string name="provider_credentialId" tools:ignore="MissingTranslation">通行密钥编号：%1$s</string>
     <string name="provider_userId" tools:ignore="MissingTranslation">账户 ID</string>
     <string name="provider_username" tools:ignore="MissingTranslation">用户名</string>
-    <string name="provider_pinSetup" tools:ignore="MissingTranslation">请先在 CardKey 管理界面设置 FIDO PIN，再重新发起本次请求。本次未验证 PIN。</string>
-    <string name="provider_pinChange" tools:ignore="MissingTranslation">请先在 CardKey 管理界面更改 FIDO PIN，再重新发起本次请求。本次未验证 PIN。</string>
+    <string name="provider_pinSetup" tools:ignore="MissingTranslation">请先在 DecisiveCard 管理界面设置 FIDO PIN，再重新发起本次请求。本次未验证 PIN。</string>
+    <string name="provider_pinChange" tools:ignore="MissingTranslation">请先在 DecisiveCard 管理界面更改 FIDO PIN，再重新发起本次请求。本次未验证 PIN。</string>
 </resources>

@@ -13,7 +13,7 @@
     <string name="protectedPiv_inspection">请重新导入原卡片的配置，再读取受保护状态；读取前不要重复执行原操作。</string>
     <string name="protectedPiv_operation">受保护操作</string>
     <string name="protectedPiv_slot">受保护槽位</string>
-    <string name="protectedPiv_csrSubject">CSR 主题（例如 CN=CardKey）</string>
+    <string name="protectedPiv_csrSubject">CSR 主题（例如 CN=DecisiveCard）</string>
     <string name="protectedPiv_recognize">识别卡片并读取</string>
     <string name="protectedPiv_recognized">首次扫描已完成。请先移开卡片，再输入 PIN 并确认第二次扫描。</string>
     <string name="protectedPiv_pending">待执行：%1$s · 槽位 %2$s</string>
