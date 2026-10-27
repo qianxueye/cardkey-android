@@ -55,16 +55,27 @@ class IssuerBadgeLayoutTest {
     @Test @Config(qualifiers = "en-rUS-w812dp-h375dp-mdpi")
     fun englishLandscapeKeepsLongLabelsReachable() = render(812, 375, 1.6f, "english-landscape")
 
-    private fun render(width: Int, height: Int, fontScale: Float, name: String) = runBlocking<Unit> {
+    @Test fun employeePhoneShowsOnlyOwnProfileAndCurrentArtwork() = render(375, 812, 1f, "employee-phone", "employee")
+    @Test @Config(qualifiers = "en-rUS-w812dp-h375dp-mdpi")
+    fun employeeEnglishLandscapeKeepsSelfViewReadable() = render(812, 375, 1.6f, "employee-english-landscape", "employee")
+    @Test @Config(qualifiers = "zh-rCN-w375dp-h812dp-night-mdpi")
+    fun employeeDarkPhoneShowsOwnBadge() = render(375, 812, 1f, "employee-dark-phone", "employee")
+    @Test @Config(qualifiers = "en-rUS-w375dp-h812dp-mdpi")
+    fun administratorEnglishPhoneRetainsStaffSelection() = render(375, 812, 1f, "administrator-english-phone", "administrator")
+
+    private fun render(width: Int, height: Int, fontScale: Float, name: String, role: String = "operator") = runBlocking<Unit> {
         IssuerFixture().use { fixture ->
+            fixture.role = role
             val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
             val secrets = IssuerSecrets(RuntimeEnvironment.getApplication().getSharedPreferences("layout-$name", Context.MODE_PRIVATE)) { key }
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
             val reader = IssuerReader(secrets, scope) { _, token -> IssuerClient(fixture.origin, token) }
             reader.connect("https://issuer.invalid", "synthetic-token")
             withTimeout(10000) { while (reader.state.value.busy) delay(10) }
-            reader.selectPerson(reader.state.value.people.single())
-            withTimeout(10000) { while (reader.state.value.busy) delay(10) }
+            if (role != "employee") {
+                reader.selectPerson(reader.state.value.people.single())
+                withTimeout(10000) { while (reader.state.value.busy) delay(10) }
+            }
             reader.selectCard(reader.state.value.cards.single())
             withTimeout(10000) { while (reader.state.value.busy || reader.front.state.value is CardArtworkState.Loading || reader.back.state.value is CardArtworkState.Loading) delay(10) }
             val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
@@ -87,6 +98,12 @@ class IssuerBadgeLayoutTest {
                 compose.onNodeWithText(activity.get().getString(R.string.issuer_address)).performScrollTo().assertIsDisplayed()
                 compose.onNodeWithText(activity.get().getString(R.string.issuer_connect)).performScrollTo().assertIsDisplayed()
                 save("$name-connection", activity.get())
+                if (role == "employee") {
+                    compose.onNodeWithText(activity.get().getString(R.string.issuer_people)).assertDoesNotExist()
+                    compose.onNodeWithText(activity.get().getString(R.string.issuer_more_history)).assertDoesNotExist()
+                    compose.onNodeWithText(activity.get().getString(R.string.issuer_person_self)).performScrollTo().assertIsDisplayed()
+                    compose.onNodeWithText(activity.get().getString(R.string.issuer_archived, "2026-10-25T00:00:00Z")).assertDoesNotExist()
+                } else compose.onNodeWithText(activity.get().getString(R.string.issuer_people)).assertExists()
                 compose.onNodeWithText(activity.get().getString(R.string.issuer_snapshot)).performScrollTo().assertIsDisplayed()
                 compose.onNodeWithText("Historical Person · EMP-001").assertExists()
                 compose.onNodeWithText(activity.get().getString(R.string.issuer_back)).performScrollTo().assertIsDisplayed()
@@ -106,6 +123,13 @@ class IssuerBadgeLayoutTest {
                 }
                 compose.onNodeWithText("Historical Person · EMP-001").assertDoesNotExist()
                 compose.onAllNodesWithContentDescription("Synthetic portrait card").assertCountEquals(0)
+                if (height > width) {
+                    compose.onNodeWithTag("native-home-back").performClick()
+                    compose.onNodeWithTag("native-card-home").assertExists()
+                    compose.onNode(hasText(activity.get().getString(R.string.navigation_passkeys)) and hasClickAction())
+                        .performScrollTo().assertIsEnabled().performClick()
+                    compose.onNodeWithTag("workspace-navigation").assertExists()
+                }
             } finally { activity.pause().stop().destroy(); reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }

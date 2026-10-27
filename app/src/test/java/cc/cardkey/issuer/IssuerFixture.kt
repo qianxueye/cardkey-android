@@ -15,6 +15,8 @@ internal class IssuerFixture : AutoCloseable {
     val revisionID = "33333333-3333-4333-8333-333333333333"
     val oldID = "44444444-4444-4444-8444-444444444444"
     val requests = CopyOnWriteArrayList<Pair<String, String?>>()
+    val completedRequests = CopyOnWriteArrayList<String>()
+    var beforeResponse: ((String) -> Unit)? = null
     val png = ByteArrayOutputStream().use { out ->
         val bitmap = Bitmap.createBitmap(20, 32, Bitmap.Config.ARGB_8888)
         bitmap.eraseColor(android.graphics.Color.rgb(35, 57, 91))
@@ -25,6 +27,13 @@ internal class IssuerFixture : AutoCloseable {
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
     val origin get() = "http://127.0.0.1:${server.localPort}"
     var personName = "Synthetic Person"
+    var role = "operator"
+    var identityOverride: String? = null
+    var capabilityOverride: List<String>? = null
+    var bindingOverride: String? = null
+    var selfPersonOverride: String? = null
+    var selfCardPersonOverride: String? = null
+
     var failure = 0
     var failurePath: String? = null
     var peopleFirstPageHasPerson = false
@@ -44,6 +53,7 @@ internal class IssuerFixture : AutoCloseable {
     var historyFirstPageEmpty = false
     var peoplePages = false
     var cardPages = false
+    var cardsFirstPageHasCard = false
     var historyPages = false
     var enteredDelay = java.util.concurrent.CountDownLatch(1)
     init {
@@ -63,21 +73,48 @@ internal class IssuerFixture : AutoCloseable {
             try {
                 val path = exchange.requestURI.path
                 requests.add(exchange.requestURI.toString() to exchange.requestHeaders["authorization"])
+                beforeResponse?.invoke(exchange.requestURI.toString())
                 if (path == delayPath && (delayToken == null || exchange.requestHeaders["authorization"] == "Bearer $delayToken")) { enteredDelay.countDown(); Thread.sleep(delayMillis) }
                 if (exchange.requestHeaders["authorization"]?.removePrefix("Bearer ") in rejectedTokens) respond(exchange, 401, "application/json", "{}".toByteArray())
                 else if (failure != 0 && (failurePath == null || failurePath == path)) { exchange.responseHeaders["Location"] = redirect; respond(exchange, failure, "application/json", "{}".toByteArray()) }
+                else if (role == "employee" && path != "/v1/me" && !path.startsWith("/v1/me/")) respond(exchange, 403, "application/json", "{}".toByteArray())
                 else when {
-                    path == "/v1/me" -> json(exchange, """{"operator":{"id":"test-operator","display_name":"Test Operator","administrator":false},"capabilities":["people:read","cards:read"],"ca_id":"test-ca","ca_url":"https://ca.invalid"}""")
+                    path == "/v1/me" -> json(exchange, identity())
+                    path == "/v1/me/person" -> json(exchange, com.google.gson.JsonParser.parseString(person()).asJsonObject.apply {
+                        listOf("version", "created_at", "updated_at").forEach(::remove); addProperty("id", selfPersonOverride ?: personID)
+                    }.toString())
                     path == "/v1/people" -> json(exchange, page(if (peopleEmpty || peoplePages && !peopleFirstPageHasPerson && !exchange.requestURI.query.contains("cursor=second")) "" else person(), if (peoplePages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
-                    path == "/v1/cards" -> json(exchange, page(if (cardsEmpty || cardPages && !exchange.requestURI.query.contains("cursor=second")) "" else card(), if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
-                    path.endsWith("/badge-current") -> if (currentMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, revision())
+                    path == "/v1/cards" || path == "/v1/me/cards" -> json(exchange, page(if (cardsEmpty || cardPages && !cardsFirstPageHasCard && !exchange.requestURI.query.contains("cursor=second")) "" else card().replace("\"person_id\":\"$personID\"", "\"person_id\":\"${selfCardPersonOverride ?: personID}\""), if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
+                    path.endsWith("/badge-current") -> if (currentMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, if (path.startsWith("/v1/me/")) selfRevision() else revision())
                     path.endsWith("/badge-revisions") -> if (historyMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, page(if (historyEmpty || historyFirstPageEmpty && !exchange.requestURI.query.contains("cursor=older")) "" else if (exchange.requestURI.query.contains("cursor=older")) revision(oldID) else revision(), if (historyPages && !exchange.requestURI.query.contains("cursor=older")) "older" else ""))
                     path.endsWith("/front") || path.endsWith("/back") -> respond(exchange, if (mediaFailure == 0) 200 else mediaFailure, mediaType, mediaBytes ?: png)
                     else -> respond(exchange, 404, "application/json", "{}".toByteArray())
                 }
             } catch (_: Exception) { exchange.close() }
+            finally { completedRequests.add(exchange.requestURI.toString()) }
         }
     }
+    fun identity(): String {
+        identityOverride?.let { return it }
+        val identity = com.google.gson.JsonObject().apply {
+            addProperty("id", "test-operator"); addProperty("display_name", "Synthetic Account")
+            addProperty("role", role); addProperty("administrator", role == "administrator")
+            if (role == "employee" || bindingOverride != null) addProperty("person_id", bindingOverride ?: personID)
+        }
+        val capabilities = capabilityOverride ?: when (role) {
+            "employee" -> listOf("self:read", "self:artwork:read")
+            "administrator" -> listOf("people:read", "people:write", "cards:read", "cards:write", "issuances:write", "events:read", "issuances:close-out")
+            else -> listOf("people:read", "people:write", "cards:read", "cards:write", "issuances:write", "events:read")
+        }
+        return com.google.gson.JsonObject().apply {
+            add("operator", identity)
+            add("capabilities", com.google.gson.JsonArray().apply { capabilities.forEach { add(it) } })
+            addProperty("ca_id", "test-ca"); addProperty("ca_url", "https://ca.invalid")
+        }.toString()
+    }
+    fun selfRevision(): String = com.google.gson.JsonParser.parseString(revision()).asJsonObject.apply {
+        listOf("source_output_id", "source_created_at", "person_version", "card_version", "actor").forEach(::remove)
+    }.toString()
     fun person() = """{"id":"$personID","employee_reference":"EMP-001","display_name":"$personName","badge_number":"B-01","department":"Example","job_title":"Operator","employment_status":"inactive","version":3,"created_at":"2026-10-26T00:00:00Z","updated_at":"2026-10-26T00:00:00Z"}"""
     fun card() = """{"id":"$cardID","person_id":"$personID","serial":"123456","status":"lost","version":2}"""
     fun revision(id: String = revisionID): String {
