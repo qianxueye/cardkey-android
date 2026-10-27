@@ -1,4 +1,3 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FFFFFF" android:pathData="M30,30L78,30Q82,30 82,34L82,74Q82,78 78,78L30,78Q26,78 26,74L26,34Q26,30 30,30Z" />
-    <path android:fillColor="#006C4C" android:pathData="M34,38L50,38L50,50L34,50Z M64,48a8,8 0,1 0,0 16a8,8 0,1 0,0 -16 M61,62L67,62L67,72L61,72Z" />
-</vector>
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_decisivecard"
+    android:inset="18dp" />

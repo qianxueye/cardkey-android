@@ -4,7 +4,7 @@ A native Kotlin and Jetpack Compose Material 3 manager for FIDO2 and PIV smart c
 
 The application targets Android 14 and later. NFC uses Android IsoDep. USB FIDO HID interfaces with matching 64-byte input/output reports use direct CTAP2 and U2F interrupt transfers for both the Manager and Credential Provider; PIV is unavailable on this route. [CTAPHID scope and ownership](docs/CTAPHID-TRANSPORT.md) The USB adapter handles the Identiv uTrust 2700R (`04e6:5810`) through reader-managed APDU exchange or host-managed T=1 TPDU exchange. The recorded TPDU profile (`bcdDevice=0202`, features `0x100BA`) requires valid current T=1 parameters, successful link synchronization, and an acknowledged IFSD of 32 before any APDU. T=0 TPDU exchange is unsupported. Physical reader and phone qualification must be recorded separately from a successful build. [Transport scope](docs/T1-TRANSPORT.md)
 
-The product display name is `DecisiveCard`, supplied by `app_name` to the launcher, manager, credential-provider entries and permission prompts. Application IDs, component names and card protocol identities keep their existing values.
+The product display name is `DecisiveCard`, supplied by `app_name` to the launcher, manager, credential-provider entries and permission prompts. Application IDs, component names and card protocol identities keep their existing values. The launcher icon uses the approved square master in `branding/app-icon-master.png`; its adaptive foreground is sized from that source and inset to preserve the artwork under system masks.
 
 ## Build
 
