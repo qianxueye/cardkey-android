@@ -371,6 +371,71 @@ class IssuerReaderTest {
             } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
+    @Test fun employeeArtwork404ReleasesBusyPaginationWithoutLateResultsOrAutomaticQueries() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.role = "employee"; fixture.cardPages = true; fixture.cardsFirstPageHasCard = true
+            val imageStarted = java.util.concurrent.CountDownLatch(2)
+            val releaseImages = java.util.concurrent.CountDownLatch(1)
+            val pageStarted = java.util.concurrent.CountDownLatch(1)
+            val releasePage = java.util.concurrent.CountDownLatch(1)
+            fixture.beforeResponse = { route ->
+                when {
+                    route.endsWith("/front") || route.endsWith("/back") -> {
+                        imageStarted.countDown(); check(releaseImages.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    }
+                    route.startsWith("/v1/me/cards?") && route.contains("cursor=second") -> {
+                        pageStarted.countDown(); check(releasePage.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    }
+                }
+            }
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "employee-token"); awaitReady(reader)
+                val selectedCard = reader.state.value.cards.single()
+                fixture.mediaFailure = 404
+                reader.selectCard(selectedCard); awaitReady(reader)
+                withContext(Dispatchers.IO) { assertTrue(imageStarted.await(5, java.util.concurrent.TimeUnit.SECONDS)) }
+                reader.moreCards()
+                withContext(Dispatchers.IO) { assertTrue(pageStarted.await(5, java.util.concurrent.TimeUnit.SECONDS)) }
+                assertTrue(reader.state.value.busy)
+                val requestCount = fixture.requests.size
+                releaseImages.countDown()
+                withTimeout(5000) { while (reader.state.value.revisionsError == null) delay(10) }
+                assertFalse("Artwork retirement must release the canceled pagination busy state", reader.state.value.busy)
+                assertEquals(IssuerRole.EMPLOYEE, reader.state.value.identity!!.role)
+                assertEquals(fixture.personID, reader.state.value.person!!.id)
+                assertEquals(selectedCard, reader.state.value.card)
+                assertNull(reader.state.value.revision); assertNull(reader.state.value.current)
+                assertFalse(reader.state.value.revisionsLoaded)
+                assertEquals(CardArtworkState.Default, reader.front.state.value)
+                assertEquals(CardArtworkState.Default, reader.back.state.value)
+                assertEquals(R.string.issuer_artwork_unavailable, reader.state.value.revisionsError)
+                releasePage.countDown()
+                withTimeout(5000) {
+                    while (fixture.completedRequests.none { it.startsWith("/v1/me/cards?") && it.contains("cursor=second") }) delay(10)
+                }
+                assertEquals("second", reader.state.value.cardsCursor)
+                assertFalse(reader.state.value.busy)
+                assertEquals(requestCount, fixture.requests.size)
+
+                fixture.beforeResponse = null; fixture.mediaFailure = 0
+                reader.retryRevisions(); awaitReady(reader); awaitImages(reader)
+                assertTrue(reader.front.state.value is CardArtworkState.Loaded)
+                assertTrue(reader.back.state.value is CardArtworkState.Loaded)
+                reader.moreCards(); awaitReady(reader)
+                assertEquals("", reader.state.value.cardsCursor)
+                reader.connect("https://issuer.invalid", "employee-token"); awaitReady(reader)
+                assertEquals(IssuerRole.EMPLOYEE, reader.state.value.identity!!.role)
+                assertEquals(CardArtworkState.Default, reader.front.state.value)
+                assertEquals(requestCount + 7, fixture.requests.size)
+                assertFalse(reader.state.value.busy)
+            } finally {
+                releaseImages.countDown(); releasePage.countDown()
+                reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() }
+            }
+        }
+    }
     @Test fun employeeMissingImageRequiresCurrentRefreshAndForbiddenClearsAuthority() = runBlocking {
         IssuerFixture().use { fixture ->
             fixture.role = "employee"

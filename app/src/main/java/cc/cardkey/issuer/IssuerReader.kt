@@ -39,7 +39,7 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
                     failure.status == 403 -> forbidden()
                     failure.status == 404 && mutable.value.identity?.role == IssuerRole.EMPLOYEE -> {
                         retire()
-                        mutable.value = mutable.value.copy(revision = null, current = null, revisionsLoaded = false,
+                        mutable.value = mutable.value.copy(busy = false, revision = null, current = null, revisionsLoaded = false,
                             revisionsError = R.string.issuer_artwork_unavailable)
                     }
                 }
