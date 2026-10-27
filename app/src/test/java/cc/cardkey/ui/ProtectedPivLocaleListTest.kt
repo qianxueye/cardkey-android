@@ -56,7 +56,7 @@ class ProtectedPivLocaleListTest {
         val chinese = entries(chineseFile)
         val defaults = requireNotNull(File("src/main/res/values").listFiles()).filter { it.extension == "xml" }
             .flatMap { entries(it).entries }.associate { it.key to it.value }
-        assertEquals(167, english.size)
+        assertEquals(170, english.size)
         assertEquals(english.keys, chinese.keys)
         val placeholders = Regex("%[0-9]+\\$[sd]")
         for ((key, translated) in chinese) {
@@ -83,7 +83,7 @@ class ProtectedPivLocaleListTest {
         val preferred = context(app, "zh-CN,en-US").resources
         val nodes = DocumentBuilderFactory.newInstance().newDocumentBuilder()
             .parse(File("src/main/res/values-en/protected_piv.xml")).getElementsByTagName("string")
-        assertEquals(167, nodes.length)
+        assertEquals(170, nodes.length)
         for (index in 0 until nodes.length) {
             val key = nodes.item(index).attributes.getNamedItem("name").nodeValue
             val id = chinese.getIdentifier(key, "string", app.packageName)
