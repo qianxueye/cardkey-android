@@ -70,7 +70,7 @@ class CopyPruningTest {
 
     @Test fun protectedPanelOmitsScopeCaveatsButRetainsRecoveryInstructions() {
         render({ Column(Modifier.verticalScroll(rememberScrollState())) {
-            ProtectedPivPanel(ProtectedPivState(profileReady = true), false, true, 0, {}, {}, { _, _, _ -> }, {}, true)
+            ProtectedPivPanel(true, ProtectedPivState(profileReady = true), false, true, 0, {}, {}, { _, _, _ -> }, {}, true)
         } }) {
             compose.onNodeWithText("This certificate supplies the enrolled public key and identifier.", substring = true).assertDoesNotExist()
             compose.onNodeWithText("The configuration is ready.").performScrollTo().assertIsDisplayed()

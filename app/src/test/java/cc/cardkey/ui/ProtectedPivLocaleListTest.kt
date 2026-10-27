@@ -118,7 +118,7 @@ class ProtectedPivLocaleListTest {
             CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides localized.resources.configuration) {
                 MaterialTheme {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
-                        ProtectedPivPanel(ProtectedPivState(generation = 1, profileReady = true, awaitingPin = true,
+                        ProtectedPivPanel(true, ProtectedPivState(generation = 1, profileReady = true, awaitingPin = true,
                             issuerSubject = "\u202e", issuerFingerprint = "abc", action = ProtectedPivAction.VERIFY_PIN,
                             retries = 1, erasesKeysOnFailure = true), false, false, 0, {}, {}, { _, _, _ -> }, {})
                     }

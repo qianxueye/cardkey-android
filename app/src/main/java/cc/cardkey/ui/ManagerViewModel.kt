@@ -146,7 +146,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun recognizeProtectedPiv(action: ProtectedPivAction, slot: Int, subject: String) {
-        if (mutable.value.busy || mutable.value.requiresInspection && action != ProtectedPivAction.STATUS || !mutable.value.supportsPiv) return
+        if (!mutable.value.hasSelectedReader || mutable.value.busy || mutable.value.requiresInspection && action != ProtectedPivAction.STATUS || !mutable.value.supportsPiv) return
         try { submitOwned(protectedWorkflow.recognize(action, slot, subject)) }
         catch (_: IllegalArgumentException) {
             mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
@@ -155,7 +155,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun executeProtectedPiv(pin: CharArray) {
         try {
-            if (mutable.value.busy || mutable.value.requiresInspection || !mutable.value.supportsPiv) return
+            if (!mutable.value.hasSelectedReader || mutable.value.busy || mutable.value.requiresInspection || !mutable.value.supportsPiv) return
             submitOwned(protectedWorkflow.execute(pin))
         } catch (_: IllegalArgumentException) {
             mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
@@ -639,8 +639,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun submit(input: OperationInput) {
-        if (!mutable.value.hasSelectedReader) { input.close(); return }
-        if (!input.operation.isFileSigning) { submitOwned(input); return }
+        if (!mutable.value.hasSelectedReader || !input.operation.isFileSigning) { submitOwned(input); return }
         if (mutable.value.busy || mutable.value.requiresInspection) { input.close(); return }
         if (!mutable.value.supportsPiv) { submitOwned(input); return }
         if (mutable.value.nfc) {
@@ -665,7 +664,12 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun submitOwned(input: OperationInput) {
-        if (!mutable.value.hasSelectedReader) { input.close(); return }
+        if (!mutable.value.hasSelectedReader) {
+            input.protectedScan?.let { protectedWorkflow.settle(it,
+                OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)) }
+            input.close()
+            return
+        }
         if (input.protectedScan == null && !mutable.value.busy) protectedWorkflow.retire()
         if (mutable.value.busy) { input.close(); return }
         if (mutable.value.requiresInspection && !ConfirmationPolicy.canInspect(input.operation)) {

@@ -49,7 +49,7 @@ class ProtectedPivLocalizationTest {
     private fun render(locale: String, state: ProtectedPivState, inspection: Boolean = false,
                        protectedInspection: Boolean = false, check: () -> Unit) {
         renderContent(locale, {
-            ProtectedPivPanel(state, false, inspection, 0, {}, {}, { _, _, _ -> }, {}, protectedInspection)
+            ProtectedPivPanel(true, state, false, inspection, 0, {}, {}, { _, _, _ -> }, {}, protectedInspection)
         }, check)
     }
 

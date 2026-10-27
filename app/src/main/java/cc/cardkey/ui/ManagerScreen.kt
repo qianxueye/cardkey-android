@@ -474,7 +474,7 @@ fun ManagerScreen(
                         }
                     }
                     if (tab == 1) key(state.selectedReader?.routeKey, state.nfc) {
-                        ProtectedPivPanel(protectedPiv, state.busy || state.permissionPending, state.requiresInspection,
+                        ProtectedPivPanel(state.hasSelectedReader, protectedPiv, state.busy || state.permissionPending, state.requiresInspection,
                             clearInputs, onProtectedPivDocument, onProtectedPivClear, onProtectedPivRecognize,
                             onProtectedPivExecute, protectedInspectionRequired = state.requiresProtectedInspection)
                     }
