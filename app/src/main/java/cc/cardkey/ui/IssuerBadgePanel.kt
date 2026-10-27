@@ -49,23 +49,30 @@ internal fun IssuerBadgePanel(reader: IssuerReader) {
         }
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         state.error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
-        state.actor?.let { actor ->
-            Text(stringResource(R.string.issuer_operator, actor))
+        state.identity?.let { identity ->
+            Text(stringResource(R.string.issuer_operator, identity.id))
+            Text(stringResource(when (identity.role) {
+                IssuerRole.EMPLOYEE -> R.string.issuer_role_employee
+                IssuerRole.OPERATOR -> R.string.issuer_role_operator
+                IssuerRole.ADMINISTRATOR -> R.string.issuer_role_administrator
+            }))
             TextButton(onClick = reader::close) { Text(stringResource(R.string.issuer_disconnect)) }
-            Text(stringResource(R.string.issuer_people), style = MaterialTheme.typography.titleLarge)
-            if (state.peopleLoaded && state.people.isEmpty() && state.peopleCursor.isEmpty() && !state.busy && state.error == null) Text(stringResource(R.string.issuer_no_people))
-            state.people.forEach { person ->
-                OutlinedButton(onClick = { reader.selectPerson(person) },
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.person?.id == person.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
-                    modifier = Modifier.fillMaxWidth().semantics { selected = state.person?.id == person.id }) {
-                    Text("${person.name} · ${person.reference}")
+            if (identity.staff) {
+                Text(stringResource(R.string.issuer_people), style = MaterialTheme.typography.titleLarge)
+                if (state.peopleLoaded && state.people.isEmpty() && state.peopleCursor.isEmpty() && !state.busy && state.error == null) Text(stringResource(R.string.issuer_no_people))
+                state.people.forEach { person ->
+                    OutlinedButton(onClick = { reader.selectPerson(person) },
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.person?.id == person.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
+                        modifier = Modifier.fillMaxWidth().semantics { selected = state.person?.id == person.id }) {
+                        Text("${person.name} · ${person.reference}")
+                    }
                 }
+                if (state.peopleCursor.isNotEmpty()) TextButton(onClick = reader::morePeople, enabled = !state.busy) { Text(stringResource(R.string.issuer_more_people)) }
             }
-            if (state.peopleCursor.isNotEmpty()) TextButton(onClick = reader::morePeople, enabled = !state.busy) { Text(stringResource(R.string.issuer_more_people)) }
         }
         state.person?.let { person ->
             HorizontalDivider()
-            Text(stringResource(R.string.issuer_person_current), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(if (state.identity?.staff == true) R.string.issuer_person_current else R.string.issuer_person_self), style = MaterialTheme.typography.titleLarge)
             Text("${person.name} · ${person.reference}")
             Text(listOf(person.department, person.title, person.badge).filter { it.isNotEmpty() }.joinToString(" · "))
             Text(stringResource(if (person.active) R.string.issuer_active else R.string.issuer_inactive))
@@ -87,24 +94,30 @@ internal fun IssuerBadgePanel(reader: IssuerReader) {
             Text(stringResource(R.string.issuer_card, card.serial, stringResource(cardStatus(card.status))), style = MaterialTheme.typography.titleLarge)
             state.revisionsError?.let {
                 Text(stringResource(it), color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = reader::retryRevisions, enabled = !state.busy) { Text(stringResource(R.string.issuer_retry_revisions)) }
-            }
-            if (state.revisionsLoaded && state.revisions.isEmpty() && state.revisionsCursor.isEmpty() && state.current == null && !state.busy && state.revisionsError == null) Text(stringResource(R.string.issuer_no_badge))
-            state.revisions.forEach { revision ->
-                OutlinedButton(onClick = { reader.selectRevision(revision) },
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.revision?.id == revision.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
-                    modifier = Modifier.fillMaxWidth().semantics { selected = state.revision?.id == revision.id }) {
-                    Text(stringResource(if (revision.id == state.current) R.string.issuer_current else R.string.issuer_history, revision.created))
+                TextButton(onClick = reader::retryRevisions, enabled = !state.busy) {
+                    Text(stringResource(if (state.identity?.staff == true) R.string.issuer_retry_revisions else R.string.issuer_retry_current))
                 }
             }
-            if (state.revisionsCursor.isNotEmpty()) TextButton(onClick = reader::moreRevisions, enabled = !state.busy) { Text(stringResource(R.string.issuer_more_history)) }
+            if (state.revisionsLoaded && state.revisions.isEmpty() && state.revisionsCursor.isEmpty() && state.current == null && !state.busy && state.revisionsError == null) Text(stringResource(R.string.issuer_no_badge))
+            if (state.identity?.staff == true) {
+                state.revisions.forEach { revision ->
+                    OutlinedButton(onClick = { reader.selectRevision(revision) },
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.revision?.id == revision.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
+                        modifier = Modifier.fillMaxWidth().semantics { selected = state.revision?.id == revision.id }) {
+                        Text(stringResource(if (revision.id == state.current) R.string.issuer_current else R.string.issuer_history, revision.created))
+                    }
+                }
+                if (state.revisionsCursor.isNotEmpty()) TextButton(onClick = reader::moreRevisions, enabled = !state.busy) { Text(stringResource(R.string.issuer_more_history)) }
+            }
         }
         state.revision?.let { revision ->
             Text(stringResource(R.string.issuer_snapshot), style = MaterialTheme.typography.titleLarge)
             Text("${revision.name} · ${revision.reference}")
             Text(listOf(revision.department, revision.title, revision.badge).filter { it.isNotEmpty() }.joinToString(" · "))
-            Text(stringResource(R.string.issuer_published, revision.created, revision.actor))
-            Text(stringResource(R.string.issuer_archived, revision.sourceCreated))
+            if (state.identity?.staff == true) {
+                Text(stringResource(R.string.issuer_published, revision.created, requireNotNull(revision.actor)))
+                Text(stringResource(R.string.issuer_archived, requireNotNull(revision.sourceCreated)))
+            } else Text(stringResource(R.string.issuer_published_self, revision.created))
             Text(stringResource(R.string.issuer_front), style = MaterialTheme.typography.titleMedium)
             CardArtworkHero(front, reader::retryArtwork)
             Text(stringResource(R.string.issuer_back), style = MaterialTheme.typography.titleMedium)

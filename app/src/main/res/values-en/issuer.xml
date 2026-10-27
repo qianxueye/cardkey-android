@@ -1,12 +1,12 @@
 <resources>
     <string name="issuer_title">Badge records</string>
-    <string name="issuer_intro">Connect to the badge service, select an employee, and view published artwork.</string>
+    <string name="issuer_intro">Connect to the badge service to view the records available to your account.</string>
     <string name="issuer_address">Badge service address (HTTPS)</string>
-    <string name="issuer_token">Operator access token</string>
-    <string name="issuer_token_hint">The token is saved on this device for this service only. Leave blank to use the saved token. Operator tokens also allow changes on the service.</string>
+    <string name="issuer_token">Account access token</string>
+    <string name="issuer_token_hint">The token is saved on this device for this service only. Leave blank to use the saved token.</string>
     <string name="issuer_connect">Connect and refresh</string>
     <string name="issuer_disconnect">Disconnect</string>
-    <string name="issuer_operator">Operator: %1$s</string>
+    <string name="issuer_operator">Account: %1$s</string>
     <string name="issuer_people">Select an employee</string>
     <string name="issuer_no_people">The service has no employee records.</string>
     <string name="issuer_more_people">More employees</string>
@@ -30,7 +30,7 @@
     <string name="issuer_front">Front</string>
     <string name="issuer_back">Back</string>
     <string name="issuer_address_error">Enter an HTTPS service address without a path, query parameters, or login details.</string>
-    <string name="issuer_token_required">Enter an operator access token for this service.</string>
+    <string name="issuer_token_required">Enter an account access token for this service.</string>
     <string name="issuer_unauthorized">The service rejected the access token. Enter a valid token and reconnect.</string>
     <string name="issuer_missing">The selected record is no longer on the service. Reconnect and select a record.</string>
     <string name="issuer_redirect">The service returned a redirect. Check the service address and reconnect.</string>
@@ -40,4 +40,13 @@
     <string name="issuer_secret_save_failed">Could not save the access token. Try connecting again.</string>
     <string name="issuer_retry_cards">Retry badge records</string>
     <string name="issuer_retry_revisions">Retry artwork versions</string>
+    <string name="issuer_role_employee">Employee account</string>
+    <string name="issuer_role_operator">Staff account</string>
+    <string name="issuer_role_administrator">Administrator account</string>
+    <string name="issuer_person_self">My details</string>
+    <string name="issuer_published_self">Artwork published: %1$s</string>
+    <string name="issuer_invalid_identity">The service returned invalid account permissions. Contact the service administrator.</string>
+    <string name="issuer_forbidden">This account cannot read these badge records. Connect again.</string>
+    <string name="issuer_artwork_unavailable">This artwork is no longer available. Reload the current artwork.</string>
+    <string name="issuer_retry_current">Reload current artwork</string>
 </resources>

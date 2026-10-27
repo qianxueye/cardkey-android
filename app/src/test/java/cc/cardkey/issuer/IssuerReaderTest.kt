@@ -31,7 +31,7 @@ class IssuerReaderTest {
             val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
             try {
                 reader.connect("https://issuer-a.invalid", "synthetic-token"); awaitReady(reader)
-                assertEquals("test-operator", reader.state.value.actor)
+                assertEquals("test-operator", reader.state.value.identity?.id)
                 assertTrue(reader.state.value.people.isEmpty()); reader.morePeople(); awaitReady(reader)
                 reader.selectPerson(reader.state.value.people.single()); awaitReady(reader)
                 assertFalse(reader.state.value.person!!.active)
@@ -62,7 +62,7 @@ class IssuerReaderTest {
                 reader.selectCard(reader.state.value.cards.single())
                 withContext(Dispatchers.IO) { assertTrue(a.enteredDelay.await(3, java.util.concurrent.TimeUnit.SECONDS)) }
                 reader.editConnection()
-                assertNull(reader.state.value.person); assertNull(reader.state.value.actor)
+                assertNull(reader.state.value.person); assertNull(reader.state.value.identity?.id)
                 assertEquals(CardArtworkState.Default, reader.front.state.value)
                 reader.connect("https://issuer-b.invalid", "") ; awaitReady(reader)
                 assertEquals(R.string.issuer_token_required, reader.state.value.error)
@@ -85,7 +85,7 @@ class IssuerReaderTest {
                 reader.selectPerson(reader.state.value.people.single()); awaitReady(reader)
                 fixture.mediaFailure = 401
                 reader.selectCard(reader.state.value.cards.single()); awaitReady(reader); awaitImages(reader)
-                withTimeout(5000) { while (reader.state.value.actor != null) delay(10) }
+                withTimeout(5000) { while (reader.state.value.identity?.id != null) delay(10) }
                 assertNull(reader.state.value.revision); assertNull(secrets.token("https://issuer.invalid"))
                 assertEquals(R.string.issuer_unauthorized, reader.state.value.error)
             } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
@@ -98,6 +98,7 @@ class IssuerReaderTest {
             try { api.me(); fail("redirect accepted") } catch (e: IssuerFailure) { assertEquals(302, e.status) }
             assertTrue(b.requests.isEmpty())
             a.failure = 0
+            api.me()
             val card = api.cards(a.personID).items.single()
             val revision = api.current(card)!!
             a.mediaBytes = ByteArray(1_048_577)
@@ -144,7 +145,7 @@ class IssuerReaderTest {
                 assertNull(reader.state.value.revision); assertEquals(CardArtworkState.Default, reader.front.state.value)
                 fixture.failure = 401
                 reader.selectPerson(reader.state.value.people.single()); awaitReady(reader)
-                assertNull(reader.state.value.actor); assertTrue(reader.state.value.people.isEmpty())
+                assertNull(reader.state.value.identity?.id); assertTrue(reader.state.value.people.isEmpty())
                 assertEquals(R.string.issuer_unauthorized, reader.state.value.error)
             } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
@@ -233,11 +234,172 @@ class IssuerReaderTest {
                     withContext(Dispatchers.IO) { assertTrue(fixture.enteredDelay.await(3, java.util.concurrent.TimeUnit.SECONDS)) }
                     reader.connect(nextOrigin, "token-b"); awaitReady(reader)
                     delay(400)
-                    assertEquals("test-operator", reader.state.value.actor)
+                    assertEquals("test-operator", reader.state.value.identity?.id)
                     assertEquals(nextOrigin, reader.state.value.origin)
                     assertEquals("token-b", store.token(nextOrigin))
                     assertEquals("token-b", store.token("https://issuer.invalid"))
                 }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun employeeReadsOnlyBoundProfileCardsAndCurrentArtwork() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.role = "employee"; fixture.cardPages = true
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "employee-token"); awaitReady(reader)
+                assertEquals("test-operator", reader.state.value.identity?.id)
+                assertEquals(fixture.personID, reader.state.value.person!!.id)
+                assertTrue(reader.state.value.people.isEmpty())
+                assertEquals("second", reader.state.value.cardsCursor)
+                reader.moreCards(); awaitReady(reader)
+                reader.selectCard(reader.state.value.cards.single()); awaitReady(reader); awaitImages(reader)
+                assertEquals(fixture.revisionID, reader.state.value.revision!!.id)
+                assertTrue(reader.front.state.value is CardArtworkState.Loaded)
+                assertTrue(reader.back.state.value is CardArtworkState.Loaded)
+                assertTrue(reader.state.value.revisions.isEmpty())
+                assertTrue(fixture.requests.all { it.first == "/v1/me" || it.first.startsWith("/v1/me/") })
+                assertFalse(fixture.requests.any { it.first.contains("person_id=") || it.first.contains("badge-revisions?") })
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun unknownRoleCannotLoadStaffRecords() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.role = "future-admin"
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "token"); awaitReady(reader)
+                assertNull(reader.state.value.identity?.id)
+                assertTrue(reader.state.value.people.isEmpty())
+                assertEquals(listOf("/v1/me"), fixture.requests.map { it.first })
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun malformedRoleCapabilitiesAndBindingsFailBeforeRecordReads() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.role = "employee"
+            val base = com.google.gson.JsonParser.parseString(fixture.identity()).asJsonObject
+            val cases = listOf<(com.google.gson.JsonObject) -> Unit>(
+                { it.getAsJsonObject("operator").remove("role") },
+                { it.getAsJsonObject("operator").addProperty("role", 1) },
+                { it.getAsJsonObject("operator").remove("person_id") },
+                { it.getAsJsonObject("operator").add("person_id", com.google.gson.JsonNull.INSTANCE) },
+                { it.getAsJsonObject("operator").addProperty("person_id", "wrong") },
+                { it.getAsJsonObject("operator").addProperty("role", "operator") },
+                { it.getAsJsonObject("operator").addProperty("administrator", true) },
+                { it.getAsJsonObject("operator").addProperty("id", 123) },
+                { it.getAsJsonObject("operator").addProperty("display_name", " ") },
+                { it.addProperty("capabilities", "self:read") },
+                { it.getAsJsonArray("capabilities").add("cards:read") },
+                { it.getAsJsonArray("capabilities").add("unknown:read") },
+                { it.getAsJsonArray("capabilities").add("self:read") },
+                { it.getAsJsonArray("capabilities").remove(0) },
+                { it.getAsJsonArray("capabilities").set(0, com.google.gson.JsonPrimitive(1)) },
+            )
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val store = secrets()
+            val reader = IssuerReader(store, scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                cases.forEachIndexed { index, mutate ->
+                    val malformed = base.deepCopy(); mutate(malformed); fixture.identityOverride = malformed.toString()
+                    fixture.requests.clear()
+                    reader.connect("https://issuer.invalid", "token"); awaitReady(reader)
+                    assertNull("case $index", reader.state.value.identity)
+                    assertEquals("case $index", R.string.issuer_invalid_identity, reader.state.value.error)
+                    assertEquals(listOf("/v1/me"), fixture.requests.map { it.first })
+                    assertNull(store.token("https://issuer.invalid"))
+                }
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun administratorRetainsStaffReadsAndEmployeeBindingsAreChecked() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.role = "administrator"
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "admin-token"); awaitReady(reader)
+                assertEquals(IssuerRole.ADMINISTRATOR, reader.state.value.identity!!.role)
+                assertEquals(1, reader.state.value.people.size)
+                fixture.role = "employee"; fixture.selfPersonOverride = fixture.oldID
+                fixture.requests.clear()
+                reader.connect("https://issuer.invalid", "employee-token"); awaitReady(reader)
+                assertNull(reader.state.value.person)
+                assertEquals(R.string.issuer_invalid_response, reader.state.value.error)
+                assertFalse(fixture.requests.any { it.first.startsWith("/v1/me/cards") })
+                fixture.selfPersonOverride = null; fixture.selfCardPersonOverride = fixture.oldID
+                reader.connect("https://issuer.invalid", "employee-token"); awaitReady(reader)
+                assertEquals(fixture.personID, reader.state.value.person!!.id)
+                assertTrue(reader.state.value.cards.isEmpty())
+                assertFalse(reader.state.value.cardsLoaded)
+                assertEquals(R.string.issuer_invalid_response, reader.state.value.error)
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun staffToEmployeeSwitchRetiresDelayedArtworkAndStaffActions() = runBlocking {
+        IssuerFixture().use { fixture ->
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "staff-token"); awaitReady(reader)
+                val previousPerson = reader.state.value.people.single()
+                reader.selectPerson(previousPerson); awaitReady(reader)
+                fixture.delayPath = "/v1/badge-revisions/${fixture.revisionID}/front"; fixture.delayMillis = 400
+                reader.selectCard(reader.state.value.cards.single()); awaitReady(reader)
+                val previousRevision = reader.state.value.revision!!
+                withContext(Dispatchers.IO) { assertTrue(fixture.enteredDelay.await(3, java.util.concurrent.TimeUnit.SECONDS)) }
+                fixture.role = "employee"; fixture.personName = "Employee self profile"
+                reader.connect("https://issuer.invalid", "employee-token")
+                assertEquals(CardArtworkState.Default, reader.front.state.value)
+                awaitReady(reader)
+                val count = fixture.requests.size
+                reader.morePeople(); reader.selectPerson(previousPerson)
+                reader.moreRevisions(); reader.selectRevision(previousRevision)
+                assertEquals(count, fixture.requests.size)
+                assertTrue(reader.state.value.people.isEmpty()); assertTrue(reader.state.value.revisions.isEmpty())
+                reader.selectCard(reader.state.value.cards.single()); awaitReady(reader); awaitImages(reader)
+                delay(500)
+                assertEquals(IssuerRole.EMPLOYEE, reader.state.value.identity!!.role)
+                assertEquals("Employee self profile", reader.state.value.person!!.name)
+                assertNull(reader.state.value.revision!!.actor); assertNull(reader.state.value.revision!!.sourceCreated)
+                assertTrue(reader.front.state.value is CardArtworkState.Loaded)
+                reader.close()
+                assertNull(reader.state.value.identity); assertNull(reader.state.value.person)
+                assertEquals(CardArtworkState.Default, reader.front.state.value)
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
+    @Test fun employeeMissingImageRequiresCurrentRefreshAndForbiddenClearsAuthority() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.role = "employee"
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val store = secrets()
+            val reader = IssuerReader(store, scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "employee-token"); awaitReady(reader)
+                fixture.mediaFailure = 404
+                reader.selectCard(reader.state.value.cards.single()); awaitReady(reader); awaitImages(reader)
+                withTimeout(5000) { while (reader.state.value.revisionsError == null) delay(10) }
+                assertNull(reader.state.value.revision); assertNull(reader.state.value.current)
+                assertEquals(R.string.issuer_artwork_unavailable, reader.state.value.revisionsError)
+                assertEquals(CardArtworkState.Default, reader.front.state.value)
+                fixture.mediaFailure = 0
+                reader.retryRevisions(); awaitReady(reader); awaitImages(reader)
+                assertTrue(reader.front.state.value is CardArtworkState.Loaded)
+                assertEquals(2, fixture.requests.count { it.first.endsWith("/badge-current") })
+                fixture.mediaFailure = 403
+                reader.retryArtwork(); awaitReady(reader); awaitImages(reader)
+                withTimeout(5000) { while (reader.state.value.identity != null) delay(10) }
+                assertNull(reader.state.value.person); assertTrue(reader.state.value.cards.isEmpty())
+                assertNull(reader.state.value.revision)
+                assertEquals(R.string.issuer_forbidden, reader.state.value.error)
+                assertEquals("employee-token", store.token("https://issuer.invalid"))
+                fixture.mediaFailure = 0; fixture.failure = 403; fixture.failurePath = "/v1/me/person"
+                reader.connect("https://issuer.invalid", "employee-token"); awaitReady(reader)
+                assertNull(reader.state.value.identity); assertNull(reader.state.value.person)
+                assertEquals(R.string.issuer_forbidden, reader.state.value.error)
             } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
