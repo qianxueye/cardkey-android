@@ -7,6 +7,7 @@ import cc.cardkey.protocol.Dispatch
 import cc.cardkey.protocol.Medium
 import cc.cardkey.protocol.TransportException
 import java.io.Closeable
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal interface IsoDepIo : Closeable {
@@ -19,6 +20,7 @@ class NfcCardChannel internal constructor(private val io: IsoDepIo) : CardChanne
     override val medium = Medium.NFC
     override val maxCommandBytes = io.maxCommandBytes
     private val closed = AtomicBoolean(false)
+    private val closeComplete = CountDownLatch(1)
 
     @Synchronized
     override fun transmit(command: ByteArray): ByteArray {
@@ -35,7 +37,17 @@ class NfcCardChannel internal constructor(private val io: IsoDepIo) : CardChanne
     }
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) runCatching { io.close() }
+        if (closed.compareAndSet(false, true)) {
+            try { runCatching { io.close() } } finally { closeComplete.countDown() }
+        } else {
+            // Connection/session owners retain their lease until native cancellation finishes.
+            var interrupted = false
+            while (true) {
+                try { closeComplete.await(); break }
+                catch (_: InterruptedException) { interrupted = true }
+            }
+            if (interrupted) Thread.currentThread().interrupt()
+        }
     }
 
     companion object {

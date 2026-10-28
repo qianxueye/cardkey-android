@@ -6,7 +6,6 @@ import cc.cardkey.protocol.*
 import cc.cardkey.ui.ManagerOperation
 import cc.cardkey.ui.ManagerViewModel
 import cc.cardkey.ui.OperationInput
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,18 +33,14 @@ class NfcManagerConnectionCancellationTest {
 
     @Before fun setup() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
-        BlockingConnectIsoDepShadow.entered = CountDownLatch(1)
-        BlockingConnectIsoDepShadow.closed = CountDownLatch(1)
-        BlockingConnectIsoDepShadow.exit = CountDownLatch(1)
-        BlockingConnectIsoDepShadow.commands.set(0)
-        BlockingConnectIsoDepShadow.connections.set(0)
-        BlockingConnectIsoDepShadow.returnsAfterClose = false
+        BlockingConnectIsoDepShadow.reset()
     }
 
     @After fun cleanup() {
         model?.cancel()
         BlockingConnectIsoDepShadow.closed.countDown()
         BlockingConnectIsoDepShadow.exit.countDown()
+        BlockingConnectIsoDepShadow.firstCloseExit.countDown()
         model?.let { current -> await { !current.state.value.busy } }
         Dispatchers.resetMain()
     }
@@ -66,6 +61,38 @@ class NfcManagerConnectionCancellationTest {
         await { !current.state.value.busy }
         assertCancelled(current.state.value.result)
         assertEquals(0, BlockingConnectIsoDepShadow.commands.get())
+        requireNotNull(CardOperationGate.tryAcquire()).close()
+    }
+
+    @Test fun managerRetainsLeaseUntilFirstNativeCloseFinishes() {
+        BlockingConnectIsoDepShadow.holdFirstClose = true
+        BlockingConnectIsoDepShadow.returnsAfterClose = true
+        val app = RuntimeEnvironment.getApplication()
+        ShadowNfcAdapter.setNfcHardwareExists(true)
+        shadowOf(app.packageManager).setSystemFeature(android.content.pm.PackageManager.FEATURE_NFC, true)
+        shadowOf(NfcAdapter.getDefaultAdapter(app)).setEnabled(true)
+        val current = ManagerViewModel(app).also { model = it }
+        current.submit(OperationInput(ManagerOperation.FIDO_INFO))
+        assertTrue(current.onTag(tag, requireNotNull(current.pendingNfcOwner)))
+        assertTrue(BlockingConnectIsoDepShadow.entered.await(5, TimeUnit.SECONDS))
+        BlockingConnectIsoDepShadow.exit.countDown()
+        current.cancel()
+        assertTrue(BlockingConnectIsoDepShadow.firstCloseEntered.await(5, TimeUnit.SECONDS))
+        assertTrue(BlockingConnectIsoDepShadow.connectFinished.await(5, TimeUnit.SECONDS))
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+        while (System.nanoTime() < deadline) {
+            val next = CardOperationGate.tryAcquire()
+            next?.close()
+            assertNull("Lease released while the first native close is still blocked", next)
+            Thread.sleep(5)
+        }
+        assertTrue(current.state.value.busy)
+        assertEquals(1, BlockingConnectIsoDepShadow.activeCloses.get())
+        assertEquals(0, BlockingConnectIsoDepShadow.commands.get())
+        BlockingConnectIsoDepShadow.firstCloseExit.countDown()
+        await { !current.state.value.busy }
+        assertCancelled(current.state.value.result)
+        assertEquals(0, BlockingConnectIsoDepShadow.activeCloses.get())
         requireNotNull(CardOperationGate.tryAcquire()).close()
     }
 

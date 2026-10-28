@@ -1,6 +1,7 @@
 package cc.cardkey.transport
 
 import android.nfc.Tag
+import android.os.Looper
 import cc.cardkey.protocol.*
 import cc.cardkey.provider.ClientData
 import cc.cardkey.provider.ParsedGet
@@ -11,6 +12,7 @@ import cc.cardkey.provider.executeAndConfirm
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -30,22 +32,20 @@ import org.robolectric.shadow.api.Shadow
 @Config(sdk = [34], manifest = Config.NONE, shadows = [BlockingConnectIsoDepShadow::class])
 class NfcConnectionCancellationTest {
     private var worker: Thread? = null
+    private var cancellationWatchdog: Thread? = null
     private val tag get() = Shadow.newInstanceOf(Tag::class.java)
 
     @Before fun setup() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
-        BlockingConnectIsoDepShadow.entered = CountDownLatch(1)
-        BlockingConnectIsoDepShadow.closed = CountDownLatch(1)
-        BlockingConnectIsoDepShadow.exit = CountDownLatch(1)
-        BlockingConnectIsoDepShadow.commands.set(0)
-        BlockingConnectIsoDepShadow.connections.set(0)
-        BlockingConnectIsoDepShadow.returnsAfterClose = false
+        BlockingConnectIsoDepShadow.reset()
     }
 
     @After fun cleanup() {
         BlockingConnectIsoDepShadow.closed.countDown()
         BlockingConnectIsoDepShadow.exit.countDown()
+        BlockingConnectIsoDepShadow.firstCloseExit.countDown()
         worker?.join(5000)
+        cancellationWatchdog?.join(5000)
         Dispatchers.resetMain()
     }
 
@@ -68,6 +68,46 @@ class NfcConnectionCancellationTest {
         assertFalse(worker!!.isAlive)
         assertCancelled(result.get())
         assertEquals(0, BlockingConnectIsoDepShadow.commands.get())
+        requireNotNull(CardOperationGate.tryAcquire()).close()
+    }
+
+    @Test fun providerCancellationReturnsOnAndroidMainWhileNativeCloseBlocks() {
+        BlockingConnectIsoDepShadow.holdFirstClose = true
+        BlockingConnectIsoDepShadow.returnsAfterClose = true
+        val runner = ProviderOperationRunner()
+        val result = AtomicReference<OperationResult<ProviderOutput>>()
+        val discovered = tag
+        worker = Thread {
+            result.set(runner.executeAndConfirm(null,
+                ParsedGet("example.com", "AQ", listOf(byteArrayOf(1)), UserVerificationRequirement.DISCOURAGED),
+                ClientData(byteArrayOf(), ByteArray(32), true), null) { runner.connectNfc(discovered) })
+        }.apply { start() }
+        assertTrue(BlockingConnectIsoDepShadow.entered.await(5, TimeUnit.SECONDS))
+        BlockingConnectIsoDepShadow.exit.countDown()
+        val cancelReturned = CountDownLatch(1)
+        val blockedMain = AtomicBoolean(false)
+        cancellationWatchdog = Thread {
+            if (BlockingConnectIsoDepShadow.firstCloseEntered.await(5, TimeUnit.SECONDS) &&
+                !cancelReturned.await(1, TimeUnit.SECONDS)) {
+                blockedMain.set(true)
+                BlockingConnectIsoDepShadow.firstCloseExit.countDown()
+            }
+        }.apply { start() }
+        assertSame(Looper.getMainLooper(), Looper.myLooper())
+        runner.cancel()
+        cancelReturned.countDown()
+        cancellationWatchdog!!.join(5000)
+        assertFalse("Native close blocked Provider cancellation on Android main", blockedMain.get())
+        assertTrue(BlockingConnectIsoDepShadow.firstCloseEntered.await(5, TimeUnit.SECONDS))
+        assertTrue(BlockingConnectIsoDepShadow.connectFinished.await(5, TimeUnit.SECONDS))
+        assertNull(CardOperationGate.tryAcquire())
+        assertEquals(1, BlockingConnectIsoDepShadow.activeCloses.get())
+        assertEquals(0, BlockingConnectIsoDepShadow.commands.get())
+        BlockingConnectIsoDepShadow.firstCloseExit.countDown()
+        worker!!.join(5000)
+        assertFalse(worker!!.isAlive)
+        assertCancelled(result.get())
+        assertEquals(0, BlockingConnectIsoDepShadow.activeCloses.get())
         requireNotNull(CardOperationGate.tryAcquire()).close()
     }
 

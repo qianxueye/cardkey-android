@@ -5,6 +5,9 @@ import cc.cardkey.transport.NfcCardChannel
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.FidoClient
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -212,10 +215,14 @@ internal class ProviderOperationRunner {
             presenceCallback?.invoke(false)
             presenceCallback = null
         }
-        connectingNfc.get()?.close()
+        connectingNfc.get()?.let { attempt ->
+            CoroutineScope(Dispatchers.IO).launch { attempt.close() }
+        }
         channel.get()?.let { connected ->
             connected.setUserPresenceListener(null)
-            runCatching { connected.cancel() }
+            if (connected is NfcCardChannel) {
+                CoroutineScope(Dispatchers.IO).launch { connected.cancel() }
+            } else runCatching { connected.cancel() }
         }
     }
 }
