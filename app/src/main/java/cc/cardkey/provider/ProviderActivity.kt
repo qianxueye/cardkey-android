@@ -42,6 +42,7 @@ import cc.cardkey.ui.CardKeyTheme
 import cc.cardkey.ui.ConfirmationPolicy
 import cc.cardkey.ui.PlexoSection
 import cc.cardkey.ui.PlexoFactRow
+import cc.cardkey.ui.displayLabel
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -267,13 +268,13 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
                                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
                                 readers.forEach { reader ->
                                     FilterChip(selected === reader, { selectReader(reader) },
-                                        label = { Text(reader.device.productName ?: "USB") }, enabled = !busy && !permissionPending,
+                                        label = { Text(reader.displayLabel(resources)) }, enabled = !busy && !permissionPending,
                                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
                                 }
                                 connectionMessage?.let { Text(stringResource(it)) }
                             }
                             if (permissionPending) PlexoSection(stringResource(R.string.plexo_provider_permission)) {
-                                pendingReader?.let { PlexoFactRow(stringResource(R.string.plexo_provider_reader), it.device.productName ?: "USB") }
+                                pendingReader?.let { PlexoFactRow(stringResource(R.string.plexo_provider_reader), it.displayLabel(resources)) }
                                 Text(stringResource(R.string.plexo_provider_permission_prompt, stringResource(R.string.app_name)))
                             }
                             val observed = recognition

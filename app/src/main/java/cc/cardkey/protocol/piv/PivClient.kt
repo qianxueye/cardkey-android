@@ -374,7 +374,10 @@ public class PivClient(private val session: CardSession, private val secure: Piv
         else send(Apdu(ins = 0xa4, p1 = 4, data = "a000000308000010000100".hexBytes()))
     }
     private fun exchange(apdu: Apdu, effectful: Boolean = false): ApduResponse =
-        secure?.exchange(apdu, effectful) ?: session.exchange(apdu, effectful)
+        (secure?.exchange(apdu, effectful) ?: session.exchange(apdu, effectful)).also { response ->
+            if (secure != null && session.medium == Medium.UNKNOWN && response.status == 0x6983)
+                throw CardFailure(FailureCode.CARD_REJECTED, response.status)
+        }
     private fun send(apdu: Apdu, effectful: Boolean = false): ByteArray = try {
         val response = exchange(apdu, effectful)
         if (effectful && response.status and 0xfff0 == 0x63c0) session.securityStateChanged()

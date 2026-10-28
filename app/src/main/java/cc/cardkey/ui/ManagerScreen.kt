@@ -23,6 +23,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.activity.compose.BackHandler
 import cc.cardkey.protocol.*
 import cc.cardkey.R
@@ -81,6 +82,7 @@ fun ManagerScreen(
     artworkReference: CardArtworkReference? = null,
     artworkSource: CardArtworkSource = UnconfiguredCardArtworkSource,
 ) {
+    val resources = LocalResources.current
     val displayName = stringResource(R.string.app_name)
     val artworkScope = rememberCoroutineScope()
     val artworkLoader = remember(artworkSource) { CardArtworkLoader(artworkSource, artworkScope) }
@@ -281,7 +283,7 @@ fun ManagerScreen(
                     Icon(managerDestinationIcons[2], contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.weight(1f)) {
                         Text(if (!state.hasSelectedReader) stringResource(R.string.native_reader_missing)
-                            else if (state.nfc) "NFC" else state.selectedReader?.device?.productName ?: "读卡器",
+                            else if (state.nfc) "NFC" else state.selectedReader?.displayLabel(resources) ?: "读卡器",
                             style = MaterialTheme.typography.titleMedium)
                         if (tab == 0 && !state.busy && !state.requiresInspection) Text(
                             stringResource(if (state.canEnterFidoSecrets) R.string.manager_fido_observed else R.string.manager_fido_unread),
@@ -596,7 +598,7 @@ fun ManagerScreen(
                         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             ReaderOption("NFC", null, state.nfc, !state.busy && !state.permissionPending, contactless = true) { onReader(null) }
                             state.readers.forEach { reader ->
-                                ReaderOption(reader.device.productName ?: "USB",
+                                ReaderOption(reader.displayLabel(resources),
                                     "USB · %04x:%04x".format(reader.device.vendorId, reader.device.productId),
                                     !state.nfc && state.selectedReader?.routeKey == reader.routeKey,
                                     !state.busy && !state.permissionPending) { onReader(reader) }
