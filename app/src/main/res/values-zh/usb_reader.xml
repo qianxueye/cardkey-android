@@ -1,0 +1,3 @@
+<resources>
+    <string name="reader_usbInterface">%1$s · %2$s · 接口 %3$d</string>
+</resources>
