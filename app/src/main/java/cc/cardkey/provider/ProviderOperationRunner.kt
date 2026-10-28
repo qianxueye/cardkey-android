@@ -1,8 +1,13 @@
 package cc.cardkey.provider
 
+import android.nfc.Tag
+import cc.cardkey.transport.NfcCardChannel
 import cc.cardkey.protocol.*
 import cc.cardkey.protocol.fido.FidoClient
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -21,9 +26,21 @@ internal class ProviderOperationRunner {
     private var ownedCreateInputs: CreateExtensionInputs? = null
     private var ownedGetInputs: GetExtensionInputs? = null
     private val channel = AtomicReference<CardChannel?>(null)
+    private val connectingNfc = AtomicReference<NfcCardChannel?>(null)
     private val presenceLock = Any()
     private var presenceCallback: ((Boolean) -> Unit)? = null
     val isActive get() = channel.get() != null && !cancelled.get()
+
+    internal fun connectNfc(tag: Tag): NfcCardChannel {
+        var attempt: NfcCardChannel? = null
+        try {
+            return NfcCardChannel.connect(tag, onConnecting = {
+                attempt = it
+                connectingNfc.set(it)
+                if (cancelled.get()) it.close()
+            })
+        } finally { connectingNfc.compareAndSet(attempt, null) }
+    }
 
     fun confirm(pin: CharArray?): Boolean = synchronized(inputLock) {
         val waiting = confirmation
@@ -168,7 +185,7 @@ internal class ProviderOperationRunner {
         } catch (error: CardFailure) {
             return OperationResult.Failed(error.code, Effect.NONE, error.status, dispatch = Dispatch.NOT_DISPATCHED)
         } catch (error: TransportException) {
-            return OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.NONE, dispatch = error.dispatch)
+            return OperationResult.Failed(if (error.cancelled) FailureCode.CANCELLED else FailureCode.TRANSPORT_FAILURE, Effect.NONE, dispatch = error.dispatch)
         } catch (_: SecurityException) {
             return OperationResult.Failed(FailureCode.AUTHORIZATION_DENIED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED)
         } finally {
@@ -198,9 +215,14 @@ internal class ProviderOperationRunner {
             presenceCallback?.invoke(false)
             presenceCallback = null
         }
+        connectingNfc.get()?.let { attempt ->
+            CoroutineScope(Dispatchers.IO).launch { attempt.close() }
+        }
         channel.get()?.let { connected ->
             connected.setUserPresenceListener(null)
-            runCatching { connected.cancel() }
+            if (connected is NfcCardChannel) {
+                CoroutineScope(Dispatchers.IO).launch { connected.cancel() }
+            } else runCatching { connected.cancel() }
         }
     }
 }
