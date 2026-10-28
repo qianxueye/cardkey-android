@@ -16,6 +16,7 @@ import cc.cardkey.signing.*
 import android.provider.OpenableColumns
 import cc.cardkey.transport.*
 import cc.cardkey.protocol.piv.PivClient
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -218,6 +219,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     @Volatile private var cancelled = false
     private var presenceBlockedReader: String? = null
     private val currentChannel = AtomicReference<CancellableCardChannel?>(null)
+    private val connectingNfc = AtomicReference<NfcCardChannel?>(null)
     private var retryApproval: CompletableDeferred<Boolean>? = null
     private var presenceWatch: Job? = null
     private var operationRoute = "nfc"
@@ -767,7 +769,16 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                 finish(OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE, dispatch = Dispatch.NOT_DISPATCHED))
                 return@launch
             }
-            run(input) { NfcCardChannel.connect(tag) }
+            run(input) {
+                var attempt: NfcCardChannel? = null
+                try {
+                    NfcCardChannel.connect(tag, onConnecting = {
+                        attempt = it
+                        connectingNfc.set(it)
+                        if (cancelled) it.close()
+                    })
+                } finally { connectingNfc.compareAndSet(attempt, null) }
+            }
         }
         return true
     }
@@ -1053,6 +1064,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         pendingNfcOwner = null
         pending?.close()
         pending = null
+        // Native connect must be closed even after the ViewModel scope has been cleared.
+        connectingNfc.get()?.let { attempt -> CoroutineScope(Dispatchers.IO).launch { attempt.close() } }
         currentChannel.get()?.let { channel -> viewModelScope.launch(Dispatchers.IO) {
             synchronized(presenceLock) {
                 if (currentChannel.get() === channel) {

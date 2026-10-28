@@ -39,25 +39,37 @@ class NfcCardChannel internal constructor(private val io: IsoDepIo) : CardChanne
     }
 
     companion object {
-        fun connect(tag: Tag, timeoutMillis: Int = 15000): NfcCardChannel {
+        fun connect(
+            tag: Tag,
+            timeoutMillis: Int = 15000,
+            onConnecting: (NfcCardChannel) -> Unit = {},
+        ): NfcCardChannel {
             require(timeoutMillis in 1..60000)
             val isoDep = IsoDep.get(tag) ?: throw TransportException(Dispatch.NOT_DISPATCHED)
+            val channel = NfcCardChannel(object : IsoDepIo {
+                override val supportsExtendedApdus = isoDep.isExtendedLengthApduSupported
+                override val maxCommandBytes = minOf(
+                    isoDep.maxTransceiveLength,
+                    if (isoDep.isExtendedLengthApduSupported) 65544 else 261,
+                )
+                override fun transmit(command: ByteArray): ByteArray = isoDep.transceive(command)
+                override fun close() = isoDep.close()
+            })
             try {
-                if (Thread.currentThread().isInterrupted) throw TransportException(Dispatch.NOT_DISPATCHED)
+                // Android allows another thread to cancel blocking connect through close.
+                onConnecting(channel)
+                if (channel.closed.get() || Thread.currentThread().isInterrupted)
+                    throw TransportException(Dispatch.NOT_DISPATCHED)
                 isoDep.connect()
+                if (channel.closed.get()) throw TransportException(Dispatch.NOT_DISPATCHED)
                 isoDep.timeout = timeoutMillis
-                return NfcCardChannel(object : IsoDepIo {
-                    override val supportsExtendedApdus = isoDep.isExtendedLengthApduSupported
-                    override val maxCommandBytes = minOf(
-                        isoDep.maxTransceiveLength,
-                        if (isoDep.isExtendedLengthApduSupported) 65544 else 261,
-                    )
-                    override fun transmit(command: ByteArray): ByteArray = isoDep.transceive(command)
-                    override fun close() = isoDep.close()
-                })
+                return channel
             } catch (error: Exception) {
+                val cancelled = channel.closed.get()
+                channel.close()
+                // A close racing with native connection entry may precede its successful return.
                 runCatching { isoDep.close() }
-                throw TransportException(Dispatch.NOT_DISPATCHED, error)
+                throw TransportException(Dispatch.NOT_DISPATCHED, error, cancelled = cancelled)
             }
         }
     }

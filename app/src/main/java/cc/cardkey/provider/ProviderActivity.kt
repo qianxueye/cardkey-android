@@ -36,7 +36,6 @@ import androidx.credentials.provider.PendingIntentHandler
 import androidx.lifecycle.lifecycleScope
 import cc.cardkey.R
 import cc.cardkey.protocol.*
-import cc.cardkey.transport.NfcCardChannel
 import cc.cardkey.transport.UsbAuthenticatorReader
 import cc.cardkey.transport.UsbReaderDescriptor
 import cc.cardkey.ui.CardKeyTheme
@@ -379,7 +378,7 @@ class ProviderActivity : ComponentActivity(), NfcAdapter.ReaderCallback {
             if (!active || !awaitingNfc || completed) return@runOnUiThread
             awaitingNfc = false
             lastTag = tag
-            execute { NfcCardChannel.connect(tag) }
+            execute { runner.connectNfc(tag) }
         }
     }
 
