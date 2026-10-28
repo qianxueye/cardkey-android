@@ -1,6 +1,10 @@
 # Android T=1 TPDU transport
 
-The Kotlin USB channel admits the recorded uTrust 2700R profile (`04e6:5810`, `bcdDevice=0202`, `dwFeatures=0x100BA`, maximum CCID message 271 bytes). Its CCID payload limit is 261 bytes. Reader-managed short and extended APDU profiles retain their existing path.
+The Kotlin USB channel discovers CCID interfaces independently of vendor/product identity. Discovery requires class `0x0b`, subclass/protocol zero, alternate setting zero, and one bulk endpoint in each direction with packet sizes in 1–1024 bytes. Discovery performs no USB reads; after permission, connection validates the CCID descriptor before claiming the interface or sending card commands.
+
+Supported descriptors use CCID 1.0/1.1, one slot, T=0 and/or T=1, reader-managed short/extended APDU exchange or T=1 TPDU exchange, automatic parameter configuration and supported automatic negotiation, and a maximum message size in 271–65,554 bytes. TPDU requires T=1, maximum IFSD in 32–254 and host IFSD negotiation. Multi-slot, character-level, T=0-only TPDU and unsupported automatic-parameter profiles are rejected.
+
+Generic channels report `UNKNOWN` medium. USB attachment, ATR, protocol and successful public reads do not classify the card medium. The existing `04e6:5810` qualification preserves CONTACT for that path; its recorded uTrust 2700R TPDU descriptor has `bcdDevice=0202`, `dwFeatures=0x100BA` and a maximum CCID message of 271 bytes. Public FIDO/PIV and explicitly enrolled protected PIV can use generic channels. Plaintext PIV PIN/PUK and administration retain their contact guard.
 
 ## Initialization and limits
 

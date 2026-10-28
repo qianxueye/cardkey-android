@@ -135,17 +135,40 @@ class ProtectedPivWorkflowTest {
         }
     }
 
-    @Test fun absentProfileUnknownMediaAndMismatchedGuidNeverDispatchPin() {
+    @Test fun absentProfileAndMismatchedGuidNeverDispatchPinOnUnknown() {
         fails { ProtectedPivWorkflow().recognize(ProtectedPivAction.VERIFY_PIN, 0x9a, "") }
-        for (unknown in listOf(false, true)) {
-            val flow = workflow(guid = if (unknown) fixture["guid"].asString else "00".repeat(16))
-            val card = peer().apply { if (unknown) medium = Medium.UNKNOWN }
-            val result = run(flow, flow.recognize(ProtectedPivAction.VERIFY_PIN, 0x9a, ""), card)
-            assertTrue(result is OperationResult.Failed)
-            assertEquals(0, card.pinTries)
-            assertEquals(0, card.protectedCommands)
-            if (unknown) assertTrue(card.commands.isEmpty())
+        val flow = workflow(guid = "00".repeat(16))
+        val card = peer().apply { medium = Medium.UNKNOWN }
+        val result = run(flow, flow.recognize(ProtectedPivAction.VERIFY_PIN, 0x9a, ""), card)
+        assertTrue(result is OperationResult.Failed)
+        assertEquals(0, card.pinTries)
+        assertEquals(0, card.protectedCommands)
+    }
+
+    @Test fun enrolledUnknownUsesTwoScanManagerConsumerAndPreservesRetryChecks() {
+        for (changedRetries in listOf(false, true)) {
+            val flow = workflow()
+            val first = peer().apply { medium = Medium.UNKNOWN }
+            assertTrue(run(flow, flow.recognize(ProtectedPivAction.VERIFY_PIN, 0x9a, ""), first) is OperationResult.Completed)
+            assertEquals(0, first.pinTries)
+            val second = peer().apply { medium = Medium.UNKNOWN; if (changedRetries) pinStatus = 0x63c3 }
+            val result = run(flow, flow.execute("123456".toCharArray()), second)
+            if (changedRetries) assertEquals(FailureCode.RECOVERY_REQUIRED, (result as OperationResult.Failed).code)
+            else assertTrue(result is OperationResult.Completed)
+            assertEquals(if (changedRetries) 0 else 1, second.pinTries)
+            assertEquals(Medium.UNKNOWN, second.medium)
+            assertFalse(flow.state.value.profileReady)
         }
+    }
+
+    @Test fun unknown6983StopsRecognitionWithoutPromptingForPinOrClaimingBlockedPin() {
+        val flow = workflow()
+        val card = peer().apply { medium = Medium.UNKNOWN; pinStatus = 0x6983 }
+        val result = run(flow, flow.recognize(ProtectedPivAction.VERIFY_PIN, 0x9a, ""), card) as OperationResult.Failed
+        assertEquals(FailureCode.CARD_REJECTED, result.code)
+        assertEquals(0x6983, result.status)
+        assertEquals(0, card.pinTries)
+        assertFalse(flow.state.value.awaitingPin)
     }
 
     @Test fun lostPinResponseIsUnknownWithoutReplayAndKnownWrongPinKeepsEffect() {

@@ -45,21 +45,21 @@ internal data class CcidCapabilities(
                         val descriptor = raw.copyOfRange(offset, offset + size)
                         val version = descriptor.u8(2) or (descriptor.u8(3) shl 8)
                         require(version in setOf(0x0100, 0x0110))
-                        require(descriptor.u8(4) == 0)
+                        require(descriptor.u8(4) == 0) { "Multi-slot CCID readers are unsupported" }
                         val protocols = descriptor.u32(6)
                         val features = descriptor.u32(40)
                         val maxMessage = descriptor.u32(44)
                         val maxIfsd = descriptor.u32(28)
-                        require(protocols in 1L..3L)
-                        require(features and 0x70000 in setOf(0x10000L, 0x20000L, 0x40000L))
+                        require(protocols in 1L..3L) { "Unsupported CCID protocols" }
+                        require(features and 0x70000 in setOf(0x10000L, 0x20000L, 0x40000L)) { "Unsupported CCID exchange level" }
                         if (features and 0x70000 == 0x10000L) {
-                            require(protocols and 2 != 0L)
+                            require(protocols and 2 != 0L) { "CCID TPDU exchange requires T=1" }
                             require(maxIfsd in 32L..254L)
                             require(features and 0x400 == 0L)
                         }
-                        require(features and 2 != 0L)
-                        require(features and 0xc0 in setOf(0x40L, 0x80L))
-                        require(maxMessage in 271L..65554L)
+                        require(features and 2 != 0L) { "CCID automatic parameter configuration is required" }
+                        require(features and 0xc0 in setOf(0x40L, 0x80L)) { "Unsupported CCID automatic negotiation" }
+                        require(maxMessage in 271L..65554L) { "Unsupported CCID message capacity" }
                         result = CcidCapabilities(protocols.toInt(), features.toInt(), maxMessage.toInt(), maxIfsd.toInt())
                     }
                 }
@@ -76,8 +76,8 @@ internal class CcidChannel(
     private val inputPacketBytes: Int,
     private val timeoutMillis: Int = 15000,
     private val nanoTime: () -> Long = System::nanoTime,
+    override val medium: Medium = Medium.UNKNOWN,
 ) : CardChannel {
-    override val medium = Medium.CONTACT
     override val maxCommandBytes = capabilities.maxCommandBytes
     private var sequence = 0
     private val closed = AtomicBoolean(false)

@@ -308,30 +308,111 @@ class PivSecureContextTest {
         }
     }
 
-    @Test fun unknownMediumCannotEstablishOrSendAnyApdu() {
-        val card = Peer().apply { medium = Medium.UNKNOWN }
-        failure { establish(card) }
-        assertTrue(card.commands.isEmpty())
+    @Test fun unknownEstablishmentRejectionPreserves6983WithoutPinExhaustionClaim() {
+        val card = object : CardChannel {
+            override val medium = Medium.UNKNOWN
+            override val maxCommandBytes = 261
+            var commands = 0
+            override fun transmit(command: ByteArray): ByteArray { commands++; return "6983".hexBytes() }
+            override fun close() { }
+        }
+        val session = CardSession(card)
+        val result = session.run { PivSecureContext.establish(it, identity(), "12345678".toCharArray()) } as OperationResult.Failed
+        assertEquals(FailureCode.CARD_REJECTED, result.code)
+        assertEquals(0x6983, result.status)
+        assertEquals(1, card.commands)
     }
 
-    @Test fun pairedNfcStillRejectsAllAdministrativeOperationsBeforeTransmission() {
-        val card = Peer()
+    @Test fun unknownWrongPinRetainsAuthenticatedRetryEffect() {
+        val card = Peer().apply { medium = Medium.UNKNOWN; pinStatus = 0x63c4 }
         val (session, context) = establish(card)
-        val client = PivClient(session, context)
-        val operations = listOf<() -> Unit>(
-            { client.changePin("123456".toCharArray(), "234567".toCharArray()) },
-            { client.changePuk("123456".toCharArray(), "234567".toCharArray()) },
-            { client.unblockPin("123456".toCharArray(), "234567".toCharArray()) },
-            { client.authenticateManagement(ManagementAlgorithm.AES256, ByteArray(32)) },
-            { client.changeManagementKey(ManagementAlgorithm.AES256, ByteArray(32), ManagementAlgorithm.AES256, ByteArray(32)) },
-            { client.generateKey(0x9a, KeyAlgorithm.P256, PinPolicy.ONCE, ManagementAlgorithm.AES256, ByteArray(32)) },
-            { client.importCertificate(0x9a, byteArrayOf(), ManagementAlgorithm.AES256, ByteArray(32)) },
-            { client.reset() }
-        )
-        val count = card.commands.size
-        for (op in operations) assertEquals(FailureCode.CONTACT_REQUIRED, (failure(op) as CardFailure).code)
-        assertEquals(count, card.commands.size)
+        val result = session.run { PivClient(it, context).verifyPin("000000".toCharArray()) } as OperationResult.Failed
+        assertEquals(FailureCode.PIN_INVALID, result.code)
+        assertEquals(0x63c4, result.status)
+        assertEquals(Effect.APPLIED, result.effect)
+        assertEquals(1, card.pinTries)
     }
+
+    @Test fun unknownMediumUsesEnrolledProtectedPinWithoutPlaintextFallback() {
+        val card = Peer().apply { medium = Medium.UNKNOWN; pinStatus = 0x9000 }
+        val (session, context) = establish(card)
+        val result = session.run { PivClient(it, context).verifyPin("123456".toCharArray()) }
+        assertTrue(result is OperationResult.Completed)
+        assertEquals(Medium.UNKNOWN, card.medium)
+        assertEquals(1, card.pinTries)
+        assertTrue(card.commands.filter { it[1] == 0x20.toByte() }.all { it[0] == 0x0c.toByte() })
+    }
+
+    @Test fun unknownMediumStillRequiresCiccConfirmationPairingAndAuthenticatedResponses() {
+        for (mode in listOf("cicc", "confirmation", "pairing", "mac", "lost")) {
+            val card = Peer(cicc = if (mode == "cicc") bytes("cvc").also { it[it.lastIndex]++ } else bytes("cvc"))
+                .apply { medium = Medium.UNKNOWN; badConfirmation = mode == "confirmation"; if (mode == "pairing") pairingStatus = 0x6300 }
+            if (mode in listOf("mac", "lost")) {
+                val (session, context) = establish(card)
+                card.failure = mode
+                val result = session.run { PivClient(it, context).verifyPin("123456".toCharArray()) } as OperationResult.Failed
+                assertEquals(Effect.UNKNOWN, result.effect)
+                assertEquals(2, card.protectedCommands)
+            } else {
+                failure { establish(card) }
+                assertEquals(0, card.pinTries)
+            }
+            assertTrue(card.commands.filter { it[1] == 0x20.toByte() }.all { it[0] == 0x0c.toByte() })
+        }
+    }
+
+    @Test fun unknown6983PreservesStatusWithoutClaimingPinExhaustionOrRetrying() {
+        for (statusOnly in listOf(true, false)) {
+            val card = Peer().apply { medium = Medium.UNKNOWN; pinStatus = 0x6983 }
+            val (session, context) = establish(card)
+            val result = session.run {
+                val client = PivClient(it, context)
+                if (statusOnly) client.pinStatus() else client.verifyPin("123456".toCharArray())
+            } as OperationResult.Failed
+            assertEquals(FailureCode.CARD_REJECTED, result.code)
+            assertEquals(0x6983, result.status)
+            assertEquals(Effect.NONE, result.effect)
+            assertEquals(if (statusOnly) 0 else 1, card.pinTries)
+            assertEquals(2, card.protectedCommands)
+        }
+    }
+
+    @Test fun unknownMediumBindingRejectsReplacementContextAndMediumChanges() {
+        for (replacement in listOf(true, false)) {
+            val card = Peer().apply { medium = Medium.UNKNOWN }
+            val (session, context) = establish(card)
+            val target = if (replacement) CardSession(Peer().apply { medium = Medium.UNKNOWN }) else session
+            if (!replacement) card.medium = Medium.CONTACT
+            val count = card.commands.size
+            val error = failure { PivClient(target, context).verifyPin("123456".toCharArray()) } as CardFailure
+            assertEquals(FailureCode.AUTHORIZATION_DENIED, error.code)
+            assertEquals(count, card.commands.size)
+            target.close(); session.close()
+        }
+    }
+
+    @Test fun pairedNfcAndUnknownStillRejectsAllAdministrativeOperationsBeforeTransmission() {
+        for (transport in listOf(Medium.NFC, Medium.UNKNOWN)) {
+            val card = Peer().apply { medium = transport }
+            val (session, context) = establish(card)
+            val client = PivClient(session, context)
+            val operations = listOf<() -> Unit>(
+                { client.changePin("123456".toCharArray(), "234567".toCharArray()) },
+                { client.changePuk("123456".toCharArray(), "234567".toCharArray()) },
+                { client.unblockPin("123456".toCharArray(), "234567".toCharArray()) },
+                { client.authenticateManagement(ManagementAlgorithm.AES256, ByteArray(32)) },
+                { client.changeManagementKey(ManagementAlgorithm.AES256, ByteArray(32), ManagementAlgorithm.AES256, ByteArray(32)) },
+                { client.generateKey(0x9a, KeyAlgorithm.P256, PinPolicy.ONCE, ManagementAlgorithm.AES256, ByteArray(32)) },
+                { client.importCertificate(0x9a, byteArrayOf(), ManagementAlgorithm.AES256, ByteArray(32)) },
+                { client.reset() }
+            )
+            val count = card.commands.size
+            for (op in operations) assertEquals(FailureCode.CONTACT_REQUIRED, (failure(op) as CardFailure).code)
+            assertEquals(count, card.commands.size)
+            session.close()
+        }
+    }
+
 
     @Test fun protectedPrivateSignaturesAndCsrUseAuthenticatedPlaintextForAllAlgorithms() {
         for (algorithm in KeyAlgorithm.entries) {

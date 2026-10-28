@@ -130,7 +130,7 @@ class PivClientTest {
     @Test fun rejectsEverySensitiveOperationBeforeSelectOnNfcAndUnknown() {
         for (medium in listOf(Medium.NFC, Medium.UNKNOWN)) {
             val operations: List<(PivClient) -> Unit> = listOf(
-                { it.verifyPin(pin()) }, { it.changePin(pin(), pin()) }, { it.changePuk(pin(), pin()) },
+                { it.pinStatus() }, { it.verifyPin(pin()) }, { it.changePin(pin(), pin()) }, { it.changePuk(pin(), pin()) },
                 { it.unblockPin(pin(), pin()) }, { it.authenticateManagement(ManagementAlgorithm.TDES, ByteArray(24)) },
                 { it.changeManagementKey(ManagementAlgorithm.TDES, ByteArray(24), ManagementAlgorithm.AES128, ByteArray(16)) },
                 { it.generateKey(0x9a, KeyAlgorithm.P256, PinPolicy.ONCE, ManagementAlgorithm.TDES, ByteArray(24)) },

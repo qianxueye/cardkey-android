@@ -7,6 +7,7 @@ import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import cc.cardkey.protocol.CardWire
 import cc.cardkey.protocol.CardChannel
+import cc.cardkey.protocol.Medium
 import cc.cardkey.protocol.Dispatch
 import cc.cardkey.protocol.TransportException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -22,7 +23,6 @@ class UsbReaderDescriptor internal constructor(
 
 object UsbCcidReader {
     fun discover(manager: UsbManager): List<UsbReaderDescriptor> = manager.deviceList.values
-        .filter { it.vendorId == 0x04e6 && it.productId == 0x5810 }
         .flatMap { device ->
             (0 until device.interfaceCount).map { device.getInterface(it) }
                 .filter { isCcid(it) && endpoints(it) != null }
@@ -62,7 +62,7 @@ object UsbCcidReader {
         timeoutMillis: Int,
     ): CcidChannel {
         val device = descriptor.device
-        if (!UsbAuthenticatorReader.isCurrent(manager, descriptor) || descriptor.wire != CardWire.APDU || device.vendorId != 0x04e6 || device.productId != 0x5810 ||
+        if (!UsbAuthenticatorReader.isCurrent(manager, descriptor) || descriptor.wire != CardWire.APDU ||
             !manager.hasPermission(device) || Thread.currentThread().isInterrupted) {
             throw TransportException(Dispatch.NOT_DISPATCHED)
         }
@@ -93,7 +93,8 @@ object UsbCcidReader {
                     }
                 }
             }
-            return CcidChannel(io, capabilities, endpoints.first.maxPacketSize, timeoutMillis)
+            return CcidChannel(io, capabilities, endpoints.first.maxPacketSize, timeoutMillis,
+                medium = if (device.vendorId == 0x04e6 && device.productId == 0x5810) Medium.CONTACT else Medium.UNKNOWN)
         } catch (error: Exception) {
             if (claimed) runCatching { connection.releaseInterface(intf) }
             connection.close()
@@ -109,6 +110,7 @@ object UsbCcidReader {
             .filter { it.type == UsbConstants.USB_ENDPOINT_XFER_BULK }
         val input = bulk.singleOrNull { it.direction == UsbConstants.USB_DIR_IN } ?: return null
         val output = bulk.singleOrNull { it.direction == UsbConstants.USB_DIR_OUT } ?: return null
+        if (input.maxPacketSize !in 1..1024 || output.maxPacketSize !in 1..1024) return null
         return input to output
     }
 }

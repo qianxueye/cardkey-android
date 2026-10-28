@@ -35,8 +35,9 @@ class PivSecureContext private constructor(private val session: CardSession, pri
     private var closed = false
 
     internal fun requireCurrent(expectedSession: CardSession) {
-        if (expectedSession !== session || closed || !paired || !session.ownsSecure(this) || session.medium != medium ||
-            medium == Medium.UNKNOWN) { close(); throw CardFailure(FailureCode.AUTHORIZATION_DENIED) }
+        if (expectedSession !== session || closed || !paired || !session.ownsSecure(this) || session.medium != medium) {
+            close(); throw CardFailure(FailureCode.AUTHORIZATION_DENIED)
+        }
     }
 
     internal fun exchange(apdu: Apdu, effectful: Boolean = false): ApduResponse = synchronized(session) {
@@ -84,7 +85,6 @@ class PivSecureContext private constructor(private val session: CardSession, pri
             var context: PivSecureContext? = null
             try {
                 require(pairing.size == 8 && pairing.all { it in '0'..'9' })
-                if (session.medium == Medium.UNKNOWN) throw CardFailure(FailureCode.CONTACT_REQUIRED)
                 session.exchange(Apdu(ins = 0xa4, p1 = 4, data = "a000000308000010000100".hexBytes())).requireSuccess()
                 val ephemeral = host ?: KeyPairGenerator.getInstance("EC").apply {
                     initialize(ECGenParameterSpec("secp384r1"), random)
@@ -120,6 +120,8 @@ class PivSecureContext private constructor(private val session: CardSession, pri
             } catch (e: Exception) {
                 context?.close()
                 session.invalidateSecure()
+                if (session.medium == Medium.UNKNOWN && e is CardFailure && e.status == 0x6983)
+                    throw CardFailure(FailureCode.CARD_REJECTED, e.status)
                 throw e
             } finally {
                 pairing.fill('\u0000'); code.fill(0); keys.fill(0); z.fill(0)
