@@ -1,5 +1,6 @@
 package cc.cardkey.signing
 
+import android.hardware.usb.UsbConfiguration
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.net.Uri
@@ -40,6 +41,7 @@ class PivFileSigningViewModelTest {
     private fun model(format: SignatureFormat = SignatureFormat.RAW) = ManagerViewModel(app).apply {
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", "file-signing-device")
+        ReflectionHelpers.setField(device, "mConfigurations", emptyArray<UsbConfiguration>())
         shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(device, true)
         selectReader(UsbReaderDescriptor(device, 1, CardWire.APDU))
         fileSigningAction(if (format == SignatureFormat.CMS) ManagerOperation.PIV_CMS_SIGN else ManagerOperation.PIV_SIGN)
@@ -310,7 +312,8 @@ class PivFileSigningViewModelTest {
             model.submit(OperationInput(ManagerOperation.PIV_INFO))
             await { !model.state.value.busy }
             current = model.state.value.result
-            assertNotNull(current)
+            assertEquals(OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.NONE,
+                dispatch = Dispatch.NOT_DISPATCHED), current)
         } finally { release.countDown() }
         await { model.viewModelScope.coroutineContext[Job]!!.children.none { it.isActive } }
         assertSame(current, model.state.value.result)
