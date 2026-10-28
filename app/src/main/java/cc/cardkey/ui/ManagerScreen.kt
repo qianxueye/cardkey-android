@@ -23,7 +23,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.activity.compose.BackHandler
 import cc.cardkey.protocol.*
 import cc.cardkey.R
@@ -82,7 +82,7 @@ fun ManagerScreen(
     artworkReference: CardArtworkReference? = null,
     artworkSource: CardArtworkSource = UnconfiguredCardArtworkSource,
 ) {
-    val resources = LocalContext.current.resources
+    val resources = LocalResources.current
     val displayName = stringResource(R.string.app_name)
     val artworkScope = rememberCoroutineScope()
     val artworkLoader = remember(artworkSource) { CardArtworkLoader(artworkSource, artworkScope) }
