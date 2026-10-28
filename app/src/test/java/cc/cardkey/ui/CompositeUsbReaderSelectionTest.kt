@@ -70,7 +70,7 @@ class CompositeUsbReaderSelectionTest {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup().visible()
         try {
             val model = ViewModelProvider(controller.get())[ManagerViewModel::class.java]
-            compose.onNodeWithText("选择读卡器", substring = false).performClick()
+            compose.onNodeWithText("NFC", substring = false).performClick()
             for ((index, protocol) in listOf("CCID", "FIDO HID").withIndex()) {
                 val label = "Composite security key · $protocol · 接口 ${index + 1}"
                 compose.onNodeWithText(label).performScrollTo().assertIsDisplayed().performClick()

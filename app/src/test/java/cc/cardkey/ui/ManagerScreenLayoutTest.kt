@@ -414,10 +414,10 @@ class ManagerScreenLayoutTest {
                 UsbReaderDescriptor(device, index, CardWire.APDU)
             }
             update(ManagerState(readers = readers, selectedReader = readers.first(), nfc = false))
-            compose.onNodeWithText("Reader 1 with a very long synthetic product name").assertIsDisplayed()
+            compose.onNodeWithText("Reader 1 with a very long synthetic product name · CCID · 接口 1").assertIsDisplayed()
             assertEquals(0, submissions)
             compose.onAllNodesWithText("读卡器").onLast().performClick()
-            compose.onNodeWithText("Reader 20 with a very long synthetic product name").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Reader 20 with a very long synthetic product name · CCID · 接口 20").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("刷新读卡器").performScrollTo().assertIsDisplayed()
         }
     }
