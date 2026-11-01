@@ -2,6 +2,7 @@ package cc.cardkey.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -11,93 +12,94 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val PlexoLightColors = lightColorScheme(
-    primary = Color(0xFFD97706),
-    onPrimary = Color(0xFF1B1408),
-    primaryContainer = Color(0xFFFEF3C7),
-    onPrimaryContainer = Color(0xFF92400E),
-    secondary = Color(0xFF626268),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE3F0EC),
-    onSecondaryContainer = Color(0xFF245448),
-    tertiary = Color(0xFF0E6B54),
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFE1F3ED),
-    onTertiaryContainer = Color(0xFF0E6B54),
-    background = Color.White,
-    onBackground = Color(0xFF1D1D1F),
-    surface = Color.White,
-    onSurface = Color(0xFF1D1D1F),
-    surfaceVariant = Color(0xFFF0F0F0),
-    onSurfaceVariant = Color(0xFF626268),
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF0B57D0),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD3E3FD),
+    onPrimaryContainer = Color(0xFF041E49),
+    secondary = Color(0xFF454A51),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD3E3FD),
+    onSecondaryContainer = Color(0xFF041E49),
+    tertiary = Color(0xFF18692C),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFDCEFE0),
+    onTertiaryContainer = Color(0xFF0B3A18),
+    background = Color(0xFFECEEF1),
+    onBackground = Color(0xFF1B1D21),
+    surface = Color(0xFFF7F8FA),
+    onSurface = Color(0xFF1B1D21),
+    surfaceVariant = Color(0xFFE2E5E9),
+    onSurfaceVariant = Color(0xFF454A51),
     surfaceTint = Color.Transparent,
-    inverseSurface = Color(0xFF202325),
-    inverseOnSurface = Color(0xFFEAE7E2),
-    inversePrimary = Color(0xFFD8A44C),
-    outline = Color(0xFF76767C),
-    outlineVariant = Color(0xFFE0E0E2),
-    scrim = Color.Black,
+    inverseSurface = Color(0xFF2B2F34),
+    inverseOnSurface = Color(0xFFE3E5E8),
+    inversePrimary = Color(0xFFA8C7FA),
+    outline = Color(0xFF737880),
+    outlineVariant = Color(0xFFC7CBD1),
+    scrim = Color(0xFF000000),
     error = Color(0xFFB3261E),
-    onError = Color.White,
+    onError = Color(0xFFFFFFFF),
     errorContainer = Color(0xFFF9DEDC),
     onErrorContainer = Color(0xFF410E0B),
-    surfaceBright = Color.White,
-    surfaceDim = Color(0xFFE0E0E2),
-    surfaceContainerLowest = Color.White,
-    surfaceContainerLow = Color(0xFFFAFAFA),
-    surfaceContainer = Color(0xFFF4F5F7),
-    surfaceContainerHigh = Color(0xFFF0F0F0),
-    surfaceContainerHighest = Color(0xFFE8E8EA),
+    surfaceBright = Color(0xFFF7F8FA),
+    surfaceDim = Color(0xFFD8DBE0),
+    surfaceContainerLowest = Color(0xFFF7F8FA),
+    surfaceContainerLow = Color(0xFFF7F8FA),
+    surfaceContainer = Color(0xFFE2E5E9),
+    surfaceContainerHigh = Color(0xFFDDE0E5),
+    surfaceContainerHighest = Color(0xFFD8DBE0),
 )
 
-private val PlexoDarkColors = darkColorScheme(
-    primary = Color(0xFFD8A44C),
-    onPrimary = Color(0xFF1B1408),
-    primaryContainer = Color(0xFF33291A),
-    onPrimaryContainer = Color(0xFFE8BB6D),
-    secondary = Color(0xFFB5B9BF),
-    onSecondary = Color(0xFF1B1E20),
-    secondaryContainer = Color(0xFF173C33),
-    onSecondaryContainer = Color(0xFF9AD6C5),
-    tertiary = Color(0xFF7FC9BB),
-    onTertiary = Color(0xFF123A31),
-    tertiaryContainer = Color(0xFF173C33),
-    onTertiaryContainer = Color(0xFF7FC9BB),
-    background = Color(0xFF1B1E20),
-    onBackground = Color(0xFFEAE7E2),
-    surface = Color(0xFF1B1E20),
-    onSurface = Color(0xFFEAE7E2),
-    surfaceVariant = Color(0xFF242729),
-    onSurfaceVariant = Color(0xFFB5B9BF),
+private val DarkColors = darkColorScheme(
+    primary = Color(0xFFA8C7FA),
+    onPrimary = Color(0xFF062E6F),
+    primaryContainer = Color(0xFF0842A0),
+    onPrimaryContainer = Color(0xFFD3E3FD),
+    secondary = Color(0xFFC2C6CC),
+    onSecondary = Color(0xFF2B2F34),
+    secondaryContainer = Color(0xFF0842A0),
+    onSecondaryContainer = Color(0xFFD3E3FD),
+    tertiary = Color(0xFF30D158),
+    onTertiary = Color(0xFF00390F),
+    tertiaryContainer = Color(0xFF12401E),
+    onTertiaryContainer = Color(0xFFBFF0CA),
+    background = Color(0xFF16181B),
+    onBackground = Color(0xFFE3E5E8),
+    surface = Color(0xFF202327),
+    onSurface = Color(0xFFE3E5E8),
+    surfaceVariant = Color(0xFF2B2F34),
+    onSurfaceVariant = Color(0xFFC2C6CC),
     surfaceTint = Color.Transparent,
-    inverseSurface = Color(0xFFEAE7E2),
-    inverseOnSurface = Color(0xFF1D1D1F),
-    inversePrimary = Color(0xFF92400E),
-    outline = Color(0xFF858B91),
-    outlineVariant = Color(0xFF33383C),
-    scrim = Color.Black,
-    error = Color(0xFFFFB4AB),
+    inverseSurface = Color(0xFFE3E5E8),
+    inverseOnSurface = Color(0xFF1B1D21),
+    inversePrimary = Color(0xFF0B57D0),
+    outline = Color(0xFF8A8F97),
+    outlineVariant = Color(0xFF41454C),
+    scrim = Color(0xFF000000),
+    error = Color(0xFFF2B8B5),
     onError = Color(0xFF601410),
     errorContainer = Color(0xFF8C1D18),
     onErrorContainer = Color(0xFFFFDAD6),
-    surfaceBright = Color(0xFF33383C),
-    surfaceDim = Color(0xFF1B1E20),
-    surfaceContainerLowest = Color(0xFF16181A),
-    surfaceContainerLow = Color(0xFF1B1E20),
-    surfaceContainer = Color(0xFF202325),
-    surfaceContainerHigh = Color(0xFF242729),
-    surfaceContainerHighest = Color(0xFF2B2F33),
+    surfaceBright = Color(0xFF383C41),
+    surfaceDim = Color(0xFF16181B),
+    surfaceContainerLowest = Color(0xFF1B1D21),
+    surfaceContainerLow = Color(0xFF202327),
+    surfaceContainer = Color(0xFF2B2F34),
+    surfaceContainerHigh = Color(0xFF31353A),
+    surfaceContainerHighest = Color(0xFF383C41),
 )
 
-private val PlexoShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(8.dp),
-    large = RoundedCornerShape(8.dp),
-    extraLarge = RoundedCornerShape(8.dp),
+private val CardKeyShapes = Shapes(
+    extraSmall = RoundedCornerShape(3.dp),
+    small = RoundedCornerShape(3.dp),
+    medium = RoundedCornerShape(3.dp),
+    large = RoundedCornerShape(3.dp),
+    extraLarge = RoundedCornerShape(3.dp),
 )
 
 private val PlexoTypography = Typography().let { native ->
@@ -112,31 +114,16 @@ private val PlexoTypography = Typography().let { native ->
 fun CardKeyTheme(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 48.dp) {
         MaterialTheme(
-            colorScheme = if (isSystemInDarkTheme()) PlexoDarkColors else PlexoLightColors,
+            colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
             typography = PlexoTypography,
-            shapes = PlexoShapes,
+            shapes = CardKeyShapes,
             content = content,
         )
     }
 }
 
-@Composable
-internal fun managerColorScheme() = MaterialTheme.colorScheme.let { base ->
-    if (isSystemInDarkTheme()) base.copy(
-        primary = Color(0xFFACC4FF), onPrimary = Color(0xFF002D70),
-        primaryContainer = Color(0xFF1B3F7B), onPrimaryContainer = Color(0xFFD9E2FF),
-        background = Color(0xFF1C2226), surface = Color(0xFF20292F),
-        onSurface = Color(0xFFE6EBE8), onBackground = Color(0xFFE6EBE8),
-        onSurfaceVariant = Color(0xFFAFBABF), outlineVariant = Color(0xFF465057),
-        surfaceContainer = Color(0xFF242E34), surfaceContainerLow = Color(0xFF20292F),
-        secondaryContainer = Color(0xFF293E5D), onSecondaryContainer = Color(0xFFD9E2FF),
-    ) else base.copy(
-        primary = Color(0xFF2358C4), onPrimary = Color.White,
-        primaryContainer = Color(0xFFE8EEFB), onPrimaryContainer = Color(0xFF1E438B),
-        background = Color(0xFFF7F7F2), surface = Color.White,
-        onSurface = Color(0xFF20292F), onBackground = Color(0xFF20292F),
-        onSurfaceVariant = Color(0xFF67747A), outlineVariant = Color(0xFFDDE2DF),
-        surfaceContainer = Color(0xFFF7F7F2), surfaceContainerLow = Color.White,
-        secondaryContainer = Color(0xFFE8EEFB), onSecondaryContainer = Color(0xFF2358C4),
-    )
-}
+internal val ColorScheme.isDark: Boolean get() = surface.luminance() < 0.5f
+
+internal val ColorScheme.success: Color get() = if (isDark) Color(0xFF30D158) else Color(0xFF18692C)
+
+internal val ColorScheme.warning: Color get() = if (isDark) Color(0xFFFFD60A) else Color(0xFF7A5100)

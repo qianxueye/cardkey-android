@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.CardKey" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">@color/surface_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">#A8C7FA</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

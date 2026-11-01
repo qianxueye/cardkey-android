@@ -182,7 +182,6 @@ fun ManagerScreen(
     }
     DisposableEffect(Unit) { onDispose { confirmation?.close() } }
 
-    MaterialTheme(colorScheme = if (tab != 3) managerColorScheme() else MaterialTheme.colorScheme) {
     confirmation?.let { input ->
         val dismiss = { input.close(); confirmation = null; if (input.inventorySelection != null) onCancel() }
         AlertDialog(onDismissRequest = dismiss,
@@ -779,7 +778,6 @@ fun ManagerScreen(
                 }
             }
         }
-    }
     }
 }
 
