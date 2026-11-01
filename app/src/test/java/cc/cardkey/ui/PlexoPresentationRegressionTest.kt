@@ -141,6 +141,19 @@ class PlexoPresentationRegressionTest {
         assertCompleteIdsAndSelection(credentials)
     }
 
+    @Test fun credentialIdsSharingEdgesStayDistinguishableInTheList() {
+        fun withId(id: ByteArray) = InventoryCredential(rp, Credential(id, FidoUser(byteArrayOf(id[2]), "account", "account"), Cbor.Map(emptyMap()), null))
+        val first = withId(ByteArray(32) { 0x42 }.also { it[0] = 0xA1.toByte(); it[1] = 0xB2.toByte(); it[2] = 1; it[30] = 0xC3.toByte(); it[31] = 0xD4.toByte() })
+        val second = withId(ByteArray(32) { 0x42 }.also { it[0] = 0xA1.toByte(); it[1] = 0xB2.toByte(); it[2] = 2; it[30] = 0xC3.toByte(); it[31] = 0xD4.toByte() })
+        renderCredentials(listOf(first, second)) { _ ->
+            val texts = listOf(first, second).map { credential ->
+                val node = compose.onNodeWithTag("object-credential-${credential.idHex}").performScrollTo().fetchSemanticsNode()
+                node.config[androidx.compose.ui.semantics.SemanticsProperties.Text].joinToString(" ") { it.text }
+            }
+            assertNotEquals(texts[0], texts[1])
+        }
+    }
+
     private fun assertCompleteIdsAndSelection(credentials: List<InventoryCredential>) {
         renderCredentials(credentials) { selected ->
             credentials.forEach { credential ->

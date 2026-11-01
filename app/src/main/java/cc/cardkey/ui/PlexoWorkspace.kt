@@ -75,12 +75,13 @@ internal fun PlexoObjects(
                 }))
             val names = inventory.credentials.map { it.name?.takeIf { name -> name.isNotBlank() } }
             val counts = inventory.credentials.indices.groupingBy { inventory.credentials[it].rp.id to names[it] }.eachCount()
+            val shortIds = shortCredentialIds(inventory.credentials)
             if (inventory.credentials.isNotEmpty()) ObjectGroup(inventory.credentials.mapIndexed { index, credential ->
                 {
                     val name = names[index]
                     val ambiguous = name == null || counts.getValue(credential.rp.id to name) > 1
                     val account = name ?: credential.displayName?.takeIf { it.isNotBlank() }
-                    val shortId = credential.idHex.let { "${it.take(4)}…${it.takeLast(4)}" }
+                    val shortId = shortIds.getValue(credential)
                     val detail = listOfNotNull(account, shortId.takeIf { ambiguous || account == null }).joinToString("  ")
                     ObjectOption(credential.rp.id, detail.ifEmpty { null }, inventory.credential == credential, enabled,
                         "object-credential-${credential.idHex}", icon) { onCredential(credential) }
@@ -127,4 +128,21 @@ private fun ObjectOption(title: String, detail: String?, selected: Boolean, enab
             Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.clearAndSetSemantics {})
         }
     }
+}
+
+/** Shortens each credential id to the shortest prefix…suffix that is unique among credentials with the same site and account; falls back to the full id. */
+internal fun shortCredentialIds(credentials: List<InventoryCredential>): Map<InventoryCredential, String> {
+    val result = HashMap<InventoryCredential, String>()
+    credentials.groupBy { it.rp.id to (it.name?.takeIf { name -> name.isNotBlank() } ?: it.displayName?.takeIf { name -> name.isNotBlank() }) }
+        .values.forEach { group ->
+            var edge = 4
+            var shortened = group.map { it.idHex }
+            while (edge * 2 < (group.maxOfOrNull { it.idHex.length } ?: 0)) {
+                val candidate = group.map { "${it.idHex.take(edge)}…${it.idHex.takeLast(edge)}" }
+                if (candidate.toSet().size == candidate.size) { shortened = candidate; break }
+                edge += 2
+            }
+            group.forEachIndexed { index, credential -> result[credential] = shortened[index] }
+        }
+    return result
 }
