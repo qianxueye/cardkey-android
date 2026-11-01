@@ -60,16 +60,16 @@ class NativeCardHomeSemanticsTest {
             activity.setContent {
                 CardKeyTheme {
                     Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
-                        NativeCardHome(state.value, CardArtworkState.Default,
-                            onRead = { reads++ }, onPrepare = {}, onFido = {}, onPiv = {}, onTechnical = {},
+                        NativeCardHome(state.value, CardArtworkState.Default, null,
+                            onPrepare = {}, onFido = {}, onPiv = {},
                             onReaders = { selections++ }, onRetry = {})
+                        NativeReadButton(state.value, onRead = { reads++ })
                     }
                 }
             }
             compose.onNodeWithTag("native-read-card").assertIsDisplayed().assertIsNotEnabled()
             assertTrue(compose.onNodeWithTag("native-read-card").fetchSemanticsNode().boundsInRoot.height >= 48f)
             compose.onNodeWithText(activity.getString(R.string.native_reader_missing)).assertIsDisplayed()
-            compose.onNodeWithText(activity.getString(R.string.native_choose_reader_hint)).assertIsDisplayed()
             compose.onNodeWithText(activity.getString(R.string.native_choose_reader)).assertIsEnabled().performClick()
             assertEquals(1, selections)
             assertEquals(0, reads)
@@ -99,21 +99,21 @@ class NativeCardHomeSemanticsTest {
             activity.setContent {
                 CardKeyTheme {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
-                        NativeCardHome(ManagerState(), CardArtworkState.Default,
-                            onRead = {}, onPrepare = { clicks += "prepare" },
+                        NativeCardHome(ManagerState(), CardArtworkState.Default, 4,
+                            onPrepare = { clicks += "prepare" },
                             onFido = { clicks += "fido" }, onPiv = { clicks += "piv" },
-                            onTechnical = { clicks += "technical" }, onReaders = {}, onRetry = {})
+                            onReaders = {}, onRetry = {})
                     }
                 }
             }
-            listOf(R.string.navigation_passkeys, R.string.native_certificates, R.string.native_technical)
+            listOf(R.string.navigation_passkeys, R.string.native_certificates)
                 .forEach { label ->
                     compose.onNode(hasText(activity.getString(label)) and hasClickAction())
                         .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
                 }
             compose.onNode(hasText(activity.getString(R.string.native_prepare)) and hasClickAction())
                 .performScrollTo().assertIsDisplayed().performClick()
-            assertEquals(listOf("fido", "piv", "technical", "prepare"), clicks)
+            assertEquals(listOf("fido", "piv", "prepare"), clicks)
             compose.onAllNodesWithText("›").assertCountEquals(0)
             compose.onAllNodesWithText("›", useUnmergedTree = true).assertCountEquals(0)
         } finally {

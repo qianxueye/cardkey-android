@@ -95,9 +95,8 @@ class OperationFeedbackActivityTest {
             val activity = controller.get()
             shadowOf(NfcAdapter.getDefaultAdapter(activity)).setEnabled(false)
             compose.waitForIdle()
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
-            compose.onNode((hasContentDescription("设置") or (hasText("设置") and
-                SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
+            compose.onNode(homeTask("通行密钥")).performScrollTo().performClick()
+            compose.onNode(navTab("设置")).performClick()
             compose.onNodeWithText("高级 FIDO 设置与诊断").performScrollTo().performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo()
                 .performSemanticsAction(SemanticsActions.OnClick) { it() }

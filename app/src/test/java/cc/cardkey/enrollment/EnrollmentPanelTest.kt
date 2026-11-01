@@ -67,7 +67,7 @@ class EnrollmentPanelTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNode(cc.cardkey.ui.navTab("设置")).performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
             check { compose.runOnIdle { clear.intValue++ }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }

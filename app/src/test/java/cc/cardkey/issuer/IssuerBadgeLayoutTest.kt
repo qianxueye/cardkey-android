@@ -126,7 +126,7 @@ class IssuerBadgeLayoutTest {
                 if (height > width) {
                     compose.onNodeWithTag("native-home-back").performClick()
                     compose.onNodeWithTag("native-card-home").assertExists()
-                    compose.onNode(hasText(activity.get().getString(R.string.navigation_passkeys)) and hasClickAction())
+                    compose.onNode(cc.cardkey.ui.homeTask(activity.get().getString(R.string.navigation_passkeys)))
                         .performScrollTo().assertIsEnabled().performClick()
                     compose.onNodeWithTag("workspace-navigation").assertExists()
                 }

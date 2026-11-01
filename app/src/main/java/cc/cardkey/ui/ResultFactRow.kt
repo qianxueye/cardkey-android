@@ -1,6 +1,9 @@
 package cc.cardkey.ui
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.*
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import cc.cardkey.R
@@ -68,4 +71,19 @@ internal fun confirmationOperationTitleResource(operation: ManagerOperation): In
     ManagerOperation.PIV_UNBLOCK -> cc.cardkey.R.string.confirmTitle_PIV_UNBLOCK
     ManagerOperation.PIV_CMS_SIGN -> cc.cardkey.R.string.confirmTitle_PIV_CMS_SIGN
     else -> protectedPivOperationTitleResource(operation)
+}
+
+@Composable
+internal fun CertificateValidity(rows: List<ResultRow>) {
+    fun instant(label: String) = rows.firstOrNull { it.label == label }?.value
+        ?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+    val start = instant("piv_not_before") ?: return
+    val end = instant("piv_not_after") ?: return
+    val at = instant("piv_assessed_at") ?: return
+    if (!end.isAfter(start)) return
+    val remaining = ((end.toEpochMilli() - at.toEpochMilli()).toFloat() / (end.toEpochMilli() - start.toEpochMilli())).coerceIn(0f, 1f)
+    val scheme = androidx.compose.material3.MaterialTheme.colorScheme
+    androidx.compose.material3.LinearProgressIndicator(progress = { remaining },
+        modifier = androidx.compose.ui.Modifier.fillMaxWidth().height(4.dp), color = if (remaining < 0.2f) scheme.warning else scheme.primary,
+        trackColor = scheme.surfaceVariant, strokeCap = androidx.compose.ui.graphics.StrokeCap.Butt)
 }

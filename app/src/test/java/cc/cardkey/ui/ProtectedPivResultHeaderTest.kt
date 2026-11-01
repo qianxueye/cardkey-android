@@ -51,7 +51,7 @@ class ProtectedPivResultHeaderTest {
             }
         }
         try {
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            compose.onNode(homeTask("通行密钥")).performScrollTo().performClick()
             check()
         } finally { host.pause().stop().destroy() }
     }

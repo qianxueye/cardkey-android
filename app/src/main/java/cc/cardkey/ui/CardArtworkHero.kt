@@ -2,7 +2,6 @@ package cc.cardkey.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -15,7 +14,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -26,16 +26,16 @@ import androidx.compose.ui.unit.dp
 import cc.cardkey.R
 
 @Composable
-internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit) {
+internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit, fullWidth: Boolean = false) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state is CardArtworkState.Loaded) {
             val ratio = state.bitmap.width.toFloat() / state.bitmap.height
             val width = minOf(333.dp, LocalConfiguration.current.screenHeightDp.dp * 0.65f * ratio)
-            Surface(shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = width).fillMaxWidth().aspectRatio(ratio)) {
+            Surface(shape = MaterialTheme.shapes.medium, modifier = Modifier.widthIn(max = width).fillMaxWidth().aspectRatio(ratio)) {
                 Image(state.bitmap.asImageBitmap(), state.label, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             }
         } else {
-            ApprovedCardHero(Modifier.size(112.dp, 70.dp), label = stringResource(R.string.artwork_generic))
+            ApprovedCardHero(if (fullWidth) Modifier.fillMaxWidth().aspectRatio(89.6f / 58.68f) else Modifier.size(112.dp, 70.dp), label = stringResource(R.string.artwork_generic))
         }
         when (state) {
             CardArtworkState.Default -> Unit
@@ -79,30 +79,15 @@ internal fun ApprovedCardHero(modifier: Modifier = Modifier, label: String? = nu
                 0f to Color.White.copy(alpha = .85f), .6f to Color.White.copy(alpha = .08f),
                 1f to Color.White.copy(alpha = .35f), startY = .4f, endY = 53.58f),
                 Offset(.4f, .4f), Size(84.8f, 53.18f), CornerRadius(2.78f), style = Stroke(.2f))
-            withTransform({ translate(8.56f, 17.99f) }) {
-                drawRoundRect(Color(0xFF76603E), size = Size(13f, 11.8f), cornerRadius = CornerRadius(1.25f))
-                drawRoundRect(Brush.linearGradient(
-                    0f to Color(0xFFB28D4E), .18f to Color(0xFFE8CF91), .43f to Color(0xFFF4DFAA),
-                    .68f to Color(0xFFD1AE69), .86f to Color(0xFFE7CA8A), 1f to Color(0xFFAD8345),
-                    start = Offset.Zero, end = Offset(13f, 11.8f)),
-                    Offset(.2f, .2f), Size(12.6f, 11.4f), CornerRadius(1.05f))
-                val metal = Path().apply { addRoundRect(RoundRect(.2f, .2f, 12.8f, 11.6f, CornerRadius(1.05f))) }
-                clipPath(metal) {
-                    val segments = Path().apply {
-                        moveTo(4.85f, .2f); cubicTo(4.85f, .8f, 4.35f, .75f, 4.35f, 1.65f)
-                        lineTo(4.35f, 9.95f); cubicTo(4.35f, 11f, 4.85f, 11f, 4.85f, 11.6f)
-                        moveTo(8.15f, .2f); cubicTo(8.15f, .8f, 8.65f, .75f, 8.65f, 1.65f)
-                        lineTo(8.65f, 9.95f); cubicTo(8.65f, 11f, 8.15f, 11f, 8.15f, 11.6f)
-                        for (y in listOf(3.24f, 5.78f, 8.32f)) {
-                            moveTo(.2f, y); lineTo(4.35f, y)
-                            moveTo(8.65f, y); lineTo(12.8f, y)
-                        }
-                    }
-                    drawPath(segments, Color(0xFF654B28), style = Stroke(.16f))
-                    for (y in listOf(.55f, 11.2f)) drawLine(Color(0xFFFFF0C2).copy(alpha = .45f),
-                        Offset(.5f, y), Offset(12.5f, y), .1f)
-                }
+            withTransform({ translate(8.56f, 17.99f); scale(.13f, .13f, pivot = Offset.Zero) }) {
+                drawRoundRect(Color(0xFFF9C72D), size = Size(100f, 90.5f), cornerRadius = CornerRadius(11f))
+                drawPath(ChipContacts, Color(0xFF34373B), style = Stroke(3f, join = StrokeJoin.Round))
             }
         }
     }
 }
+
+private val ChipContacts: Path = PathParser().parsePathString(
+    "M49.5 0V26.5L36 31.8L30.7 45.2L35.7 58.3L49.1 63.6L62.2 58.3L67.5 45.2L62.2 31.8L69.3 23.3H100" +
+        "M0 23.3H29.7L36 31.8M0 45.2H30.7M0 66.1H29.7L35.7 58.3M67.5 45.2H100M62.2 58.3L68.6 66.1H100M49.1 63.6V90.5" +
+        "M32.5 71.8Q49.1 82.5 65.7 71.8").toPath()

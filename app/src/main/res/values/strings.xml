@@ -118,7 +118,6 @@
     <string name="workspace_selectedSlot" tools:ignore="MissingTranslation">槽位 · %1$s</string>
     <string name="workspace_authenticator" tools:ignore="MissingTranslation">认证器</string>
     <string name="workspace_pivSecurity" tools:ignore="MissingTranslation">PIV 状态与安全设置</string>
-    <string name="workspace_slotCatalog" tools:ignore="MissingTranslation">槽位目录</string>
     <string name="workspace_slotAuthentication" tools:ignore="MissingTranslation">身份验证</string>
     <string name="workspace_slotSignature" tools:ignore="MissingTranslation">数字签名</string>
     <string name="workspace_slotManagement" tools:ignore="MissingTranslation">密钥管理</string>
@@ -140,16 +139,12 @@
     <string name="artwork_loading" tools:ignore="MissingTranslation">正在加载卡片图片…</string>
     <string name="artwork_failed" tools:ignore="MissingTranslation">卡片图片加载失败，仍可使用卡片功能。</string>
     <string name="artwork_retry" tools:ignore="MissingTranslation">重试图片</string>
-    <string name="workspace_sites" tools:ignore="MissingTranslation">网站与通行密钥</string>
-    <string name="workspace_security" tools:ignore="MissingTranslation">安全设置</string>
     <string name="workspace_fidoPin" tools:ignore="MissingTranslation">更改 FIDO PIN</string>
-    <string name="workspace_createOnWebsite" tools:ignore="MissingTranslation">新通行密钥由网站发起创建。这里可查看支持驻留的凭据。</string>
-    <string name="workspace_readSites" tools:ignore="MissingTranslation">查看通行密钥</string>
+    <string name="workspace_readSites" tools:ignore="MissingTranslation">重新读取</string>
     <string name="inventory_unread" tools:ignore="MissingTranslation">输入 FIDO PIN 后继续，再连接卡片。</string>
     <string name="inventory_loading" tools:ignore="MissingTranslation">正在读取通行密钥…</string>
     <string name="inventory_failed" tools:ignore="MissingTranslation">通行密钥未能读取。请重新发起读取。</string>
     <string name="inventory_empty" tools:ignore="MissingTranslation">这张卡没有可列出的通行密钥。</string>
-    <string name="inventory_loaded" tools:ignore="MissingTranslation">选择账户以修改用户名或删除通行密钥。</string>
     <string name="credential_deleted" tools:ignore="MissingTranslation">通行密钥已删除。重新读取可查看最新列表。</string>
     <string name="credential_updated" tools:ignore="MissingTranslation">用户名已更新。重新读取可查看最新列表。</string>
     <string name="confirm_fidoLastRetry" tools:ignore="MissingTranslation">FIDO PIN 仅剩一次尝试。输入错误将锁定 PIN，可能需要重置设备并重新绑定账户。仅验证一次？</string>
@@ -170,12 +165,7 @@
     <string name="native_card">卡片</string>
     <string name="native_unread">尚未读取</string>
     <string name="native_observed">信息已读取</string>
-    <string name="native_app_unread">未读取</string>
-    <string name="native_app_read">已读取</string>
     <string name="native_read">读取卡片</string>
-    <string name="native_read_scope">读取 FIDO 公开信息；证书信息请到“证书与签名”读取。</string>
-    <string name="native_tap">贴近手机的 NFC 感应区</string>
-    <string name="native_usb">选择已连接的 USB 读卡器</string>
     <string name="native_prepare">准备 PIN</string>
     <string name="native_inventory_title">查看通行密钥</string>
     <string name="native_target_unread">目标卡片尚未识别</string>
@@ -184,7 +174,7 @@
     <string name="native_pin_usb">可先输入 PIN，再提交读取。</string>
     <string name="native_submit_tap">提交并贴卡</string>
     <string name="native_certificates">证书与签名</string>
-    <string name="native_technical">技术信息</string>
+    <string name="native_count">%1$d 个</string>
     <string name="native_back">返回</string>
     <string name="fido_associatedModel">关联型号</string>
     <string name="fido_modelMissing">未收录</string>
@@ -192,5 +182,4 @@
     <string name="fido_modelFailed">型号查询失败</string>
     <string name="native_reader_missing">未选择读卡器</string>
     <string name="native_choose_reader">选择读卡器</string>
-    <string name="native_choose_reader_hint">选择 NFC 或已连接的 USB 读卡器</string>
 </resources>

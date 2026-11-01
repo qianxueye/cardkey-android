@@ -76,8 +76,8 @@ class PlexoPresentationRegressionTest {
         host.get().setContent {
             CardKeyTheme {
                 Column(Modifier.requiredSize(360.dp, 800.dp).verticalScroll(rememberScrollState()).padding(20.dp)) {
-                    NativeCardHome(ManagerState(), state, { fail("Unexpected read") }, { fail("Unexpected preparation") },
-                        { fail("Unexpected task") }, { fail("Unexpected PIV task") }, { fail("Unexpected settings") },
+                    NativeCardHome(ManagerState(), state, null, { fail("Unexpected preparation") },
+                        { fail("Unexpected task") }, { fail("Unexpected PIV task") },
                         { readerSelections++ }, { retries++ })
                 }
             }
@@ -135,21 +135,35 @@ class PlexoPresentationRegressionTest {
         assertCompleteIdsAndSelection(credentials)
     }
 
-    @Test fun missingAccountNamesIncludeCompleteCredentialIds() {
+    @Test fun missingAccountNamesIncludeShortCredentialIds() {
         val credentials = listOf(credential(null, "Personal", 3), credential("", "Personal", 4),
             credential(null, null, 5), credential(null, null, 6))
         assertCompleteIdsAndSelection(credentials)
+    }
+
+    @Test fun credentialIdsSharingEdgesStayDistinguishableInTheList() {
+        fun withId(id: ByteArray) = InventoryCredential(rp, Credential(id, FidoUser(byteArrayOf(id[2]), "account", "account"), Cbor.Map(emptyMap()), null))
+        val first = withId(ByteArray(32) { 0x42 }.also { it[0] = 0xA1.toByte(); it[1] = 0xB2.toByte(); it[2] = 1; it[30] = 0xC3.toByte(); it[31] = 0xD4.toByte() })
+        val second = withId(ByteArray(32) { 0x42 }.also { it[0] = 0xA1.toByte(); it[1] = 0xB2.toByte(); it[2] = 2; it[30] = 0xC3.toByte(); it[31] = 0xD4.toByte() })
+        renderCredentials(listOf(first, second)) { _ ->
+            val texts = listOf(first, second).map { credential ->
+                val node = compose.onNodeWithTag("object-credential-${credential.idHex}").performScrollTo().fetchSemanticsNode()
+                node.config[androidx.compose.ui.semantics.SemanticsProperties.Text].joinToString(" ") { it.text }
+            }
+            assertNotEquals(texts[0], texts[1])
+        }
     }
 
     private fun assertCompleteIdsAndSelection(credentials: List<InventoryCredential>) {
         renderCredentials(credentials) { selected ->
             credentials.forEach { credential ->
                 val row = compose.onNodeWithTag("object-credential-${credential.idHex}")
-                row.performScrollTo().assertTextContains(credential.idHex, substring = true)
+                val shortId = credential.idHex.let { "${it.take(4)}…${it.takeLast(4)}" }
+                row.performScrollTo().assertTextContains(shortId, substring = true)
                 val results = mutableListOf<TextLayoutResult>()
-                compose.onNodeWithText(credential.idHex, substring = true, useUnmergedTree = true)
+                compose.onNodeWithText(shortId, substring = true, useUnmergedTree = true)
                     .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
-                assertFalse("Credential ID must remain fully laid out", results.single().hasVisualOverflow)
+                assertFalse("Short credential ID must not be ellipsized", (0 until results.single().lineCount).any { results.single().isLineEllipsized(it) })
                 row.performClick()
                 assertSame(credential, selected())
             }

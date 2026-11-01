@@ -71,7 +71,7 @@ class TlsPanelTest {
         }
         try {
             compose.waitForIdle()
-            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNode(cc.cardkey.ui.navTab("设置")).performSemanticsAction(SemanticsActions.OnClick) { it() }
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
             check(activity)
         } finally { submitted?.close(); controller.pause().stop().destroy() }
@@ -129,7 +129,7 @@ class TlsPanelTest {
             compose.onNodeWithTag("tls-endpoint").performScrollTo().assertIsNotEnabled()
             compose.onNodeWithTag("tls-start").performScrollTo().assertIsNotEnabled()
             compose.onNodeWithTag("tls-pin").performScrollTo().assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.EditableText, androidx.compose.ui.text.AnnotatedString(""))).assertIsNotEnabled()
-            compose.onNode(hasText("通行密钥") and hasClickAction()).assertIsNotEnabled()
+            compose.onNode(cc.cardkey.ui.navTab("通行密钥")).assertIsNotEnabled()
             click("tls-cancel")
             assertEquals(1, cancelled)
             compose.onNodeWithTag("tls-start").performScrollTo().assertIsNotEnabled()

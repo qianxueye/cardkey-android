@@ -3,10 +3,7 @@ package cc.cardkey.ui
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -182,7 +179,6 @@ fun ManagerScreen(
     }
     DisposableEffect(Unit) { onDispose { confirmation?.close() } }
 
-    MaterialTheme(colorScheme = if (tab != 3) managerColorScheme() else MaterialTheme.colorScheme) {
     confirmation?.let { input ->
         val dismiss = { input.close(); confirmation = null; if (input.inventorySelection != null) onCancel() }
         AlertDialog(onDismissRequest = dismiss,
@@ -238,11 +234,12 @@ fun ManagerScreen(
         focusedInventory = false; tab = 5
     }
     BackHandler(tab != 5 && !state.busy && (focusedInventory || tab >= 2 || !objectDetail)) { returnHome() }
+    val topLevel = (tab == 5 || tab == 0 || tab == 1 || tab == 4) && !focusedInventory
     val topBar: @Composable () -> Unit = {
-        TopAppBar(title = {
+        if (!topLevel) TopAppBar(title = {
             if (focusedInventory && tab == 0) Text(stringResource(R.string.native_inventory_title))
             else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card), null, Modifier.size(24.dp))
+                Image(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card), null, Modifier.width(24.dp))
                 Text(stringResource(R.string.app_name))
             }
         }, navigationIcon = {
@@ -250,20 +247,16 @@ fun ManagerScreen(
                 modifier = Modifier.testTag("native-home-back")) {
                 Icon(nativeBackIcon, stringResource(R.string.native_back))
             }
-        }, actions = {
-            if (tab == 5) IconButton(onClick = { tab = 4 }, enabled = !state.busy) {
-                Icon(managerDestinationIcons[3], stringResource(R.string.navigation_settings))
-            }
         })
     }
     val navigationBar: @Composable () -> Unit = {
-        if (tab != 5 && !focusedInventory) NavigationBar(Modifier.testTag("workspace-navigation")) {
+        if (!focusedInventory) NavigationBar(Modifier.testTag("workspace-navigation")) {
             listOf(2 to R.string.navigation_device, 0 to R.string.navigation_passkeys,
                 1 to R.string.navigation_certificates, 4 to R.string.navigation_settings).forEach { (index, label) ->
-                NavigationBarItem(selected = tab == index || index == 4 && tab == 3,
+                CardKeyNavigationBarItem(selected = tab == index || index == 4 && tab == 3 || index == 2 && (tab == 5 || tab == 2 || tab == 6),
                     enabled = !state.busy && (index != 1 || state.supportsPiv), onClick = {
                     confirmation?.close(); confirmation = null
-                    tab = index
+                    tab = if (index == 2) 5 else index
                     focusedInventory = false
                     advanced = false
                     objectDetail = index == 0
@@ -280,7 +273,7 @@ fun ManagerScreen(
             Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(Modifier.widthIn(max = 840.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(managerDestinationIcons[2], contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Icon(androidx.compose.ui.res.painterResource(if (state.nfc) R.drawable.ic_contactless else R.drawable.ic_usb), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.weight(1f)) {
                         Text(if (!state.hasSelectedReader) stringResource(R.string.native_reader_missing)
                             else if (state.nfc) "NFC" else state.selectedReader?.displayLabel(resources) ?: "读卡器",
@@ -289,8 +282,12 @@ fun ManagerScreen(
                             stringResource(if (state.canEnterFidoSecrets) R.string.manager_fido_observed else R.string.manager_fido_unread),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.testTag("manager-fido-observation"))
-                        if (state.requiresInspection) Text(stringResource(R.string.workspace_inspection),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        if (state.requiresInspection) Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            StatusMark(StatusKind.UNKNOWN)
+                            Text(stringResource(R.string.workspace_inspection), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (state.nfc && state.busy) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodySmall)
                     }
                     if (tab != 2) TextButton(onClick = {
@@ -359,6 +356,10 @@ fun ManagerScreen(
             topBar = { if (!compact) topBar() },
             bottomBar = {
                 val actionControls: @Composable () -> Unit = {
+                    if (tab == 5 && !state.busy) NativeReadButton(state, onRead = {
+                        onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
+                            inventoryGeneration = inventory.generation, inventorySelection = inventory.credential))
+                    }, modifier = Modifier.widthIn(max = 840.dp).padding(horizontal = 20.dp, vertical = 8.dp))
                     if (tab < 2 && detailVisible) {
                         val op = operation
                         Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -398,7 +399,7 @@ fun ManagerScreen(
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
                                 (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) {
                                 if (op in setOf(ManagerOperation.FIDO_ASSERT, ManagerOperation.U2F_ASSERT, ManagerOperation.FIDO_VERIFY_CREDENTIAL)) {
-                                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_fido_auth), null, Modifier.size(24.dp))
+                                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_passkey), null, Modifier.size(24.dp))
                                     Spacer(Modifier.width(8.dp))
                                 }
                                 Text(if (focusedInventory && state.nfc) stringResource(R.string.native_submit_tap)
@@ -438,12 +439,10 @@ fun ManagerScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (compact) { topBar(); if (tab != 5 && tab != 6 && !focusedInventory) readerContext() }
                     if (tab == 5 && !state.busy) NativeCardHome(state, artwork,
-                        onRead = { onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
-                            inventoryGeneration = inventory.generation, inventorySelection = inventory.credential)) },
+                        passkeyCount = inventory.credentials.size.takeIf { inventory.load == InventoryLoad.LOADED },
                         onPrepare = { tab = 0; operation = ManagerOperation.FIDO_INVENTORY; advanced = false; focusedInventory = true; objectDetail = true },
                         onFido = { tab = 0; operation = ManagerOperation.FIDO_INVENTORY; focusedInventory = false; advanced = false; objectDetail = true },
                         onPiv = { tab = 1; operation = ManagerOperation.PIV_INFO; focusedInventory = false; objectDetail = false },
-                        onTechnical = { tab = 4; focusedInventory = false },
                         onReaders = { tab = 2 }, onRetry = { artworkLoader.load(artworkReference) })
                     if (tab == 5 && badgeContent != null) OutlinedButton(onClick = { tab = 6 }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.issuer_title)) }
                     if (tab == 6) badgeContent?.invoke()
@@ -557,6 +556,7 @@ fun ManagerScreen(
                                             "支持的协议", "支持的扩展", "PIN · 协议", "算法", "版本", "序列号",
                                             "credProtect", "credBlob", "用户验证方法", "piv_public_key", "piv_algorithm", "piv_version", "piv_serial")
                                         val technicalRows = result.value.rows.filter { it.label in technicalLabels }
+                                        CertificateValidity(result.value.rows)
                                         result.value.rows.filterNot { it.label in technicalLabels }.forEach { row ->
                                             ResultFactRow(row)
                                         }
@@ -780,7 +780,6 @@ fun ManagerScreen(
             }
         }
     }
-    }
 }
 
 @Composable
@@ -839,11 +838,12 @@ private fun OperationChoice(value: ManagerOperation, values: List<ManagerOperati
 private fun ReaderOption(title: String, detail: String?, selected: Boolean, enabled: Boolean, contactless: Boolean = false, onClick: () -> Unit) {
     Surface(Modifier.fillMaxWidth().selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
         shape = MaterialTheme.shapes.medium,
-        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
         contentColor = if (!enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             else if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Icon(androidx.compose.ui.res.painterResource(if (contactless) R.drawable.ic_approved_reader_contactless else R.drawable.ic_approved_reader), contentDescription = null)
+            Icon(androidx.compose.ui.res.painterResource(if (contactless) R.drawable.ic_contactless else R.drawable.ic_usb), contentDescription = null)
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
@@ -855,26 +855,18 @@ private fun ReaderOption(title: String, detail: String?, selected: Boolean, enab
 
 internal val managerDestinationIcons: List<androidx.compose.ui.graphics.painter.Painter>
     @Composable get() = listOf(
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_passkey),
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_certificate),
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_reader),
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_settings),
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_passkey),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_license),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_usb),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_settings),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_credit_card),
     )
 
-private val expandMoreIcon = ImageVector.Builder("ExpandMore", 24.dp, 24.dp, 24f, 24f).apply {
-    path(fill = SolidColor(Color.Black)) {
-        moveTo(7f, 9f); lineTo(12f, 14f); lineTo(17f, 9f); lineTo(18.4f, 10.4f)
-        lineTo(12f, 16.8f); lineTo(5.6f, 10.4f); close()
-    }
-}.build()
+private val expandMoreIcon: androidx.compose.ui.graphics.painter.Painter
+    @Composable get() = androidx.compose.ui.res.painterResource(R.drawable.ic_expand_more)
 
-private val expandLessIcon = ImageVector.Builder("ExpandLess", 24.dp, 24.dp, 24f, 24f).apply {
-    path(fill = SolidColor(Color.Black)) {
-        moveTo(7f, 15f); lineTo(12f, 10f); lineTo(17f, 15f); lineTo(18.4f, 13.6f)
-        lineTo(12f, 7.2f); lineTo(5.6f, 13.6f); close()
-    }
-}.build()
+private val expandLessIcon: androidx.compose.ui.graphics.painter.Painter
+    @Composable get() = androidx.compose.ui.res.painterResource(R.drawable.ic_expand_less)
 
 private fun needsPin(op: ManagerOperation): Boolean = op !in setOf(
     ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_RESET,
@@ -887,10 +879,5 @@ private fun needsSecretInput(op: ManagerOperation): Boolean = needsPin(op) || op
     ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT,
 )
 
-private val nativeBackIcon = ImageVector.Builder("Back", 24.dp, 24.dp, 24f, 24f).apply {
-    path(fill = SolidColor(Color.Black)) {
-        moveTo(20f, 11f); lineTo(7.8f, 11f); lineTo(13.4f, 5.4f); lineTo(12f, 4f)
-        lineTo(4f, 12f); lineTo(12f, 20f); lineTo(13.4f, 18.6f); lineTo(7.8f, 13f)
-        lineTo(20f, 13f); close()
-    }
-}.build()
+private val nativeBackIcon: androidx.compose.ui.graphics.painter.Painter
+    @Composable get() = androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back)
