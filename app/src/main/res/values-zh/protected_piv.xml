@@ -146,8 +146,6 @@
     <string name="native_card">卡片</string>
     <string name="native_unread">尚未读取</string>
     <string name="native_observed">信息已读取</string>
-    <string name="native_app_unread">未读取</string>
-    <string name="native_app_read">已读取</string>
     <string name="native_read">读取卡片</string>
     <string name="native_prepare">准备 PIN</string>
     <string name="native_inventory_title">查看通行密钥</string>

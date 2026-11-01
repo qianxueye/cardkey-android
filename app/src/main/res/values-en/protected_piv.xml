@@ -146,8 +146,6 @@
     <string name="native_card">Card</string>
     <string name="native_unread">Not read</string>
     <string name="native_observed">Information read</string>
-    <string name="native_app_unread">Not read</string>
-    <string name="native_app_read">Read</string>
     <string name="native_read">Read card</string>
     <string name="native_prepare">Prepare PIN</string>
     <string name="native_inventory_title">View passkeys</string>

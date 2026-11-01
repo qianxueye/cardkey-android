@@ -315,8 +315,6 @@ class ProtectedPivLocalizationTest {
             "native_card" to "卡片",
             "native_unread" to "尚未读取",
             "native_observed" to "信息已读取",
-            "native_app_unread" to "未读取",
-            "native_app_read" to "已读取",
             "native_read" to "读取卡片",
             "native_reader_missing" to "未选择读卡器",
             "native_choose_reader" to "选择读卡器",
