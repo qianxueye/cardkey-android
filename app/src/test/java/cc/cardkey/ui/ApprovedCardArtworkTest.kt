@@ -60,15 +60,31 @@ class ApprovedCardArtworkTest {
             val view = host.get().window.decorView
             val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
             compose.runOnIdle { view.draw(android.graphics.Canvas(bitmap)) }
-            icons.forEachIndexed { index, _ ->
-                val pixels = (0 until 24).sumOf { x -> (0 until 24).count { y ->
+            icons.forEachIndexed { index, id ->
+                val expected = inkPixels(host.get(), id)
+                val rendered = (0 until 24).sumOf { x -> (0 until 24).count { y ->
                     bitmap.getPixel(origin.x.roundToInt() + index * 24 + x, origin.y.roundToInt() + y) != android.graphics.Color.WHITE
                 } }
-                assertTrue("Vector $index must render its visible geometry", pixels > 30)
+                assertTrue("Vector $index has no ink in its own drawable", expected > 0)
+                assertTrue("Vector $index rendered $rendered px, its own drawable has $expected px",
+                    rendered >= expected * 0.85 && rendered <= expected * 1.15 + 8)
             }
             File("build/ui-previews").mkdirs()
             File("build/ui-previews/approved-icons.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         } finally { host.pause().stop().destroy() }
+    }
+
+    private fun inkPixels(context: android.content.Context, id: Int): Int {
+        val size = (24 * context.resources.displayMetrics.density).roundToInt()
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val drawable = requireNotNull(context.getDrawable(id)).mutate()
+        val scale = minOf(size.toFloat() / drawable.intrinsicWidth, size.toFloat() / drawable.intrinsicHeight)
+        val width = (drawable.intrinsicWidth * scale).roundToInt()
+        val height = (drawable.intrinsicHeight * scale).roundToInt()
+        drawable.setBounds((size - width) / 2, (size - height) / 2, (size + width) / 2, (size + height) / 2)
+        drawable.setTint(android.graphics.Color.BLACK)
+        drawable.draw(android.graphics.Canvas(bitmap))
+        return (0 until size).sumOf { x -> (0 until size).count { y -> android.graphics.Color.alpha(bitmap.getPixel(x, y)) > 0 } }
     }
 
     private fun render(name: String) {

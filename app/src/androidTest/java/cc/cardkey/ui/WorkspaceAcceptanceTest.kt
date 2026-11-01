@@ -79,7 +79,7 @@ class WorkspaceAcceptanceTest {
             compose.onNodeWithTag("native-home-back").performClick()
             compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
             assertEquals(0, dispatches.get())
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performScrollTo().performClick()
+            compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().performScrollTo().performClick()
             check(activity, { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }, dispatches)
         }
     }
@@ -90,7 +90,7 @@ class WorkspaceAcceptanceTest {
             compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertExists()
             compose.onNodeWithTag("manager-run").assertIsNotEnabled()
             for (piv in listOf(false, true)) {
-                compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
+                compose.onNode(hasText("设置") and hasClickAction()).performClick()
                 compose.onNodeWithText(if (piv) "高级 PIV 管理与诊断" else "高级 FIDO 设置与诊断").performScrollTo().performClick()
                 val actions = ManagerOperation.entries.filter {
                     it.piv == piv && it !in setOf(ManagerOperation.FIDO_RESET, ManagerOperation.FIDO_RPS,
@@ -107,7 +107,7 @@ class WorkspaceAcceptanceTest {
                     if (secrets.isNotEmpty()) assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
                 }
             }
-            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
+            compose.onNode(hasText("设置") and hasClickAction()).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()

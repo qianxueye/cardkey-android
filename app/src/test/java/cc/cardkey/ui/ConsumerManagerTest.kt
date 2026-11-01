@@ -126,7 +126,7 @@ class ConsumerManagerTest {
             } }
         }
         try {
-            compose.onNodeWithTag("native-read-card").performScrollTo().performClick()
+            compose.onNodeWithTag("native-read-card").performClick()
             assertTrue(model.state.value.busy)
             assertTrue(model.state.value.awaitingNfc)
             assertNotNull(model.pendingNfcOwner)
@@ -172,7 +172,7 @@ class ConsumerManagerTest {
             }
             compose.onNodeWithText("RP SHA-256 · HEX").assertDoesNotExist()
             compose.onNodeWithText("取消").performClick()
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performScrollTo().performClick()
+            compose.onNode(homeTask("通行密钥")).performScrollTo().performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithTag("task-FIDO_CHANGE_PIN").performScrollTo().performClick()
             compose.runOnIdle {

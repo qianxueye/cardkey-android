@@ -72,7 +72,7 @@ class PlexoWorkspaceTest {
         }
         try {
             compose.waitForIdle()
-            if (openPasskeys) compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            if (openPasskeys) compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().performClick()
             check(controller.get(), { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }, { action })
         } finally { controller.pause().stop().destroy() }
     }
@@ -89,11 +89,11 @@ class PlexoWorkspaceTest {
             compose.onNodeWithContentDescription("通用卡片示意图").assertIsDisplayed()
             compose.onNodeWithText("刷新读卡器").performScrollTo().assertIsDisplayed()
             savePreview("readers", activity)
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().performClick()
             compose.onNodeWithTag("workspace-object-back").performClick()
-            compose.onNodeWithTag("object-overview").assertIsDisplayed()
+            compose.onNodeWithTag("object-fido-pin").assertIsDisplayed()
             savePreview("passkeys", activity)
-            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
+            compose.onNode(navTab("设置")).performClick()
             compose.onNodeWithText("凭据提供者设置").assertIsDisplayed()
             compose.onNodeWithText("申请 PIV 证书").assertIsDisplayed()
         }
@@ -125,14 +125,12 @@ class PlexoWorkspaceTest {
             compose.onNodeWithText("尚未读取", substring = false).assertExists()
             compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
             assertTrue(submissions.isEmpty())
-            compose.onNodeWithTag("native-read-card").performScrollTo().performClick()
+            compose.onNodeWithTag("native-read-card").performClick()
             assertEquals(1, submissions.size)
             assertEquals(ManagerOperation.FIDO_INFO, submissions.single().operation)
             assertTrue(submissions.single().pin.isEmpty())
             update(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)))
             compose.onNodeWithText("信息已读取").assertExists()
-            compose.onNodeWithText("FIDO2 · 已读取").assertExists()
-            compose.onNodeWithText("PIV · 未读取").assertExists()
             update(ManagerState(recognition = CardRecognition("other-route", 1, CardFamily.FIDO2)))
             compose.onNodeWithText("尚未读取", substring = false).assertExists()
             compose.onNodeWithText("未初始化", substring = true).assertDoesNotExist()
@@ -205,7 +203,7 @@ class PlexoWorkspaceTest {
             compose.onNodeWithTag("workspace-object-back").performClick()
             compose.onNodeWithTag("workspace-objects").assertExists()
             compose.onNodeWithTag("workspace-detail").assertDoesNotExist()
-            compose.onNode((hasText("证书") or hasText("证书与签名")) and hasClickAction()).performClick()
+            compose.onAllNodes((hasText("证书") or hasText("证书与签名")) and hasClickAction()).onFirst().performClick()
             compose.onNodeWithTag("object-slot-9C").performScrollTo().performClick()
             compose.onNodeWithTag("workspace-detail").assertExists()
             compose.onNodeWithTag("workspace-objects").assertDoesNotExist()
@@ -220,7 +218,8 @@ class PlexoWorkspaceTest {
 
     @Test fun wideObjectSelectionKeepsBothPanesAndCanReachRetiredSlotsWithoutDispatch() {
         render(1200, 800) { _, _, action ->
-            compose.onNode((hasText("证书") or hasText("证书与签名")) and hasClickAction()).performClick()
+            compose.onNode(hasText("证书") and hasClickAction()).performClick()
+            compose.waitForIdle()
             compose.onNodeWithTag("object-slot-8C").performScrollTo().performClick()
             compose.onNodeWithTag("workspace-objects").assertExists()
             compose.onNodeWithTag("workspace-detail").assertExists()
@@ -235,7 +234,7 @@ class PlexoWorkspaceTest {
         val result = fixture.read({ fixture.start + 1 }) as OperationResult.Completed
         var exported: ManagerReport? = null
         render(360, 640, onExport = { exported = it }) { _, update, action ->
-            compose.onNode((hasText("证书") or hasText("证书与签名")) and hasClickAction()).performClick()
+            compose.onAllNodes((hasText("证书") or hasText("证书与签名")) and hasClickAction()).onFirst().performClick()
             compose.onNodeWithTag("object-slot-9D").performScrollTo().performClick()
             update(ManagerState(operation = ManagerOperation.PIV_SLOT, result = result))
             compose.onNodeWithTag("workspace-object-back").performScrollTo().performClick()
@@ -260,7 +259,7 @@ class PlexoWorkspaceTest {
         val commandCount = card.commands.size
         var exported: ManagerReport? = null
         render(360, 640, onExport = { exported = it }) { _, update, action ->
-            compose.onNode((hasText("证书") or hasText("证书与签名")) and hasClickAction()).performClick()
+            compose.onAllNodes((hasText("证书") or hasText("证书与签名")) and hasClickAction()).onFirst().performClick()
             compose.onNodeWithTag("object-slot-9C").performScrollTo().performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithTag("task-PIV_SSH_EXPORT").performScrollTo().performClick()
@@ -297,10 +296,10 @@ class PlexoWorkspaceTest {
 
     private fun chooseTask(operation: ManagerOperation) {
         if (operation == ManagerOperation.PIV_ADMIN || operation == ManagerOperation.FIDO_ALWAYS_UV) {
-            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
+            compose.onNode(navTab("设置")).performClick()
             compose.onNodeWithText(if (operation.piv) "高级 PIV 管理与诊断" else "高级 FIDO 设置与诊断").performScrollTo().performClick()
         } else {
-            compose.onNode(hasText("通行密钥") and hasClickAction()).performClick()
+            compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().performClick()
         }
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
         compose.onNodeWithTag("task-${operation.name}").performScrollTo().performClick()
@@ -333,7 +332,7 @@ class PlexoWorkspaceTest {
         val reads = mutableListOf<OperationInput>()
         try {
             render(360, 640, onSubmit = { reads += it }) { _, _, action ->
-                compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
+                compose.onNode(navTab("设置")).performClick()
                 compose.onNodeWithText("高级 PIV 管理与诊断").performScrollTo().performClick()
                 chooseTask(ManagerOperation.PIV_ADMIN)
                 compose.onNodeWithTag("recognition-task").assertDoesNotExist()
@@ -376,7 +375,7 @@ class PlexoWorkspaceTest {
         val selected = reader("recognition-ca")
         val descriptor = ManagerState(nfc = false, selectedReader = selected)
         render(360, 640, initial = descriptor) { _, update, _ ->
-            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
+            compose.onNode(navTab("设置")).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("enrollment-cn").performScrollTo().assertIsDisplayed()
@@ -404,7 +403,7 @@ class PlexoWorkspaceTest {
         val selected = reader("recognition-tls")
         val descriptor = ManagerState(nfc = false, selectedReader = selected)
         render(360, 640, initial = descriptor, enrollment = imported) { _, update, _ ->
-            compose.onNode((hasContentDescription("设置") or (hasText("设置") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected))) and hasClickAction()).performClick()
+            compose.onNode(navTab("设置")).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             compose.onNodeWithTag("tls-endpoint").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("tls-root").performScrollTo().assertIsEnabled()

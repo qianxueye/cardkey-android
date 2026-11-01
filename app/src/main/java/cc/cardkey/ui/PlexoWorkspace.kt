@@ -52,51 +52,59 @@ internal fun PlexoObjects(
         val icon = if (destination == 1) R.drawable.ic_license else R.drawable.ic_passkey
         deviceContext()
         Text(stringResource(if (destination == 1) R.string.navigation_certificates else R.string.navigation_passkeys), style = MaterialTheme.typography.headlineSmall)
-        ObjectOption(stringResource(if (destination == 1) R.string.workspace_pivSecurity else R.string.workspace_authenticator),
-            null, false, enabled, "object-overview", icon, onOverview)
         if (destination == 1) {
-            Text(stringResource(R.string.workspace_slotCatalog), style = MaterialTheme.typography.titleSmall)
-            PivClient.slots.forEach { candidate ->
-                ObjectOption("%02X".format(candidate), stringResource(when (candidate) {
-                    0x9a -> R.string.workspace_slotAuthentication
-                    0x9c -> R.string.workspace_slotSignature
-                    0x9d -> R.string.workspace_slotManagement
-                    0x9e -> R.string.workspace_slotCardAuthentication
-                    else -> R.string.workspace_slotRetired
-                }), slot == candidate, enabled, "object-slot-%02X".format(candidate), icon) { onSlot(candidate) }
-            }
+            ObjectGroup(listOf<@Composable () -> Unit>({
+                ObjectOption(stringResource(R.string.workspace_pivSecurity), null, false, enabled, "object-overview", icon, onOverview)
+            }) + PivClient.slots.map { candidate ->
+                {
+                    ObjectOption("%02X".format(candidate), stringResource(when (candidate) {
+                        0x9a -> R.string.workspace_slotAuthentication
+                        0x9c -> R.string.workspace_slotSignature
+                        0x9d -> R.string.workspace_slotManagement
+                        0x9e -> R.string.workspace_slotCardAuthentication
+                        else -> R.string.workspace_slotRetired
+                    }), slot == candidate, enabled, "object-slot-%02X".format(candidate), icon) { onSlot(candidate) }
+                }
+            })
         } else {
-            Text(stringResource(R.string.workspace_sites), style = MaterialTheme.typography.titleSmall)
-            if (inventory.load != InventoryLoad.UNREAD) Text(stringResource(when (inventory.load) {
-                InventoryLoad.UNREAD -> R.string.inventory_unread
-                InventoryLoad.LOADING -> R.string.inventory_loading
-                InventoryLoad.FAILED -> R.string.inventory_failed
-                InventoryLoad.LOADED -> if (inventory.credentials.isEmpty()) R.string.inventory_empty else R.string.inventory_loaded
+            if (inventory.load != InventoryLoad.UNREAD && !(inventory.load == InventoryLoad.LOADED && inventory.credentials.isNotEmpty()))
+                Text(stringResource(when (inventory.load) {
+                    InventoryLoad.UNREAD, InventoryLoad.LOADED -> if (inventory.load == InventoryLoad.LOADED) R.string.inventory_empty else R.string.inventory_unread
+                    InventoryLoad.LOADING -> R.string.inventory_loading
+                    InventoryLoad.FAILED -> R.string.inventory_failed
+                }))
+            val names = inventory.credentials.map { it.name?.takeIf { name -> name.isNotBlank() } }
+            val counts = inventory.credentials.indices.groupingBy { inventory.credentials[it].rp.id to names[it] }.eachCount()
+            if (inventory.credentials.isNotEmpty()) ObjectGroup(inventory.credentials.mapIndexed { index, credential ->
+                {
+                    val name = names[index]
+                    val ambiguous = name == null || counts.getValue(credential.rp.id to name) > 1
+                    val account = name ?: credential.displayName?.takeIf { it.isNotBlank() }
+                    val shortId = credential.idHex.let { "${it.take(4)}…${it.takeLast(4)}" }
+                    val detail = listOfNotNull(account, shortId.takeIf { ambiguous || account == null }).joinToString("  ")
+                    ObjectOption(credential.rp.id, detail.ifEmpty { null }, inventory.credential == credential, enabled,
+                        "object-credential-${credential.idHex}", icon) { onCredential(credential) }
+                }
+            })
+            ObjectGroup(listOf<@Composable () -> Unit>({
+                ObjectOption(stringResource(R.string.workspace_fidoPin), null, false, enabled, "object-fido-pin", R.drawable.ic_lock) { onFidoPin() }
             }))
-            val rows = inventory.credentials.map { credential ->
-                val name = credential.name?.takeIf { it.isNotBlank() }
-                Triple(credential, credential.displayName?.takeIf { it.isNotBlank() } ?: name ?: credential.idHex, name)
-            }
-            val labels = rows.groupingBy { (credential, title, name) -> Triple(credential.rp.id, title, name) }.eachCount()
-            rows.forEach { (credential, title, name) ->
-                val ambiguous = name == null || labels.getValue(Triple(credential.rp.id, title, name)) > 1
-                val detail = buildList {
-                    if (name != null && name != title) add(name)
-                    add(credential.rp.id)
-                    if (ambiguous && title != credential.idHex) add("凭据 ID · ${credential.idHex}")
-                }.joinToString("\n")
-                ObjectOption(title, detail, inventory.credential == credential, enabled,
-                    "object-credential-${credential.idHex}", icon) { onCredential(credential) }
-            }
-            Text(stringResource(R.string.workspace_security), style = MaterialTheme.typography.titleSmall)
-            OutlinedButton(onClick = onFidoPin, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
-                Icon(painterResource(R.drawable.ic_lock), null, Modifier.size(24.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.workspace_fidoPin))
-            }
-            Text(stringResource(R.string.workspace_createOnWebsite), style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.weight(1f))
             OutlinedButton(onClick = onReadCredentials, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.workspace_readSites))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ObjectGroup(rows: List<@Composable () -> Unit>) {
+    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface) {
+        Column {
+            rows.forEachIndexed { index, row ->
+                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                row()
             }
         }
     }
@@ -106,16 +114,15 @@ internal fun PlexoObjects(
 private fun ObjectOption(title: String, detail: String?, selected: Boolean, enabled: Boolean, tag: String, icon: Int, onClick: () -> Unit) {
     Surface(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag(tag)
         .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
-        shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
         contentColor = if (!enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             else if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Icon(painterResource(icon), null)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = LocalContentColor.current.copy(alpha = 0.78f)) }
             }
             Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.clearAndSetSemantics {})
         }
