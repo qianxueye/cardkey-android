@@ -234,8 +234,9 @@ fun ManagerScreen(
         focusedInventory = false; tab = 5
     }
     BackHandler(tab != 5 && !state.busy && (focusedInventory || tab >= 2 || !objectDetail)) { returnHome() }
+    val topLevel = (tab == 5 || tab == 0 || tab == 1 || tab == 4) && !focusedInventory
     val topBar: @Composable () -> Unit = {
-        TopAppBar(title = {
+        if (!topLevel) TopAppBar(title = {
             if (focusedInventory && tab == 0) Text(stringResource(R.string.native_inventory_title))
             else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Image(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card), null, Modifier.width(24.dp))
@@ -246,20 +247,16 @@ fun ManagerScreen(
                 modifier = Modifier.testTag("native-home-back")) {
                 Icon(nativeBackIcon, stringResource(R.string.native_back))
             }
-        }, actions = {
-            if (tab == 5) IconButton(onClick = { tab = 4 }, enabled = !state.busy) {
-                Icon(managerDestinationIcons[3], stringResource(R.string.navigation_settings))
-            }
         })
     }
     val navigationBar: @Composable () -> Unit = {
-        if (tab != 5 && !focusedInventory) NavigationBar(Modifier.testTag("workspace-navigation")) {
+        if (!focusedInventory) NavigationBar(Modifier.testTag("workspace-navigation")) {
             listOf(2 to R.string.navigation_device, 0 to R.string.navigation_passkeys,
                 1 to R.string.navigation_certificates, 4 to R.string.navigation_settings).forEach { (index, label) ->
-                CardKeyNavigationBarItem(selected = tab == index || index == 4 && tab == 3,
+                CardKeyNavigationBarItem(selected = tab == index || index == 4 && tab == 3 || index == 2 && (tab == 5 || tab == 2 || tab == 6),
                     enabled = !state.busy && (index != 1 || state.supportsPiv), onClick = {
                     confirmation?.close(); confirmation = null
-                    tab = index
+                    tab = if (index == 2) 5 else index
                     focusedInventory = false
                     advanced = false
                     objectDetail = index == 0
@@ -359,6 +356,10 @@ fun ManagerScreen(
             topBar = { if (!compact) topBar() },
             bottomBar = {
                 val actionControls: @Composable () -> Unit = {
+                    if (tab == 5 && !state.busy) NativeReadButton(state, onRead = {
+                        onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
+                            inventoryGeneration = inventory.generation, inventorySelection = inventory.credential))
+                    }, modifier = Modifier.widthIn(max = 840.dp).padding(horizontal = 20.dp, vertical = 8.dp))
                     if (tab < 2 && detailVisible) {
                         val op = operation
                         Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -438,12 +439,10 @@ fun ManagerScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (compact) { topBar(); if (tab != 5 && tab != 6 && !focusedInventory) readerContext() }
                     if (tab == 5 && !state.busy) NativeCardHome(state, artwork,
-                        onRead = { onSubmit(OperationInput(ManagerOperation.FIDO_INFO,
-                            inventoryGeneration = inventory.generation, inventorySelection = inventory.credential)) },
+                        passkeyCount = inventory.credentials.size.takeIf { inventory.load == InventoryLoad.LOADED },
                         onPrepare = { tab = 0; operation = ManagerOperation.FIDO_INVENTORY; advanced = false; focusedInventory = true; objectDetail = true },
                         onFido = { tab = 0; operation = ManagerOperation.FIDO_INVENTORY; focusedInventory = false; advanced = false; objectDetail = true },
                         onPiv = { tab = 1; operation = ManagerOperation.PIV_INFO; focusedInventory = false; objectDetail = false },
-                        onTechnical = { tab = 4; focusedInventory = false },
                         onReaders = { tab = 2 }, onRetry = { artworkLoader.load(artworkReference) })
                     if (tab == 5 && badgeContent != null) OutlinedButton(onClick = { tab = 6 }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.issuer_title)) }
                     if (tab == 6) badgeContent?.invoke()

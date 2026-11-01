@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import cc.cardkey.R
 
 @Composable
-internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit) {
+internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit, fullWidth: Boolean = false) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state is CardArtworkState.Loaded) {
             val ratio = state.bitmap.width.toFloat() / state.bitmap.height
@@ -35,7 +35,7 @@ internal fun CardArtworkHero(state: CardArtworkState, onRetry: () -> Unit) {
                 Image(state.bitmap.asImageBitmap(), state.label, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             }
         } else {
-            ApprovedCardHero(Modifier.size(112.dp, 70.dp), label = stringResource(R.string.artwork_generic))
+            ApprovedCardHero(if (fullWidth) Modifier.fillMaxWidth().aspectRatio(89.6f / 58.68f) else Modifier.size(112.dp, 70.dp), label = stringResource(R.string.artwork_generic))
         }
         when (state) {
             CardArtworkState.Default -> Unit
