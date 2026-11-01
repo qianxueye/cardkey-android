@@ -256,7 +256,7 @@ fun ManagerScreen(
         if (tab != 5 && !focusedInventory) NavigationBar(Modifier.testTag("workspace-navigation")) {
             listOf(2 to R.string.navigation_device, 0 to R.string.navigation_passkeys,
                 1 to R.string.navigation_certificates, 4 to R.string.navigation_settings).forEach { (index, label) ->
-                NavigationBarItem(selected = tab == index || index == 4 && tab == 3,
+                CardKeyNavigationBarItem(selected = tab == index || index == 4 && tab == 3,
                     enabled = !state.busy && (index != 1 || state.supportsPiv), onClick = {
                     confirmation?.close(); confirmation = null
                     tab = index
@@ -834,7 +834,8 @@ private fun OperationChoice(value: ManagerOperation, values: List<ManagerOperati
 private fun ReaderOption(title: String, detail: String?, selected: Boolean, enabled: Boolean, contactless: Boolean = false, onClick: () -> Unit) {
     Surface(Modifier.fillMaxWidth().selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
         shape = MaterialTheme.shapes.medium,
-        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
         contentColor = if (!enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             else if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {

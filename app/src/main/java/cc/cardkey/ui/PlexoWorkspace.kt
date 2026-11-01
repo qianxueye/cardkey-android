@@ -1,5 +1,6 @@
 package cc.cardkey.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -7,7 +8,10 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -44,11 +48,12 @@ internal fun PlexoObjects(
     onReadCredentials: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().testTag("workspace-objects").verticalScroll(scroll).padding(16.dp)
-        .selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        .selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val icon = if (destination == 1) R.drawable.ic_license else R.drawable.ic_passkey
         deviceContext()
         Text(stringResource(if (destination == 1) R.string.navigation_certificates else R.string.navigation_passkeys), style = MaterialTheme.typography.headlineSmall)
         ObjectOption(stringResource(if (destination == 1) R.string.workspace_pivSecurity else R.string.workspace_authenticator),
-            null, false, enabled, "object-overview", onOverview)
+            null, false, enabled, "object-overview", icon, onOverview)
         if (destination == 1) {
             Text(stringResource(R.string.workspace_slotCatalog), style = MaterialTheme.typography.titleSmall)
             PivClient.slots.forEach { candidate ->
@@ -58,7 +63,7 @@ internal fun PlexoObjects(
                     0x9d -> R.string.workspace_slotManagement
                     0x9e -> R.string.workspace_slotCardAuthentication
                     else -> R.string.workspace_slotRetired
-                }), slot == candidate, enabled, "object-slot-%02X".format(candidate)) { onSlot(candidate) }
+                }), slot == candidate, enabled, "object-slot-%02X".format(candidate), icon) { onSlot(candidate) }
             }
         } else {
             Text(stringResource(R.string.workspace_sites), style = MaterialTheme.typography.titleSmall)
@@ -81,10 +86,12 @@ internal fun PlexoObjects(
                     if (ambiguous && title != credential.idHex) add("凭据 ID · ${credential.idHex}")
                 }.joinToString("\n")
                 ObjectOption(title, detail, inventory.credential == credential, enabled,
-                    "object-credential-${credential.idHex}") { onCredential(credential) }
+                    "object-credential-${credential.idHex}", icon) { onCredential(credential) }
             }
             Text(stringResource(R.string.workspace_security), style = MaterialTheme.typography.titleSmall)
             OutlinedButton(onClick = onFidoPin, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                Icon(painterResource(R.drawable.ic_lock), null, Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.workspace_fidoPin))
             }
             Text(stringResource(R.string.workspace_createOnWebsite), style = MaterialTheme.typography.bodyMedium)
@@ -96,16 +103,21 @@ internal fun PlexoObjects(
 }
 
 @Composable
-private fun ObjectOption(title: String, detail: String?, selected: Boolean, enabled: Boolean, tag: String, onClick: () -> Unit) {
-    Surface(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag)
+private fun ObjectOption(title: String, detail: String?, selected: Boolean, enabled: Boolean, tag: String, icon: Int, onClick: () -> Unit) {
+    Surface(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag(tag)
         .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
         shape = MaterialTheme.shapes.medium,
-        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
         contentColor = if (!enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             else if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Icon(painterResource(icon), null)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            }
+            Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.clearAndSetSemantics {})
         }
     }
 }
