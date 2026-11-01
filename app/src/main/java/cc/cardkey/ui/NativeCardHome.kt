@@ -33,7 +33,7 @@ internal fun NativeCardHome(
                     Column(Modifier.weight(1f)) {
                         val observed = state.canEnterFidoSecrets || state.canEnterPivSecrets
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatusMark(if (!state.hasSelectedReader) StatusKind.WARNING else if (observed) StatusKind.OK else StatusKind.UNKNOWN)
+                            StatusMark(if (!state.hasSelectedReader) StatusKind.WARNING else if (observed) StatusKind.OK else StatusKind.PENDING)
                             Text(stringResource(if (!state.hasSelectedReader) R.string.native_reader_missing
                                 else if (observed) R.string.native_observed else R.string.native_unread), style = MaterialTheme.typography.titleMedium)
                         }

@@ -276,7 +276,7 @@ fun ManagerScreen(
             Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(Modifier.widthIn(max = 840.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(managerDestinationIcons[2], contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Icon(androidx.compose.ui.res.painterResource(if (state.nfc) R.drawable.ic_contactless else R.drawable.ic_usb), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.weight(1f)) {
                         Text(if (!state.hasSelectedReader) stringResource(R.string.native_reader_missing)
                             else if (state.nfc) "NFC" else state.selectedReader?.displayLabel(resources) ?: "读卡器",
@@ -285,8 +285,12 @@ fun ManagerScreen(
                             stringResource(if (state.canEnterFidoSecrets) R.string.manager_fido_observed else R.string.manager_fido_unread),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.testTag("manager-fido-observation"))
-                        if (state.requiresInspection) Text(stringResource(R.string.workspace_inspection),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        if (state.requiresInspection) Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            StatusMark(StatusKind.UNKNOWN)
+                            Text(stringResource(R.string.workspace_inspection), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (state.nfc && state.busy) Text(stringResource(R.string.reader_nfc), style = MaterialTheme.typography.bodySmall)
                     }
                     if (tab != 2) TextButton(onClick = {
@@ -553,6 +557,7 @@ fun ManagerScreen(
                                             "支持的协议", "支持的扩展", "PIN · 协议", "算法", "版本", "序列号",
                                             "credProtect", "credBlob", "用户验证方法", "piv_public_key", "piv_algorithm", "piv_version", "piv_serial")
                                         val technicalRows = result.value.rows.filter { it.label in technicalLabels }
+                                        CertificateValidity(result.value.rows)
                                         result.value.rows.filterNot { it.label in technicalLabels }.forEach { row ->
                                             ResultFactRow(row)
                                         }

@@ -14,15 +14,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 
-internal enum class StatusKind { OK, UNKNOWN, WARNING, ERROR }
+internal enum class StatusKind { OK, PENDING, UNKNOWN, WARNING, ERROR }
 
-/** Status glyph that pairs with a text label; unknown is a grey outline diamond, never accent-coloured. */
+/** Status glyph paired with a text label; unknown is a grey outline diamond, never accent-coloured. */
 @Composable
 internal fun StatusMark(kind: StatusKind, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val color: Color = when (kind) {
         StatusKind.OK -> scheme.success
-        StatusKind.UNKNOWN -> scheme.onSurfaceVariant
+        StatusKind.PENDING, StatusKind.UNKNOWN -> scheme.onSurfaceVariant
         StatusKind.WARNING -> scheme.warning
         StatusKind.ERROR -> scheme.error
     }
@@ -33,6 +33,9 @@ internal fun StatusMark(kind: StatusKind, modifier: Modifier = Modifier) {
             StatusKind.OK -> drawPath(Path().apply {
                 moveTo(s * .16f, s * .54f); lineTo(s * .40f, s * .76f); lineTo(s * .86f, s * .26f)
             }, color, style = Stroke(stroke * 1.4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            StatusKind.PENDING -> drawPath(Path().apply {
+                moveTo(s * .5f, s * .22f); lineTo(s * .78f, s * .5f); lineTo(s * .5f, s * .78f); lineTo(s * .22f, s * .5f); close()
+            }, color)
             StatusKind.UNKNOWN -> drawPath(Path().apply {
                 moveTo(s * .5f, s * .1f); lineTo(s * .9f, s * .5f); lineTo(s * .5f, s * .9f); lineTo(s * .1f, s * .5f); close()
             }, color, style = Stroke(stroke, join = StrokeJoin.Round))
