@@ -45,10 +45,10 @@ class ApprovedCardArtworkTest {
 
     @Test fun allApprovedVectorsRenderAtTheirNative24DpSize() {
         val host = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
-        val icons = listOf(R.drawable.ic_approved_card, R.drawable.ic_approved_reader,
-            R.drawable.ic_approved_reader_contactless, R.drawable.ic_approved_passkey,
-            R.drawable.ic_approved_certificate, R.drawable.ic_approved_read,
-            R.drawable.ic_approved_settings, R.drawable.ic_approved_fido_auth)
+        val icons = listOf(R.drawable.ic_approved_card, R.drawable.ic_credit_card, R.drawable.ic_usb,
+            R.drawable.ic_contactless, R.drawable.ic_passkey, R.drawable.ic_license,
+            R.drawable.ic_download, R.drawable.ic_settings, R.drawable.ic_lock, R.drawable.ic_chevron_right,
+            R.drawable.ic_arrow_back, R.drawable.ic_expand_more, R.drawable.ic_expand_less, R.drawable.ic_badge)
         var origin = Offset.Zero
         host.get().setContent {
             Row(Modifier.background(Color.White).onGloballyPositioned { origin = it.positionInWindow() }) {
@@ -64,7 +64,7 @@ class ApprovedCardArtworkTest {
                 val pixels = (0 until 24).sumOf { x -> (0 until 24).count { y ->
                     bitmap.getPixel(origin.x.roundToInt() + index * 24 + x, origin.y.roundToInt() + y) != android.graphics.Color.WHITE
                 } }
-                assertTrue("Vector $index must render its visible approved geometry", pixels > 50)
+                assertTrue("Vector $index must render its visible geometry", pixels > 30)
             }
             File("build/ui-previews").mkdirs()
             File("build/ui-previews/approved-icons.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

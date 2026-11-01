@@ -49,7 +49,7 @@ internal fun NativeCardHome(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2358C4), contentColor = Color.White),
                     shape = RoundedCornerShape(50), modifier = Modifier.align(Alignment.CenterHorizontally)
                         .widthIn(min = 200.dp, max = 260.dp).heightIn(min = 48.dp).testTag("native-read-card")) {
-                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_read), null, Modifier.size(24.dp))
+                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_download), null, Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
                     Text(stringResource(R.string.native_read))
                 }

@@ -3,10 +3,7 @@ package cc.cardkey.ui
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -241,7 +238,7 @@ fun ManagerScreen(
         TopAppBar(title = {
             if (focusedInventory && tab == 0) Text(stringResource(R.string.native_inventory_title))
             else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card), null, Modifier.size(24.dp))
+                Image(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card), null, Modifier.width(24.dp))
                 Text(stringResource(R.string.app_name))
             }
         }, navigationIcon = {
@@ -397,7 +394,7 @@ fun ManagerScreen(
                                 (op !in setOf(ManagerOperation.FIDO_BLOB_READ, ManagerOperation.FIDO_BLOB_WRITE) || inventory.credential == null || inventory.blobReady && pin.isNotEmpty()) &&
                                 (!op.isFileSigning || (signingFiles.selection != null && !state.nfc && state.selectedReader?.wire == CardWire.APDU))) {
                                 if (op in setOf(ManagerOperation.FIDO_ASSERT, ManagerOperation.U2F_ASSERT, ManagerOperation.FIDO_VERIFY_CREDENTIAL)) {
-                                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_approved_fido_auth), null, Modifier.size(24.dp))
+                                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_passkey), null, Modifier.size(24.dp))
                                     Spacer(Modifier.width(8.dp))
                                 }
                                 Text(if (focusedInventory && state.nfc) stringResource(R.string.native_submit_tap)
@@ -841,7 +838,7 @@ private fun ReaderOption(title: String, detail: String?, selected: Boolean, enab
         contentColor = if (!enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             else if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Icon(androidx.compose.ui.res.painterResource(if (contactless) R.drawable.ic_approved_reader_contactless else R.drawable.ic_approved_reader), contentDescription = null)
+            Icon(androidx.compose.ui.res.painterResource(if (contactless) R.drawable.ic_contactless else R.drawable.ic_usb), contentDescription = null)
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
@@ -853,26 +850,18 @@ private fun ReaderOption(title: String, detail: String?, selected: Boolean, enab
 
 internal val managerDestinationIcons: List<androidx.compose.ui.graphics.painter.Painter>
     @Composable get() = listOf(
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_passkey),
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_certificate),
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_reader),
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_settings),
-        androidx.compose.ui.res.painterResource(R.drawable.ic_approved_card),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_passkey),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_license),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_usb),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_settings),
+        androidx.compose.ui.res.painterResource(R.drawable.ic_credit_card),
     )
 
-private val expandMoreIcon = ImageVector.Builder("ExpandMore", 24.dp, 24.dp, 24f, 24f).apply {
-    path(fill = SolidColor(Color.Black)) {
-        moveTo(7f, 9f); lineTo(12f, 14f); lineTo(17f, 9f); lineTo(18.4f, 10.4f)
-        lineTo(12f, 16.8f); lineTo(5.6f, 10.4f); close()
-    }
-}.build()
+private val expandMoreIcon: androidx.compose.ui.graphics.painter.Painter
+    @Composable get() = androidx.compose.ui.res.painterResource(R.drawable.ic_expand_more)
 
-private val expandLessIcon = ImageVector.Builder("ExpandLess", 24.dp, 24.dp, 24f, 24f).apply {
-    path(fill = SolidColor(Color.Black)) {
-        moveTo(7f, 15f); lineTo(12f, 10f); lineTo(17f, 15f); lineTo(18.4f, 13.6f)
-        lineTo(12f, 7.2f); lineTo(5.6f, 13.6f); close()
-    }
-}.build()
+private val expandLessIcon: androidx.compose.ui.graphics.painter.Painter
+    @Composable get() = androidx.compose.ui.res.painterResource(R.drawable.ic_expand_less)
 
 private fun needsPin(op: ManagerOperation): Boolean = op !in setOf(
     ManagerOperation.FIDO_INFO, ManagerOperation.FIDO_RETRIES, ManagerOperation.FIDO_SET_PIN, ManagerOperation.FIDO_RESET,
@@ -885,10 +874,5 @@ private fun needsSecretInput(op: ManagerOperation): Boolean = needsPin(op) || op
     ManagerOperation.FIDO_SET_PIN, ManagerOperation.PIV_ADMIN, ManagerOperation.PIV_GENERATE, ManagerOperation.PIV_IMPORT,
 )
 
-private val nativeBackIcon = ImageVector.Builder("Back", 24.dp, 24.dp, 24f, 24f).apply {
-    path(fill = SolidColor(Color.Black)) {
-        moveTo(20f, 11f); lineTo(7.8f, 11f); lineTo(13.4f, 5.4f); lineTo(12f, 4f)
-        lineTo(4f, 12f); lineTo(12f, 20f); lineTo(13.4f, 18.6f); lineTo(7.8f, 13f)
-        lineTo(20f, 13f); close()
-    }
-}.build()
+private val nativeBackIcon: androidx.compose.ui.graphics.painter.Painter
+    @Composable get() = androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back)
