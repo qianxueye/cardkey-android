@@ -79,7 +79,7 @@ class WorkspaceAcceptanceTest {
             compose.onNodeWithTag("native-home-back").performClick()
             compose.onNode(hasText("FIDO PIN") and hasSetTextAction()).assertDoesNotExist()
             assertEquals(0, dispatches.get())
-            compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().performScrollTo().performClick()
+            compose.onNode(hasText("通行密钥") and hasClickAction() and !SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab)).performScrollTo().performClick()
             check(activity, { next -> compose.runOnIdle { state.value = next }; compose.waitForIdle() }, dispatches)
         }
     }

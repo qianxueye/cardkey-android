@@ -73,7 +73,7 @@ class ManagerScreenLayoutTest {
         try {
             compose.waitForIdle()
             if (prepareInventory) compose.onNodeWithText(activity.getString(R.string.native_prepare)).performScrollTo().performClick()
-            else compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().performScrollTo().performClick()
+            else compose.onNode(homeTask("通行密钥")).performScrollTo().performClick()
             compose.waitForIdle()
             check(activity) { next -> compose.runOnIdle { state.value = next.copy(recognition = next.recognition ?: recognized) }; compose.waitForIdle() }
         } finally { controller.pause().stop().destroy() }
@@ -144,7 +144,7 @@ class ManagerScreenLayoutTest {
                 val action = control.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
                 assertTrue("$label overlaps system area: $action, safe bottom $safeBottom", action.bottom <= safeBottom)
             }
-            val destination = compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val destination = compose.onNode(navTab("通行密钥")).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue("Destination overlaps system area: $destination, safe bottom $safeBottom", destination.bottom <= safeBottom)
             assertTrue("Dock reserves duplicate IME/navigation space: $destination, safe bottom $safeBottom",
                 safeBottom - destination.bottom <= 16f)
@@ -334,7 +334,7 @@ class ManagerScreenLayoutTest {
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
-            compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().performClick()
+            compose.onNode(navTab("通行密钥")).performClick()
             compose.onNodeWithTag("manager-run").assertExists()
             assertEquals(0, submissions)
         }
@@ -361,7 +361,7 @@ class ManagerScreenLayoutTest {
 
     @Test fun protectedPanelGuidanceTracksOriginalRecoveryModeThroughManagerScreen() {
         render(800, 800) { activity, update ->
-            compose.onAllNodes((hasText("证书") or hasText("证书与签名")) and hasClickAction()).onFirst().performClick()
+            compose.onNode(navTab("证书")).performClick()
             val ordinary = activity.getString(R.string.protectedPiv_ordinaryInspection)
             val protectedWarning = "请重新导入原卡片的配置，再读取受保护状态；读取前不要重复执行原操作。"
             update(ManagerState(requiresInspection = true))
@@ -382,7 +382,7 @@ class ManagerScreenLayoutTest {
         val report = result.value
         var exported: ManagerReport? = null
         render(360, 480, onExport = { exported = it }) { activity, update ->
-            compose.onAllNodes((hasText("证书") or hasText("证书与签名")) and hasClickAction()).onFirst().performClick()
+            compose.onNode(navTab("证书")).performClick()
             compose.onNodeWithTag("object-overview").performClick()
             compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithText(ManagerOperation.PIV_SLOT.title).performClick()
@@ -428,8 +428,8 @@ class ManagerScreenLayoutTest {
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
             update(ManagerState(busy = true, operation = ManagerOperation.PIV_ENROLL_CSR))
             compose.onNode(hasText("取消") and !hasAnyAncestor(hasScrollAction())).assertIsDisplayed().assertHasClickAction()
-            compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().assertIsNotEnabled()
-            compose.onAllNodes((hasText("证书") or hasText("证书与签名")) and hasClickAction()).onFirst().assertIsNotEnabled()
+            compose.onNode(navTab("通行密钥")).assertIsNotEnabled()
+            compose.onNode(navTab("证书")).assertIsNotEnabled()
             compose.onNodeWithTag("manager-run").assertDoesNotExist()
         }
     }

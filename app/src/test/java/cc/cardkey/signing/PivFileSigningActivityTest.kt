@@ -66,7 +66,7 @@ class PivFileSigningActivityTest {
         val model = ViewModelProvider(activity)[ManagerViewModel::class.java]
         model.selectReader(UsbAuthenticatorReader.discover(manager).single())
         compose.waitForIdle()
-        compose.onAllNodes((hasText("证书") or hasText("证书与签名")) and hasClickAction()).onFirst().performClick()
+        compose.onNode(cc.cardkey.ui.homeTask("证书与签名")).performScrollTo().performClick()
         compose.onNodeWithTag("object-overview").performClick()
         compose.onNode(hasText("操作") and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(if (format == SignatureFormat.CMS) "CMS 文件签名" else "文件签名").performSemanticsAction(SemanticsActions.OnClick) { it() }

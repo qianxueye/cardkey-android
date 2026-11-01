@@ -50,7 +50,7 @@ class InventoryActivityTest {
         val model = model(activity); val card = InventoryCard()
         seedInventory(model.inventory, card)
         compose.waitForIdle()
-        compose.onAllNodes(hasText("通行密钥") and hasClickAction()).onFirst().performClick()
+        compose.onNode(homeTask("通行密钥")).performScrollTo().performClick()
         compose.onNode(navTab("设置")).performClick()
         compose.onNodeWithText("高级 FIDO 设置与诊断").performScrollTo().performClick()
         choose("扩展数据 · 设置")
