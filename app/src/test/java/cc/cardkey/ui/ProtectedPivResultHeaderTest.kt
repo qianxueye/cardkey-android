@@ -61,7 +61,7 @@ class ProtectedPivResultHeaderTest {
             result = OperationResult.Failed(FailureCode.TRANSPORT_FAILURE, Effect.UNKNOWN,
                 dispatch = Dispatch.RESPONSE_UNAVAILABLE))) {
             compose.onNodeWithText("View PIV status").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("The command was sent, but no result was received. Changes may have taken effect. Read the card status before deciding what to do next.").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("No usable operation result was obtained. Read the card status first. Do not repeat the original operation.").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("The card connection failed.").performScrollTo().assertIsDisplayed()
         }
     }

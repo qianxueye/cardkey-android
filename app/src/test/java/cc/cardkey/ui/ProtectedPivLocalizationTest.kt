@@ -88,7 +88,7 @@ class ProtectedPivLocalizationTest {
             compose.onNodeWithText("Only one PIN attempt remains and the PUK is blocked. If this verification fails, the PIV private keys will be erased. Continue?").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("protected-piv-pin").performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("protected-piv-execute").performScrollTo().performClick()
-            compose.onNodeWithText("This scan sends the PIN. An incorrect entry reduces the remaining attempts. A connection interruption may leave the outcome unknown. Do not retry automatically.").assertIsDisplayed()
+            compose.onNodeWithText("This scan sends the PIN. An incorrect entry reduces the remaining attempts. If the connection is interrupted, read the card status first. Do not retry automatically.").assertIsDisplayed()
             compose.onNodeWithText("Only 1 attempt remains. An incorrect entry may require PIN recovery.").assertDoesNotExist()
             compose.onNodeWithText("Action: Verify PIN, slot 9A. Scan the same card again. The operation stops if the identity, slot or remaining attempts have changed.").assertIsDisplayed()
             compose.onNodeWithText("Cancel").performClick()
@@ -102,13 +102,13 @@ class ProtectedPivLocalizationTest {
             compose.onNodeWithTag("protected-piv-pin").performScrollTo().performTextInput("123456")
             compose.onNodeWithTag("protected-piv-execute").performScrollTo().performClick()
             compose.onNodeWithText("Only 1 attempt remains. An incorrect entry may require PIN recovery.").assertIsDisplayed()
-            compose.onNodeWithText("This scan sends the PIN. An incorrect entry reduces the remaining attempts. A connection interruption may leave the outcome unknown. Do not retry automatically.").assertIsDisplayed()
+            compose.onNodeWithText("This scan sends the PIN. An incorrect entry reduces the remaining attempts. If the connection is interrupted, read the card status first. Do not retry automatically.").assertIsDisplayed()
         }
     }
 
     @Test fun englishOrdinaryRecoveryNamesTheOriginalInspectionRoute() {
         render("en-US", ProtectedPivState(), inspection = true) {
-            compose.onNodeWithText("The previous operation outcome is unknown. Keep the original connection method and inspect the original card.", substring = true).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("The original card has not been checked since the previous operation. Keep the original connection method and inspect the original card.", substring = true).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Do not repeat the original operation.", substring = true).assertIsDisplayed()
             compose.onNodeWithTag("protected-piv-pin").assertDoesNotExist()
         }
@@ -217,13 +217,13 @@ class ProtectedPivLocalizationTest {
             "protectedPiv_erasure" to "PIN 仅剩一次重试，PUK 已锁定。此次验证失败将清除 PIV 私钥。确认继续？",
             "protectedPiv_lastRetry" to "PIN 仅剩 1 次机会。再次输错可能锁定 PIN；恢复需要接触式连接。",
             "protectedPiv_pin" to "PIN",
-            "protectedPiv_pinScope" to "PIN 为 6–8 位数字。输错会减少剩余次数；结果不明时请勿重复执行。",
+            "protectedPiv_pinScope" to "PIN 为 6–8 位数字。输错会减少剩余次数。未取得操作结果时，请先读取卡片状态，勿重复执行。",
             "protectedPiv_execute" to "确认执行…",
             "protectedPiv_clear" to "清除配置并取消待执行操作",
             "protectedPiv_contactScope" to "修改 PIN／PUK、管理密钥、生成或导入密钥、重置、CA 证书导入、CMS 和 TLS 仍需接触式连接。",
             "protectedPiv_confirmTitle" to "确认第二次扫描",
             "protectedPiv_confirmOperation" to "执行 %1\$s，槽位 %2\$s。再次扫描同一张卡；身份、槽位或剩余次数有变化时会停止。",
-            "protectedPiv_confirmRisk" to "这次会发送 PIN。输错会减少剩余次数；连接中断可能使结果无法确认。不要自动重试。",
+            "protectedPiv_confirmRisk" to "这次会发送 PIN。输错会减少剩余次数。若连接中断，请先读取卡片状态，不要自动重试。",
             "protectedPiv_confirmLastRetry" to "仅剩 1 次机会；输错后可能需要恢复 PIN。",
             "protectedPiv_scanAgain" to "开始第二次扫描",
             "protectedPiv_cancel" to "取消",
@@ -298,8 +298,9 @@ class ProtectedPivLocalizationTest {
             "operation_appliedReadbackFailed" to "卡片已接受更改，但回读未完成。请读取卡片状态，勿重复提交更改。",
             "operation_completed" to "操作已完成。",
             "operation_notDispatched" to "指令未发送到卡片。",
-            "operation_unknown" to "指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。",
-            "protectedPiv_ordinaryInspection" to "上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。",
+            "tls_mayHaveSubmitted" to "卡片已返回认证签名。请先核对服务器记录，勿重复提交。",
+            "operation_unknown" to "未取得可用的操作结果。请先读取卡片状态，勿重复执行原操作。",
+            "protectedPiv_ordinaryInspection" to "上次操作后尚未核对原卡状态。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。",
             "reader_nfc" to "选择操作后，将卡片贴近手机。",
             "signing_exportCancelled" to "已取消导出。",
             "signing_exportScope" to "导出的是所选文件的独立签名。",
@@ -393,7 +394,7 @@ class ProtectedPivLocalizationTest {
             "signing_cmsVerified", "signing_limit", "signing_selectedFile",
             "status_hidUserPresenceRequired", "tls_cancelled", "tls_chooseServerRoot", "tls_confirm",
             "tls_endpoint", "tls_endpointHelp", "tls_failed", "tls_identity",
-            "tls_mayHaveSubmitted", "tls_running", "tls_serverRoot",
+            "tls_running", "tls_serverRoot",
             "tls_serverRootReady", "tls_start", "tls_success",
             "tls_timeout", "tls_title", "tls_unknown", "tls_validUntil",
             "workspace_advanced", "workspace_authenticator", "workspace_common",
