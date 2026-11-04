@@ -1,9 +1,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="protectedPiv_ordinaryInspection">上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。</string>
+    <string name="protectedPiv_ordinaryInspection">上次操作后尚未核对原卡状态。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。</string>
     <string name="app_name" translatable="false">DecisiveCard</string>
     <string name="operation_completed" formatted="false">操作已完成。</string>
     <string name="operation_notDispatched" formatted="false">指令未发送到卡片。</string>
-    <string name="operation_unknown" formatted="false">指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。</string>
+    <string name="operation_unknown" formatted="false">未取得可用的操作结果。请先读取卡片状态，勿重复执行原操作。</string>
     <string name="operation_appliedReadbackFailed" formatted="false">卡片已接受更改，但回读未完成。请读取卡片状态，勿重复提交更改。</string>
     <string name="error_contactRequired" formatted="false">此操作需要接触式读卡器。</string>
     <string name="error_physicalActionRequired" formatted="false">请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。</string>
@@ -93,7 +93,7 @@
     <string name="tls_failed" tools:ignore="MissingTranslation">连接验证未完成。</string>
     <string name="tls_cancelled" tools:ignore="MissingTranslation">已取消连接验证。</string>
     <string name="tls_timeout" tools:ignore="MissingTranslation">连接验证已超时。</string>
-    <string name="tls_mayHaveSubmitted" tools:ignore="MissingTranslation">认证可能已提交，请核对服务器记录。</string>
+    <string name="tls_mayHaveSubmitted">卡片已返回认证签名。请先核对服务器记录，勿重复提交。</string>
     <string name="tls_unknown" tools:ignore="MissingTranslation">未收到符合要求的服务器响应。请先核对服务器记录，勿重复提交。</string>
     <string name="signing_chooseFile" tools:ignore="MissingTranslation">选择文件</string>
     <string name="signing_limit" tools:ignore="MissingTranslation">选择非空文件，最大 1 MiB。</string>

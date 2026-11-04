@@ -21,13 +21,13 @@
     <string name="protectedPiv_erasure">PIN 仅剩一次重试，PUK 已锁定。此次验证失败将清除 PIV 私钥。确认继续？</string>
     <string name="protectedPiv_lastRetry">PIN 仅剩 1 次机会。再次输错可能锁定 PIN；恢复需要接触式连接。</string>
     <string name="protectedPiv_pin">PIN</string>
-    <string name="protectedPiv_pinScope">PIN 为 6–8 位数字。输错会减少剩余次数；结果不明时请勿重复执行。</string>
+    <string name="protectedPiv_pinScope">PIN 为 6–8 位数字。输错会减少剩余次数。未取得操作结果时，请先读取卡片状态，勿重复执行。</string>
     <string name="protectedPiv_execute">确认执行…</string>
     <string name="protectedPiv_clear">清除配置并取消待执行操作</string>
     <string name="protectedPiv_contactScope">修改 PIN／PUK、管理密钥、生成或导入密钥、重置、CA 证书导入、CMS 和 TLS 仍需接触式连接。</string>
     <string name="protectedPiv_confirmTitle">确认第二次扫描</string>
     <string name="protectedPiv_confirmOperation">执行 %1$s，槽位 %2$s。再次扫描同一张卡；身份、槽位或剩余次数有变化时会停止。</string>
-    <string name="protectedPiv_confirmRisk">这次会发送 PIN。输错会减少剩余次数；连接中断可能使结果无法确认。不要自动重试。</string>
+    <string name="protectedPiv_confirmRisk">这次会发送 PIN。输错会减少剩余次数。若连接中断，请先读取卡片状态，不要自动重试。</string>
     <string name="protectedPiv_confirmLastRetry">仅剩 1 次机会；输错后可能需要恢复 PIN。</string>
     <string name="protectedPiv_scanAgain">开始第二次扫描</string>
     <string name="protectedPiv_cancel">取消</string>
@@ -81,10 +81,10 @@
     <string name="protectedPiv_operationEcdh">ECDH · 验证</string>
     <string name="protectedPiv_operationRsa">RSA · 验证</string>
     <string name="protectedPiv_export">导出</string>
-    <string name="protectedPiv_ordinaryInspection">上次操作结果未知。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。</string>
+    <string name="protectedPiv_ordinaryInspection">上次操作后尚未核对原卡状态。请保持原连接方式，检查原卡片：在「设置」中打开原操作对应的「高级 FIDO 设置与诊断」并选择「FIDO2 · 读取」，或打开「高级 PIV 管理与诊断」并选择「查看 PIV 状态」。不要重复执行原操作。</string>
     <string name="operation_completed" formatted="false">操作已完成。</string>
     <string name="operation_notDispatched" formatted="false">指令未发送到卡片。</string>
-    <string name="operation_unknown" formatted="false">指令已发送，但未收到结果。更改可能已生效；请先读取卡片状态，再决定下一步。</string>
+    <string name="operation_unknown" formatted="false">未取得可用的操作结果。请先读取卡片状态，勿重复执行原操作。</string>
     <string name="operation_appliedReadbackFailed" formatted="false">卡片已接受更改，但回读未完成。请读取卡片状态，勿重复提交更改。</string>
     <string name="error_contactRequired" formatted="false">此操作需要接触式读卡器。</string>
     <string name="error_physicalActionRequired" formatted="false">请拔出并重新插入卡片；使用 NFC 时，请移开卡片后重新贴近。</string>
@@ -163,4 +163,5 @@
     <string name="fido_modelFailed">型号查询失败</string>
     <string name="native_reader_missing">未选择读卡器</string>
     <string name="native_choose_reader">选择读卡器</string>
+    <string name="tls_mayHaveSubmitted">卡片已返回认证签名。请先核对服务器记录，勿重复提交。</string>
 </resources>

@@ -21,13 +21,13 @@
     <string name="protectedPiv_erasure">Only one PIN attempt remains and the PUK is blocked. If this verification fails, the PIV private keys will be erased. Continue?</string>
     <string name="protectedPiv_lastRetry">Only 1 PIN attempt remains. Another incorrect entry may block the PIN. Recovery requires a contact connection.</string>
     <string name="protectedPiv_pin">PIN</string>
-    <string name="protectedPiv_pinScope">The PIN must contain 6–8 digits. An incorrect entry reduces the remaining attempts. Do not repeat the operation if its outcome is unknown.</string>
+    <string name="protectedPiv_pinScope">The PIN must contain 6–8 digits. An incorrect entry reduces the remaining attempts. If no operation result is available, read the card status first. Do not repeat the operation.</string>
     <string name="protectedPiv_execute">Confirm operation…</string>
     <string name="protectedPiv_clear">Clear configuration and cancel pending operation</string>
     <string name="protectedPiv_contactScope">Changing the PIN/PUK or management key, generating or importing keys, resets, CA certificate import, CMS and TLS still require a contact connection.</string>
     <string name="protectedPiv_confirmTitle">Confirm second scan</string>
     <string name="protectedPiv_confirmOperation">Action: %1$s, slot %2$s. Scan the same card again. The operation stops if the identity, slot or remaining attempts have changed.</string>
-    <string name="protectedPiv_confirmRisk">This scan sends the PIN. An incorrect entry reduces the remaining attempts. A connection interruption may leave the outcome unknown. Do not retry automatically.</string>
+    <string name="protectedPiv_confirmRisk">This scan sends the PIN. An incorrect entry reduces the remaining attempts. If the connection is interrupted, read the card status first. Do not retry automatically.</string>
     <string name="protectedPiv_confirmLastRetry">Only 1 attempt remains. An incorrect entry may require PIN recovery.</string>
     <string name="protectedPiv_scanAgain">Start second scan</string>
     <string name="protectedPiv_cancel">Cancel</string>
@@ -81,10 +81,10 @@
     <string name="protectedPiv_operationEcdh">ECDH · verify</string>
     <string name="protectedPiv_operationRsa">RSA · verify</string>
     <string name="protectedPiv_export">Export</string>
-    <string name="protectedPiv_ordinaryInspection">The previous operation outcome is unknown. Keep the original connection method and inspect the original card. In Settings (设置), open the Advanced FIDO settings and diagnostics page (高级 FIDO 设置与诊断) that matches the original operation and select FIDO2 · Read (FIDO2 · 读取), or open Advanced PIV management and diagnostics (高级 PIV 管理与诊断) and select View PIV status (查看 PIV 状态). Do not repeat the original operation.</string>
+    <string name="protectedPiv_ordinaryInspection">The original card has not been checked since the previous operation. Keep the original connection method and inspect the original card. In Settings (设置), open the Advanced FIDO settings and diagnostics page (高级 FIDO 设置与诊断) that matches the original operation and select FIDO2 · Read (FIDO2 · 读取), or open Advanced PIV management and diagnostics (高级 PIV 管理与诊断) and select View PIV status (查看 PIV 状态). Do not repeat the original operation.</string>
     <string name="operation_completed">The operation is complete.</string>
     <string name="operation_notDispatched">The command was not sent to the card.</string>
-    <string name="operation_unknown">The command was sent, but no result was received. Changes may have taken effect. Read the card status before deciding what to do next.</string>
+    <string name="operation_unknown">No usable operation result was obtained. Read the card status first. Do not repeat the original operation.</string>
     <string name="operation_appliedReadbackFailed">The card accepted the change, but readback did not complete. Read the card status. Do not submit the change again.</string>
     <string name="error_contactRequired">This operation requires a contact reader.</string>
     <string name="error_physicalActionRequired">Remove and reinsert the card. For NFC, move the card away, then bring it close again.</string>
@@ -163,4 +163,5 @@
     <string name="fido_modelFailed">Model lookup failed</string>
     <string name="native_reader_missing">No reader selected</string>
     <string name="native_choose_reader">Choose a reader</string>
+    <string name="tls_mayHaveSubmitted">The card returned an authentication signature. Check the server records before proceeding. Do not submit again.</string>
 </resources>
