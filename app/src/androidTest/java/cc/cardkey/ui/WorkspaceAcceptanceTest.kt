@@ -51,9 +51,9 @@ class WorkspaceAcceptanceTest {
                                     else host.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                                 },
                                 onProviderSettings = {}, enrollment = EnrollmentState(),
-                                onEnrollmentSettings = { _, _ -> }, onEnrollmentRoot = {},
+                                onEnrollmentSettings = { _ -> }, onEnrollmentRoot = {},
                                 onEnrollmentSubmit = { dispatches.incrementAndGet(); it.close() },
-                                onEnrollmentIssue = { token, _ -> dispatches.incrementAndGet(); token.fill('\u0000') },
+                                onEnrollmentIssue = { _ -> dispatches.incrementAndGet() },
                                 onEnrollmentAbandon = {}, tls = TlsQualificationState(),
                                 onTlsSettings = {}, onTlsRoot = {},
                                 onTlsSubmit = { dispatches.incrementAndGet(); it.close() },
