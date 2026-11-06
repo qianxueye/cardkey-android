@@ -1,8 +1,8 @@
 package cc.cardkey.enrollment
 
 import android.content.Context
-import cc.cardkey.ui.ManagerViewModel
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -15,44 +15,47 @@ class EnrollmentSettingsTest {
     private val app get() = RuntimeEnvironment.getApplication()
     private val preferences get() = app.getSharedPreferences("enrollment_settings", Context.MODE_PRIVATE)
 
-    @Test fun productionModelRestoresOnlyCanonicalOriginAndSupportsClear() {
-        val model = ManagerViewModel(app)
-        model.enrollmentSettings("https://CA.example:8443/", "Private identity")
-        val restored = ManagerViewModel(app).enrollment.state.value
+    @Before fun clearSettings() { preferences.edit().clear().commit() }
+
+    @Test fun restoresOnlyCanonicalOriginAndSupportsClear() {
+        val model = EnrollmentWorkflow(EnrollmentSettings(preferences))
+        model.settings("https://CA.example:8443/")
+        val restored = EnrollmentWorkflow(EnrollmentSettings(preferences)).state.value
         assertEquals("https://ca.example:8443", restored.address)
         assertEquals(restored.address, restored.savedAddress)
         assertEquals("", restored.cn)
         assertFalse(restored.hasRoot)
         assertNull(restored.csr)
         assertEquals(mapOf("ca_origin" to "https://ca.example:8443"), preferences.all)
-        model.enrollmentSettings("", "Private identity")
-        assertEquals("", ManagerViewModel(app).enrollment.state.value.address)
+        model.settings("")
+        assertEquals("", EnrollmentWorkflow(EnrollmentSettings(preferences)).state.value.address)
         assertTrue(preferences.all.isEmpty())
     }
 
     @Test fun invalidInputCannotReplaceLastValidAddress() {
-        val model = ManagerViewModel(app)
-        model.enrollmentSettings("https://CA.example:8443/", "")
+        val model = EnrollmentWorkflow(EnrollmentSettings(preferences))
+        model.settings("https://CA.example:8443/")
         listOf("http://ca.example", "https://ca.example/path", "https://user@ca.example",
             "https://ca.example?token=secret", "https://ca.example#fragment", "https://", "https://ca.example:99999").forEach {
-            model.enrollmentSettings(it, "")
-            assertEquals(it, model.enrollment.state.value.address)
-            assertEquals("https://ca.example:8443", ManagerViewModel(app).enrollment.state.value.address)
+            model.settings(it)
+            assertEquals(it, model.state.value.address)
+            assertEquals("https://ca.example:8443", EnrollmentWorkflow(EnrollmentSettings(preferences)).state.value.address)
         }
         preferences.edit().putString("ca_origin", "http://invalid.example").commit()
-        assertEquals("", ManagerViewModel(app).enrollment.state.value.address)
+        assertEquals("", EnrollmentWorkflow(EnrollmentSettings(preferences)).state.value.address)
     }
 
     @Test fun endpointSwitchRetiresTrustCsrPickerAndLateIssuanceButKeepsOriginalReceipt() {
         val fixture = EnrollmentFixtures()
         val flow = EnrollmentWorkflow(EnrollmentSettings(preferences))
-        flow.settings("https://localhost", fixture.csr.cn)
+        flow.settings("https://localhost")
+        flow.choosePerson(EnrollmentTarget("https://issuer.example", "person-1", "card-1", "ca-1", fixture.identity))
         flow.acceptRoot(flow.rootRequest(), fixture.root)
         val staleCsr = flow.startCsr()
         flow.settleCsr(staleCsr, fixture.csr)
         val picker = flow.rootRequest()
         val (owner, _) = flow.startIssuance(fixture.token())
-        flow.settings("https://other.example:8443", fixture.csr.cn)
+        flow.settings("https://other.example:8443")
         assertFalse(flow.state.value.hasRoot)
         assertTrue(runCatching { flow.ca() }.isFailure)
         assertNull(flow.state.value.csr)
@@ -63,7 +66,8 @@ class EnrollmentSettingsTest {
         assertNull(flow.state.value.csr)
         assertEquals(EnrollmentStage.EMPTY, flow.state.value.stage)
         assertEquals("https://localhost/1.0/sign", flow.state.value.unknownReceipts.single().endpoint)
-        flow.settings("https://localhost", fixture.csr.cn)
+        flow.settings("https://localhost")
+        flow.choosePerson(EnrollmentTarget("https://issuer.example", "person-1", "card-1", "ca-1", fixture.identity))
         assertFalse(flow.state.value.hasRoot)
         flow.acceptRoot(flow.rootRequest(), fixture.root)
         flow.settleCsr(flow.startCsr(), fixture.csr)
@@ -74,7 +78,8 @@ class EnrollmentSettingsTest {
     @Test fun canonicalOriginKeepsExactNonDefaultPortSigningAudience() {
         val fixture = EnrollmentFixtures()
         val flow = EnrollmentWorkflow(EnrollmentSettings(preferences))
-        flow.settings("https://LOCALHOST:8443/", fixture.csr.cn)
+        flow.settings("https://LOCALHOST:8443/")
+        flow.choosePerson(EnrollmentTarget("https://issuer.example", "person-1", "card-1", "ca-1", fixture.identity))
         flow.acceptRoot(flow.rootRequest(), fixture.root)
         assertEquals("https://localhost:8443/1.0/sign", flow.ca().endpoint.toString())
         flow.ca().checkToken(fixture.token(address = "https://localhost:8443"), fixture.csr)

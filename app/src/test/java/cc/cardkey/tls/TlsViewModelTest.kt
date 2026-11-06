@@ -39,15 +39,19 @@ class TlsViewModelTest {
     private val app get() = RuntimeEnvironment.getApplication()
     @Before fun setup() { TlsDnsShadow.reset(); Dispatchers.setMain(UnconfinedTestDispatcher()) }
     @After fun teardown() { Dispatchers.resetMain() }
-    private fun model(f: TlsFixture): ManagerViewModel = ManagerViewModel(app).apply {
+    private fun model(f: TlsFixture): ManagerViewModel = app.let {
+        check(it.getSharedPreferences("enrollment_settings", android.content.Context.MODE_PRIVATE).edit().clear().commit())
+        ManagerViewModel(it)
+    }.apply {
         val device = Shadow.newInstanceOf(UsbDevice::class.java)
         ReflectionHelpers.setField(device, "mName", "tls-device")
         shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(device, true)
         selectReader(UsbReaderDescriptor(device, 1, CardWire.APDU))
-        enrollmentSettings("https://localhost", f.csr.cn)
+        enrollmentSettings("https://localhost")
+        enrollment.choosePerson(cc.cardkey.enrollment.enrollmentTarget("https://localhost", f.csr.identity))
         enrollmentRoot(enrollment.rootRequest(), f.issued.root)
         enrollment.settleCsr(enrollment.startCsr(), f.csr)
-        val (owner, _) = enrollment.startIssuance(f.issued.token(f.csr))
+        val (owner, _) = enrollment.prepareIssuerRequest()
         enrollment.settleIssuance(owner, f.bundle, EnrollmentStage.VERIFIED)
         enrollment.imported(owner)
     }

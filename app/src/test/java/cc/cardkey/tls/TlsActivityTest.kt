@@ -63,10 +63,11 @@ class TlsActivityTest {
         shadowOf(manager).addOrUpdateUsbDevice(device, true)
         return ViewModelProvider(activity)[ManagerViewModel::class.java].apply {
             selectReader(UsbAuthenticatorReader.discover(manager).single())
-            enrollmentSettings("https://localhost", f.csr.cn)
+            enrollmentSettings("https://localhost")
+        enrollment.choosePerson(cc.cardkey.enrollment.enrollmentTarget("https://localhost", f.csr.identity))
             enrollmentRoot(enrollment.rootRequest(), f.issued.root)
             enrollment.settleCsr(enrollment.startCsr(), f.csr)
-            val (owner, _) = enrollment.startIssuance(f.issued.token(f.csr))
+            val (owner, _) = enrollment.prepareIssuerRequest()
             enrollment.settleIssuance(owner, f.bundle, EnrollmentStage.VERIFIED)
             enrollment.imported(owner)
             tlsSettings("https://localhost/qualify")

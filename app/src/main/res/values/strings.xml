@@ -59,21 +59,12 @@
     <string name="enrollment_title" tools:ignore="MissingTranslation">PIV／PKI</string>
     <string name="enrollment_address" tools:ignore="MissingTranslation">CA 地址（HTTPS）</string>
     <string name="enrollment_chooseRoot" tools:ignore="MissingTranslation">选择 CA 根证书</string>
-    <string name="enrollment_cn" tools:ignore="MissingTranslation">通用名称（CN）</string>
     <string name="enrollment_purpose" tools:ignore="MissingTranslation">客户端认证（TLS）</string>
     <string name="enrollment_document" tools:ignore="MissingTranslation">文档签名</string>
-    <string name="enrollment_documentScope" tools:ignore="MissingTranslation">使用所选槽位的现有密钥申请文档签名证书。</string>
-    <string name="enrollment_document9a" tools:ignore="MissingTranslation">导入后将替换 9A 的现有证书，该文档签名证书不能用于 TLS 客户端认证。</string>
-    <string name="enrollment_token" tools:ignore="MissingTranslation">一次性授权令牌</string>
     <string name="enrollment_createCsr" tools:ignore="MissingTranslation">生成 CSR</string>
     <string name="enrollment_exportCsr" tools:ignore="MissingTranslation">导出 CSR</string>
     <string name="enrollment_issue" tools:ignore="MissingTranslation">申请证书</string>
-    <string name="enrollment_steps" tools:ignore="MissingTranslation">先生成并导出 CSR，再获取 CA 管理员提供的一次性授权令牌。</string>
-    <string name="enrollment_scope" tools:ignore="MissingTranslation">令牌必须绑定此 CSR，并由 CA 管理员按所选用途授权。</string>
-    <string name="enrollment_csrReady" tools:ignore="MissingTranslation">CSR 已生成，可导出后交给 CA 管理员。</string>
-    <string name="enrollment_issuing" tools:ignore="MissingTranslation">正在向所选 CA 申请证书。</string>
     <string name="enrollment_verified" tools:ignore="MissingTranslation">CA 已签发证书，证书链、用途、身份和公钥验证通过。证书尚未写入卡片。</string>
-    <string name="enrollment_unknown" tools:ignore="MissingTranslation">未收到签发结果。请先向 CA 管理员核实，勿重复提交。</string>
     <string name="enrollment_rejected" tools:ignore="MissingTranslation">CA 拒绝了申请，未写入卡片。</string>
     <string name="enrollment_invalid" tools:ignore="MissingTranslation">证书未通过验证，未写入卡片。</string>
     <string name="enrollment_confirmImport" tools:ignore="MissingTranslation">将已验证的证书写入所选 PIV 槽位，替换该槽位的现有证书。私钥不变。确认导入？</string>

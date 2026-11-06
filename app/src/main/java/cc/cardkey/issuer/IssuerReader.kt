@@ -20,6 +20,10 @@ internal class IssuerReader(private val secrets: IssuerSecrets, private val scop
     private val mutable = MutableStateFlow(IssuerReaderState(origin = secrets.origin()))
     val state = mutable.asStateFlow()
     private var client: IssuerClient? = null
+    fun clientForEnrollment(): IssuerClient {
+        require(mutable.value.identity?.staff == true && !mutable.value.busy)
+        return requireNotNull(client)
+    }
     private data class Credential(val origin: String, val token: String)
     private var credential: Credential? = null
     private var job: Job? = null

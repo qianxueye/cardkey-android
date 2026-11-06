@@ -5,6 +5,11 @@ import android.hardware.usb.UsbManager
 import cc.cardkey.protocol.*
 import cc.cardkey.transport.*
 import cc.cardkey.ui.*
+import cc.cardkey.issuer.*
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,6 +43,7 @@ class EnrollmentViewModelTest {
     private val app get() = RuntimeEnvironment.getApplication()
     private val models = mutableListOf<ManagerViewModel>()
     private lateinit var mainDispatcher: TestDispatcher
+    private val issuerFixtures = mutableListOf<IssuerFixture>()
     @Before fun setup() {
         mainDispatcher = UnconfinedTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
@@ -54,6 +60,7 @@ class EnrollmentViewModelTest {
                 }
             }
         }
+        issuerFixtures.forEach { it.close() }
         Dispatchers.resetMain()
     }
     private fun reader(): UsbReaderDescriptor {
@@ -62,10 +69,62 @@ class EnrollmentViewModelTest {
         shadowOf(app.getSystemService(UsbManager::class.java)).addOrUpdateUsbDevice(device, true)
         return UsbReaderDescriptor(device, 1, CardWire.APDU)
     }
-    private fun model(fixture: EnrollmentFixtures, address: String = "https://localhost") = ManagerViewModel(app).also(models::add).apply {
+    private fun model(fixture: EnrollmentFixtures, address: String = "https://localhost") = app.let {
+        check(it.getSharedPreferences("enrollment_settings", android.content.Context.MODE_PRIVATE).edit().clear().commit())
+        ManagerViewModel(it)
+    }.also(models::add).apply {
         selectReader(reader())
-        enrollmentSettings(address, fixture.csr.cn)
+        enrollmentSettings(address)
+        enrollment.choosePerson(enrollmentTarget("https://issuer.example.test", fixture.csr.identity))
         enrollmentRoot(enrollment.rootRequest(), fixture.root)
+    }
+    private fun attachIssuer(model: ManagerViewModel, fixture: EnrollmentFixtures, caAddress: String) {
+        val issuer = IssuerFixture().also(issuerFixtures::add)
+        val csr = requireNotNull(model.enrollment.state.value.csr)
+        var row: JsonObject? = null
+        issuer.enrollmentResponse = { method, path, body ->
+            when {
+                path.endsWith("/token") -> 200 to JsonObject().apply {
+                    addProperty("token", fixture.token(csr, caAddress)); addProperty("jti", "synthetic-jti")
+                    addProperty("exp", fixture.now / 1000 + 300); addProperty("provisioner_role", when (csr.selection.purpose) {
+                        EnrollmentPurpose.TLS -> "piv_auth"
+                        EnrollmentPurpose.DOCUMENT -> "signing"
+                        EnrollmentPurpose.KEY_MANAGEMENT -> "key_management"
+                    })
+                }.toString()
+                path.endsWith("/result") -> {
+                    val result = JsonParser.parseString(body).asJsonObject
+                    val updated = requireNotNull(row).deepCopy().apply {
+                        add("outcome", result.get("outcome"))
+                        result.get("certificate_id")?.let { add("certificate_id", it) }
+                    }
+                    row = updated
+                    200 to updated.toString()
+                }
+                method == "PUT" -> {
+                    row = JsonParser.parseString(body).asJsonObject.apply {
+                        addProperty("id", path.substringAfterLast('/')); addProperty("outcome", "pending")
+                        addProperty("certificate_id", "")
+                        add("certificate_identity", JsonObject().apply {
+                            addProperty("employee_reference", csr.identity.employeeReference)
+                            addProperty("display_name", csr.identity.displayName)
+                            addProperty("upn", csr.identity.upn); addProperty("email", csr.identity.email)
+                        })
+                    }
+                    200 to row.toString()
+                }
+                else -> 200 to requireNotNull(row).toString()
+            }
+        }
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val url = issuer.origin.toHttpUrl().newBuilder().encodedPath(request.url.encodedPath)
+                .encodedQuery(request.url.encodedQuery).build()
+            chain.proceed(request.newBuilder().url(url).build())
+        }.build()
+        val client = IssuerClient(requireNotNull(model.enrollment.state.value.target).issuerOrigin, "synthetic", http)
+        runBlocking { client.me() }
+        model.enrollmentIssuerClient = { client }
     }
     private fun run(model: ManagerViewModel, input: OperationInput, channel: CardChannel) {
         val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
@@ -84,14 +143,26 @@ class EnrollmentViewModelTest {
         val selection = EnrollmentSelection(EnrollmentPurpose.DOCUMENT, 0x9c)
         model.enrollmentSelection(selection)
         val pending = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "123456".toCharArray(),
-            text = fixture.csr.cn, enrollmentSelection = selection, enrollmentRevision = model.enrollment.state.value.revision)
-        model.enrollmentSelection(selection.copy(slot = 0x9a))
+            enrollmentIdentity = fixture.csr.identity, enrollmentSelection = selection, enrollmentRevision = model.enrollment.state.value.revision)
+        model.enrollmentSelection(EnrollmentSelection(EnrollmentPurpose.KEY_MANAGEMENT))
         model.enrollmentSelection(selection)
         model.submitEnrollment(pending)
         assertTrue(pending.pin.all { it == '\u0000' })
         assertFalse(model.state.value.busy)
         assertEquals(FailureCode.INVALID_INPUT, (model.state.value.result as OperationResult.Failed).code)
         assertNull(model.enrollment.state.value.csr)
+    }
+    @Test fun confirmationWithDifferentPersonIdentityCannotDispatchAtCurrentRevision() {
+        val fixture = EnrollmentFixtures()
+        val model = model(fixture)
+        val pending = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "123456".toCharArray(),
+            enrollmentIdentity = fixture.identity.copy(employeeReference = "EMP-OTHER"),
+            enrollmentRevision = model.enrollment.state.value.revision)
+        model.submitEnrollment(pending)
+        assertTrue(pending.pin.all { it == '\u0000' })
+        assertFalse(model.state.value.busy)
+        assertNull(model.enrollment.state.value.csr)
+        assertEquals(FailureCode.INVALID_INPUT, (model.state.value.result as OperationResult.Failed).code)
     }
     @Test fun issuanceAndExportCallbacksCannotReturnAfterSelectionAba() {
         val fixture = EnrollmentFixtures()
@@ -109,9 +180,7 @@ class EnrollmentViewModelTest {
         val replacement = fixture.csr(selection = selected)
         model.enrollment.settleCsr(model.enrollment.startCsr(), replacement)
         assertFalse(model.currentEnrollmentExport(report))
-        val token = fixture.token(replacement).toCharArray()
-        model.issueEnrollment(token, revision)
-        assertTrue(token.all { it == '\u0000' })
+        model.issueEnrollment(revision)
         assertFalse(model.enrollment.state.value.attempted)
         assertEquals(EnrollmentStage.CSR, model.enrollment.state.value.stage)
         assertFalse(model.state.value.busy)
@@ -119,13 +188,15 @@ class EnrollmentViewModelTest {
     @Test fun documentImportCannotOpenTlsRootPickerOrActualTlsConnection() {
         val fixture = EnrollmentFixtures()
         val model = model(fixture)
-        val selection = EnrollmentSelection(EnrollmentPurpose.DOCUMENT, 0x9a)
+        val selection = EnrollmentSelection(EnrollmentPurpose.DOCUMENT, 0x9c)
         model.enrollmentSelection(selection)
         val csr = fixture.csr(selection = selection)
         model.enrollment.settleCsr(model.enrollment.startCsr(), csr)
-        val (owner, _) = model.enrollment.startIssuance(fixture.token(csr))
+        val (owner, _) = model.enrollment.prepareIssuerRequest()
         val eku = org.bouncycastle.asn1.x509.KeyPurposeId.getInstance(org.bouncycastle.asn1.ASN1ObjectIdentifier(selection.purpose.eku))
-        val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(purposes = arrayOf(eku)), fixture.intermediate), fixture.root, csr)
+        val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(purposes = arrayOf(eku, EnrollmentFixtures.oid("1.3.6.1.4.1.311.10.3.12"), EnrollmentFixtures.oid(EnrollmentPurpose.KEY_MANAGEMENT.eku)),
+            usage = org.bouncycastle.asn1.x509.KeyUsage.digitalSignature or org.bouncycastle.asn1.x509.KeyUsage.nonRepudiation,
+            identity = csr.identity, names = EnrollmentFixtures.emailNames(csr.identity)), fixture.intermediate), fixture.root, csr)
         model.enrollment.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
         model.enrollment.imported(owner)
         model.requestTlsRoot()
@@ -141,24 +212,22 @@ class EnrollmentViewModelTest {
     @Test fun actualCardRunClosesGateAndSecretsBeforeHttpAndPauseKeepsCsr() {
         val fixture = EnrollmentFixtures()
         val card = EnrollmentCard()
-        var secret = CharArray(0)
         EnrollmentHttpsServer(fixture) {
             assertTrue(card.closed)
-            assertTrue(secret.all { it == '\u0000' })
             CardOperationGate.tryAcquire()!!.close()
             "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"
         }.use { server ->
             val model = model(fixture, server.address)
             val owner = model.enrollment.startCsr()
-            val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "123456".toCharArray(), text = fixture.csr.cn)
+            val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "123456".toCharArray(), enrollmentIdentity = fixture.csr.identity)
             run(model, input, card); await(model)
             val csr = model.enrollment.state.value.csr!!
             assertEquals(owner, model.enrollment.generation)
             assertTrue(input.pin.all { it == '\u0000' })
             model.cancel()
             assertSame(csr, model.enrollment.state.value.csr)
-            secret = fixture.token(csr, server.address).toCharArray()
-            model.issueEnrollment(secret); await(model)
+            attachIssuer(model, fixture, server.address)
+            model.issueEnrollment(); await(model)
             assertEquals("result=${model.state.value.result}; requests=${server.requests.get()}; server=${server.lastFailure}",
                 EnrollmentStage.REJECTED, model.enrollment.state.value.stage)
             assertFalse(model.state.value.requiresInspection)
@@ -173,13 +242,12 @@ class EnrollmentViewModelTest {
         EnrollmentHttpsServer(fixture) { error("Queued cancellation must not reach HTTP") }.use { server ->
             val model = model(fixture, server.address)
             model.enrollment.settleCsr(model.enrollment.startCsr(), fixture.csr)
+            attachIssuer(model, fixture, server.address)
             repeat(2) {
-                val secret = fixture.token(address = server.address).toCharArray()
-                model.issueEnrollment(secret)
-                assertEquals(EnrollmentStage.ISSUING, model.enrollment.state.value.stage)
+                model.issueEnrollment()
+                assertTrue(model.state.value.busy)
                 model.cancel()
                 scheduler.runCurrent()
-                assertTrue(secret.all { it == '\u0000' })
                 assertEquals(EnrollmentStage.CSR, model.enrollment.state.value.stage)
                 assertFalse(model.enrollment.state.value.attempted)
                 assertNull(model.enrollment.state.value.receipt)
@@ -187,6 +255,7 @@ class EnrollmentViewModelTest {
                 assertFalse(model.state.value.busy)
             }
             assertEquals(0, server.requests.get())
+            assertTrue(issuerFixtures.last().mutations.isEmpty())
         }
     }
     @Test fun cancelledNetworkCannotReplaceNewFormAndNeverCreatesCardFence() {
@@ -198,14 +267,16 @@ class EnrollmentViewModelTest {
         }.use { server ->
             val model = model(fixture, server.address)
             model.enrollment.settleCsr(model.enrollment.startCsr(), fixture.csr)
-            model.issueEnrollment(fixture.token(address = server.address).toCharArray())
+            attachIssuer(model, fixture, server.address)
+            model.issueEnrollment()
             try {
                 val arrived = entered.await(5, TimeUnit.SECONDS)
                 assertTrue("stage=${model.enrollment.state.value.stage}; result=${model.state.value.result}; requests=${server.requests.get()}; server=${server.lastFailure}", arrived)
                 model.cancel()
                 assertEquals(EnrollmentStage.UNKNOWN, model.enrollment.state.value.stage)
                 assertFalse(model.state.value.requiresInspection)
-                model.enrollmentSettings("https://different", "new")
+                model.enrollmentSettings("https://different")
+                model.enrollment.choosePerson(enrollmentTarget("https://issuer.example.test", fixture.identity.copy(displayName = "new")))
             } finally { release.countDown() }
             await(model)
             assertEquals("new", model.enrollment.state.value.cn)
@@ -239,11 +310,43 @@ class EnrollmentViewModelTest {
             override fun cancel() { release.countDown() }
         }
         model.enrollment.startCsr()
-        run(model, OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "999999".toCharArray(), text = fixture.csr.cn), channel)
+        run(model, OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "999999".toCharArray(), enrollmentIdentity = fixture.csr.identity), channel)
         assertTrue(entered.await(5, TimeUnit.SECONDS)); model.cancel(); release.countDown(); await(model)
         val result = model.state.value.result as OperationResult.Failed
         assertEquals(FailureCode.PIN_INVALID, result.code); assertEquals(0x63c2, result.status)
         assertNull(model.enrollment.state.value.csr)
+    }
+    @Test fun restoredVerifiedAndImportedIdentitySurviveInitialReaderSelectionButRetireOnNextChange() {
+        val fixture = EnrollmentFixtures()
+        for (stage in listOf(EnrollmentStage.VERIFIED, EnrollmentStage.IMPORTED)) {
+            val original = model(fixture)
+            val csr = fixture.csr
+            val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate), fixture.root, csr)
+            original.enrollment.settleCsr(original.enrollment.startCsr(), csr)
+            val (owner, receipt) = original.enrollment.prepareIssuerRequest()
+            original.enrollment.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
+            if (stage == EnrollmentStage.IMPORTED) original.enrollment.imported(owner)
+            val restarted = ManagerViewModel(app).also(models::add)
+            assertTrue(restarted.enrollment.state.value.restored)
+            assertEquals(stage, restarted.enrollment.state.value.stage)
+            restarted.selectReader(reader())
+            assertEquals(stage, restarted.enrollment.state.value.stage)
+            assertEquals(receipt.target, restarted.enrollment.state.value.target)
+            val recovered = if (stage == EnrollmentStage.VERIFIED) restarted.enrollment.importRequest()
+                else restarted.enrollment.importedIdentity()
+            assertEquals(csr.identity, recovered.csr.identity)
+            assertArrayEquals(csr.der, recovered.csr.der)
+            assertArrayEquals(bundle.leaf, recovered.bundle.leaf)
+            assertEquals(bundle.chain.size, recovered.bundle.chain.size)
+            bundle.chain.zip(recovered.bundle.chain).forEach { (expected, actual) -> assertArrayEquals(expected, actual) }
+            if (stage == EnrollmentStage.IMPORTED) assertTrue(runCatching { restarted.enrollment.importRequest() }.isFailure)
+            restarted.selectReader(null)
+            assertFalse(restarted.enrollment.state.value.restored)
+            assertNull(restarted.enrollment.state.value.csr)
+            assertNull(restarted.enrollment.state.value.bundle)
+            assertTrue(runCatching { restarted.enrollment.importRequest() }.isFailure)
+            assertTrue(runCatching { restarted.enrollment.importedIdentity() }.isFailure)
+        }
     }
     @Test fun enrollmentImportRetainsUnknownAndAcceptedReadbackRecoveryFences() {
         val fixture = EnrollmentFixtures()
@@ -253,7 +356,7 @@ class EnrollmentViewModelTest {
             val csr = fixture.csr(key = card.keyPair)
             val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(key = card.keyPair), fixture.intermediate), fixture.root, csr)
             model.enrollment.settleCsr(model.enrollment.startCsr(), csr)
-            val (owner, _) = model.enrollment.startIssuance(fixture.token(csr))
+            val (owner, _) = model.enrollment.prepareIssuerRequest()
             model.enrollment.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
             val input = OperationInput(ManagerOperation.PIV_ENROLL_IMPORT, adminKey = card.managementKey.copyOf(),
                 enrollmentImport = model.enrollment.importRequest())
@@ -296,7 +399,7 @@ class EnrollmentViewModelTest {
         val model = model(fixture)
         val card = EnrollmentCard().apply { pinRemaining = 1; pukRemaining = 0 }
         model.enrollment.startCsr()
-        val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "123456".toCharArray(), text = fixture.csr.cn)
+        val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "123456".toCharArray(), enrollmentIdentity = fixture.csr.identity)
         run(model, input, card)
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
         while (model.state.value.lastRetry == null && System.nanoTime() < deadline) Thread.sleep(5)

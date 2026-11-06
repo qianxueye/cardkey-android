@@ -50,7 +50,7 @@ class InventoryPanelTest {
             val state by inventory.state.collectAsState()
             MaterialTheme { Box(Modifier.requiredSize(width.dp, height.dp)) {
                 ManagerScreen(manager.value, 0, {}, {}, { submitted = it }, { cancelled++; inventory.retire() }, {}, null, {}, {}, {}, {},
-                    EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                    EnrollmentState(), {}, {}, { it.close() }, {}, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
                     presentedInventory.value ?: state, { _, rp -> inventory.selectRp(rp) }, { _, credential -> inventory.selectCredential(credential) }, {}, inventory::action, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
                             onProtectedPivDocument = {}, onProtectedPivClear = {},

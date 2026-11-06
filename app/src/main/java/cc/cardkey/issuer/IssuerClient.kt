@@ -5,6 +5,8 @@ import com.google.gson.JsonParser
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -19,7 +21,7 @@ internal fun recordID(value: String): String {
     require(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}").matches(value))
     return value
 }
-internal data class IssuerPerson(val id: String, val name: String, val reference: String, val department: String, val title: String, val badge: String, val active: Boolean)
+internal data class IssuerPerson(val id: String, val name: String, val reference: String, val department: String, val title: String, val badge: String, val active: Boolean, val upn: String = "", val email: String = "")
 internal data class IssuerCard(val id: String, val person: String, val serial: String, val status: String)
 internal data class BadgeImage(val type: String, val length: Int, val width: Int, val height: Int, val label: String)
 internal data class BadgeRevision(val id: String, val card: String, val person: String, val name: String, val reference: String, val department: String, val title: String, val badge: String, val created: String, val sourceCreated: String?, val actor: String?, val front: BadgeImage, val back: BadgeImage)
@@ -39,17 +41,30 @@ internal fun JsonObject.text(key: String): String {
 internal class IssuerClient(val origin: String, private val token: String, client: OkHttpClient = OkHttpClient()) {
     private var identity: IssuerIdentity? = null
     private fun account() = requireNotNull(identity)
-    private fun staff() = account().also { require(it.staff) }
+    internal fun staff() = account().also { require(it.staff) }
     private val http = client.newBuilder().followRedirects(false).followSslRedirects(false)
-        .retryOnConnectionFailure(false).callTimeout(java.time.Duration.ofSeconds(25)).cache(null).build()
+        .retryOnConnectionFailure(false).addNetworkInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            if (response.code in setOf(408, 503)) response.newBuilder().header("Retry-After", "1").build() else response
+        }.callTimeout(java.time.Duration.ofSeconds(25)).cache(null).build()
 
-    private suspend fun get(path: String, params: Map<String, String> = emptyMap(), media: BadgeImage? = null): ByteArray {
+    private suspend fun get(path: String, params: Map<String, String> = emptyMap(), media: BadgeImage? = null): ByteArray =
+        exchange(path, params, media)
+
+    internal suspend fun exchange(path: String, params: Map<String, String> = emptyMap(), media: BadgeImage? = null,
+                                  method: String = "GET", key: String? = null, payload: JsonObject? = null): ByteArray {
         val url = origin.toHttpUrl().newBuilder().encodedPath(path).apply {
             params.forEach { (key, value) -> addQueryParameter(key, value) }
         }.build()
         val request = Request.Builder().url(url).header("Authorization", "Bearer $token")
-            .header("Accept", media?.type ?: "application/json").build()
-        val limit = if (media == null) 4_194_304 else 1_048_576
+            .header("Accept", media?.type ?: "application/json").apply {
+                if (method != "GET") {
+                    header("Idempotency-Key", recordID(requireNotNull(key)))
+                    header("Cache-Control", "no-store")
+                    method(method, (payload ?: JsonObject()).toString().toRequestBody("application/json".toMediaType()))
+                }
+            }.build()
+        val limit = if (media != null) 1_048_576 else if (path.endsWith("/token")) 65_536 else if (path.startsWith("/v1/issuances/")) 262_144 else 4_194_304
         return suspendCancellableCoroutine { continuation ->
             val call = http.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
@@ -57,13 +72,20 @@ internal class IssuerClient(val origin: String, private val token: String, clien
                 override fun onFailure(call: Call, e: IOException) { if (continuation.isActive) continuation.resumeWithException(e) }
                 override fun onResponse(call: Call, response: Response) {
                     val result = runCatching { response.use {
-                        if (it.code != 200) throw IssuerFailure(it.code)
+                        if (it.code != 200 && !path.startsWith("/v1/issuances/")) throw IssuerFailure(it.code)
                         val body = requireNotNull(it.body)
                         val type = body.contentType()?.let { type -> "${type.type}/${type.subtype}" }
                         require(type == (media?.type ?: "application/json"))
                         require(body.contentLength() <= limit)
                         val bytes = body.byteStream().use { input -> input.readNBytes(limit + 1) }
                         require(bytes.size in 1..limit)
+                        if (it.code != 200) {
+                            if (path.startsWith("/v1/issuances/")) {
+                                val code = runCatching { JsonParser.parseString(bytes.toString(Charsets.UTF_8)).asJsonObject.getAsJsonObject("error").text("code") }.getOrNull()
+                                throw IssuerEnrollmentFailure(it.code, IssuerMintError.fromCode(code))
+                            }
+                            throw IssuerFailure(it.code)
+                        }
                         if (media != null) require(bytes.size == media.length)
                         bytes
                     } }
@@ -118,19 +140,24 @@ internal class IssuerClient(val origin: String, private val token: String, clien
         require(items.size() <= 100)
         return IssuerPage(items.map { decode(it.asJsonObject) }, value.text("next_cursor").also { require(it.length <= 1024) })
     }
-    private fun person(value: JsonObject): IssuerPerson {
+    private fun person(value: JsonObject, self: Boolean = false): IssuerPerson {
         val status = value.text("employment_status")
         require(status in setOf("active", "inactive"))
         return IssuerPerson(recordID(value.text("id")), value.text("display_name"), value.text("employee_reference"),
-            value.text("department"), value.text("job_title"), value.text("badge_number"), status == "active")
+            value.text("department"), value.text("job_title"), value.text("badge_number"), status == "active",
+            if (self) "" else value.text("upn"), if (self) "" else value.text("email")).also {
+                require(listOf(it.name, it.reference, it.department, it.title, it.badge).all { text ->
+                    text.codePointCount(0, text.length) <= 255 && '\u0000' !in text })
+                require(listOf(it.upn, it.email).all { text -> text.codePointCount(0, text.length) <= 254 && '\u0000' !in text })
+            }
     }
     suspend fun people(cursor: String = ""): IssuerPage<IssuerPerson> {
         staff()
-        return page(json("/v1/people", mapOf("limit" to "100", "cursor" to cursor)), ::person)
+        return page(json("/v1/people", mapOf("limit" to "100", "cursor" to cursor)), { person(it) })
     }
     suspend fun selfPerson(): IssuerPerson {
         val account = account(); require(!account.staff)
-        return person(json("/v1/me/person")).also { require(it.id == account.personID) }
+        return person(json("/v1/me/person"), self = true).also { require(it.id == account.personID) }
     }
     suspend fun cards(person: String, cursor: String = ""): IssuerPage<IssuerCard> {
         val account = account()

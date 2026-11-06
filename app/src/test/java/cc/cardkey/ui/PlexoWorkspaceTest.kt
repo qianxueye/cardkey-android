@@ -60,7 +60,7 @@ class PlexoWorkspaceTest {
                 CardKeyTheme {
                     Box(Modifier.requiredSize(width.dp, height.dp)) {
                         ManagerScreen(state.value, 0, {}, {}, onSubmit, {}, {}, null, onExport, {}, {}, {},
-                            enrollment, { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                            enrollment, {}, {}, { it.close() }, {}, {},
                             TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(),
                             { operation, slot -> action = operation to slot }, {}, InventoryState(),
                             { _, _ -> }, { _, _ -> }, {}, {}, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
@@ -398,7 +398,7 @@ class PlexoWorkspaceTest {
 
     @Test fun importedTlsPreparationStaysPublicAndRecognitionEpochClearsPin() {
         val fixture = TlsFixture()
-        val imported = EnrollmentState("https://localhost", fixture.csr.cn, true,
+        val imported = EnrollmentState("https://localhost", cc.cardkey.enrollment.enrollmentTarget("https://localhost", fixture.csr.identity), true,
             fixture.csr, fixture.bundle, EnrollmentStage.IMPORTED)
         val selected = reader("recognition-tls")
         val descriptor = ManagerState(nfc = false, selectedReader = selected)

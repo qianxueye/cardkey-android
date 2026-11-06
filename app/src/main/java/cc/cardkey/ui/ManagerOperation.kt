@@ -52,6 +52,7 @@ class OperationInput(
     val enrollmentImport: EnrollmentImport? = null,
     val enrollmentSelection: EnrollmentSelection = EnrollmentSelection(),
     val enrollmentRevision: Long = 0,
+    val enrollmentIdentity: EnrollmentIdentity? = null,
     val signingFileGeneration: Long? = null,
     val signatureFormat: SignatureFormat = if (operation == ManagerOperation.PIV_CMS_SIGN) SignatureFormat.CMS else SignatureFormat.RAW,
     val inventoryGeneration: Long? = null,
@@ -293,7 +294,8 @@ class ManagerOperations(private val now: () -> Long = System::currentTimeMillis,
             }
             ManagerOperation.PIV_ENROLL_CSR -> {
                 val selection = input.enrollmentSelection
-                val csr = EnrollmentCsr(piv.createCsr(selection.slot, input.pin, EnrollmentProfile.name(input.text), selection.algorithm), input.text, selection)
+                val identity = requireNotNull(input.enrollmentIdentity)
+                val csr = EnrollmentCsr(piv.createCsr(selection.slot, input.pin, EnrollmentProfile.name(identity.displayName), selection.algorithm), identity, selection)
                 ManagerReport(emptyList(), enrollmentCsr = csr)
             }
             ManagerOperation.PIV_ENROLL_IMPORT -> {

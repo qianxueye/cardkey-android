@@ -56,8 +56,8 @@ class NativeUiPreviewTest {
         host.get().setContent {
             CardKeyTheme {
                 Box(Modifier.fillMaxSize()) {
-                    ManagerScreen(state.value, 0, {}, {}, {}, {}, {}, null, {}, {}, {}, {}, EnrollmentState(), { _, _ -> }, {},
-                        { it.close() }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() },
+                    ManagerScreen(state.value, 0, {}, {}, {}, {}, {}, null, {}, {}, {}, {}, EnrollmentState(), {}, {},
+                        { it.close() }, {}, {}, TlsQualificationState(), {}, {}, { it.close() },
                         SigningFileState(), { _, _ -> }, {}, inventory, { _, _ -> }, { _, _ -> }, {}, {},
                         protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
                         onProtectedPivDocument = {}, onProtectedPivClear = {},

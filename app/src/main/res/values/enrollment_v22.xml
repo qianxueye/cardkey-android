@@ -1,0 +1,19 @@
+<resources>
+    <string name="enrollment_documentScope">Use the existing key in slot 9C to request a document signing certificate.</string>
+    <string name="enrollment_steps">Select a person and their issued card, then create the CSR.</string>
+    <string name="enrollment_scope">The issuer authorizes this request using the selected person record.</string>
+    <string name="enrollment_csrReady">The CSR is ready. You can request the certificate.</string>
+    <string name="enrollment_issuing">Requesting authorization and a certificate.</string>
+    <string name="enrollment_unknown">The request did not return a complete result. Ask the issuing administrator to check this request before submitting again.</string>
+    <string name="enrollment_caId">CA identifier</string>
+    <string name="enrollment_choosePerson">Select a person</string>
+    <string name="enrollment_chooseCard">Select an issued card</string>
+    <string name="enrollment_noIssuedCards">This list has no issued cards.</string>
+    <string name="enrollment_keyManagement">Key management</string>
+    <string name="enrollment_connectIssuer">Connect to the issuer with an operator account before requesting a certificate.</string>
+    <string name="enrollment_resultUnreported">The result is saved on this device. The issuer has not acknowledged it; ask the issuing administrator to check the request.</string>
+    <string name="enrollment_tokenAlreadyRequested">Authorization was already requested. Ask the issuing administrator to check this request before continuing.</string>
+    <string name="enrollment_issuerIneligible">The issuer declined authorization for this person, card or request. Ask the issuing administrator to check its status.</string>
+    <string name="enrollment_issuerRequestFailed">Authorization did not complete. Check the request record with the issuing administrator before continuing.</string>
+    <string name="enrollment_requestId">Request ID</string>
+</resources>

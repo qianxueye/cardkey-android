@@ -2,6 +2,10 @@ package cc.cardkey.enrollment
 
 import cc.cardkey.protocol.piv.KeyAlgorithm
 import cc.cardkey.protocol.piv.PivClient
+import org.bouncycastle.asn1.ASN1ObjectIdentifier
+import org.bouncycastle.asn1.ASN1Sequence
+import org.bouncycastle.asn1.ASN1TaggedObject
+import org.bouncycastle.asn1.DERUTF8String
 import org.bouncycastle.asn1.DERNull
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers
 import org.bouncycastle.asn1.pkcs.RSAPublicKey
@@ -26,19 +30,36 @@ import java.util.Base64
 import java.util.Date
 
 enum class EnrollmentPurpose(val eku: String) {
-    TLS("1.3.6.1.5.5.7.3.2"), DOCUMENT("1.3.6.1.5.5.7.3.36")
+    TLS("1.3.6.1.5.5.7.3.2"), DOCUMENT("1.3.6.1.5.5.7.3.36"), KEY_MANAGEMENT("1.3.6.1.5.5.7.3.4")
 }
 
-data class EnrollmentSelection(val purpose: EnrollmentPurpose = EnrollmentPurpose.TLS,
-                               val slot: Int = if (purpose == EnrollmentPurpose.DOCUMENT) 0x9c else 0x9a,
-                               val algorithm: KeyAlgorithm = KeyAlgorithm.P256) {
+data class EnrollmentIdentity(val employeeReference: String, val displayName: String, val upn: String, val email: String) {
     init {
-        require(slot in PivClient.slots)
-        require(purpose != EnrollmentPurpose.TLS || slot == 0x9a && algorithm == KeyAlgorithm.P256)
+        require(employeeReference.isNotBlank() && employeeReference.none { it.isISOControl() })
+        EnrollmentProfile.name(displayName)
+        require(upn.none { it.isISOControl() } && email.all { it.code in 0x21..0x7e })
     }
 }
 
-class EnrollmentCsr(der: ByteArray, val cn: String, val selection: EnrollmentSelection = EnrollmentSelection()) {
+data class EnrollmentSelection(val purpose: EnrollmentPurpose = EnrollmentPurpose.TLS,
+                               val slot: Int = when (purpose) {
+                                   EnrollmentPurpose.TLS -> 0x9a
+                                   EnrollmentPurpose.DOCUMENT -> 0x9c
+                                   EnrollmentPurpose.KEY_MANAGEMENT -> 0x9d
+                               },
+                               val algorithm: KeyAlgorithm = if (purpose == EnrollmentPurpose.KEY_MANAGEMENT) KeyAlgorithm.RSA2048 else KeyAlgorithm.P256) {
+    init {
+        require(slot in PivClient.slots)
+        require(when (purpose) {
+            EnrollmentPurpose.TLS -> slot == 0x9a && algorithm == KeyAlgorithm.P256
+            EnrollmentPurpose.DOCUMENT -> slot == 0x9c
+            EnrollmentPurpose.KEY_MANAGEMENT -> slot == 0x9d && algorithm == KeyAlgorithm.RSA2048
+        }) { "Enrollment slot or algorithm does not match purpose" }
+    }
+}
+
+class EnrollmentCsr(der: ByteArray, val identity: EnrollmentIdentity, val selection: EnrollmentSelection = EnrollmentSelection()) {
+    val cn get() = identity.displayName
     private val encoded = der.copyOf()
     private val publicKey: ByteArray
     val der get() = encoded.copyOf()
@@ -47,6 +68,7 @@ class EnrollmentCsr(der: ByteArray, val cn: String, val selection: EnrollmentSel
     init {
         require(encoded.size in 1..16384)
         EnrollmentProfile.name(cn)
+        require(selection.purpose != EnrollmentPurpose.TLS || identity.upn.isNotBlank()) { "Authentication requires a person UPN" }
         val request = PKCS10CertificationRequest(encoded)
         require(request.encoded.contentEquals(encoded))
         require(CertificationRequest.getInstance(ASN1Primitive.fromByteArray(encoded)).certificationRequestInfo.version.value.toInt() == 0)
@@ -77,6 +99,8 @@ class EnrollmentBundle(chain: List<ByteArray>, val verifiedAt: Long) {
 
 object EnrollmentProfile {
     const val MAX_BUNDLE = 131072
+    private const val CARD_LIFETIME_MS = 8760L * 60 * 60 * 1000
+    private const val CLOCK_SKEW_MS = 300000L
     fun name(cn: String): X500Name {
         require(cn.isNotBlank() && cn.toByteArray(Charsets.UTF_8).size <= 64 && cn.none { it.isISOControl() })
         return X500NameBuilder(BCStyle.INSTANCE).addRDN(BCStyle.CN, org.bouncycastle.asn1.DERUTF8String(cn)).build()
@@ -85,6 +109,60 @@ object EnrollmentProfile {
         require(name.rdNs.size == 1 && name.rdNs.single().typesAndValues.size == 1)
         val attribute = name.rdNs.single().first
         require(attribute.type == BCStyle.CN && (attribute.value as? ASN1String)?.string == cn)
+    }
+    fun certificateSubject(name: X500Name, identity: EnrollmentIdentity) {
+        val expected = listOf(BCStyle.C to "US", BCStyle.O to "Aperture Intelligence LLC",
+            BCStyle.UID to identity.employeeReference, BCStyle.CN to identity.displayName)
+        require(name.rdNs.size == expected.size && name.rdNs.zip(expected).all { (rdn, value) ->
+            rdn.typesAndValues.size == 1 && rdn.first.type == value.first &&
+                (rdn.first.value as? ASN1String)?.string == value.second
+        }) { "Certificate subject does not match the person identity" }
+    }
+    private fun alternativeNames(holder: X509CertificateHolder, csr: EnrollmentCsr) {
+        val names = GeneralNames.fromExtensions(holder.extensions, Extension.subjectAlternativeName)?.names.orEmpty()
+        val emails = names.filter { it.tagNo == GeneralName.rfc822Name }
+        val upns = names.filter { it.tagNo == GeneralName.otherName }
+        require(names.size == emails.size + upns.size) { "Certificate SAN contains an unsupported name type" }
+        require(emails.size <= 1 && emails.all { (it.name as? ASN1String)?.string == csr.identity.email && csr.identity.email.isNotEmpty() }) {
+            "Certificate email SAN does not match the person email"
+        }
+        if (csr.selection.purpose == EnrollmentPurpose.TLS) {
+            require(upns.size == 1) { "Authentication certificate requires exactly one UPN SAN" }
+            val valid = runCatching {
+                val value = ASN1Sequence.getInstance(upns.single().name)
+                val tagged = ASN1TaggedObject.getInstance(value.getObjectAt(1))
+                value.size() == 2 && value.getObjectAt(0) == ASN1ObjectIdentifier("1.3.6.1.4.1.311.20.2.3") &&
+                    tagged.tagNo == 0 && tagged.isExplicit &&
+                    (tagged.explicitBaseObject as? DERUTF8String)?.string == csr.identity.upn
+            }.getOrDefault(false)
+            require(valid) { "Certificate UPN SAN does not match the person UPN" }
+        } else {
+            require(upns.isEmpty()) { "Certificate SAN contains an unsupported name type" }
+            require(emails.size == if (csr.identity.email.isEmpty()) 0 else 1) {
+                "Certificate email SAN does not match the person email"
+            }
+        }
+    }
+    private fun usages(extensions: Extensions, csr: EnrollmentCsr) {
+        val usage = when (csr.selection.purpose) {
+            EnrollmentPurpose.TLS -> KeyUsage.digitalSignature
+            EnrollmentPurpose.DOCUMENT -> KeyUsage.digitalSignature or KeyUsage.nonRepudiation
+            EnrollmentPurpose.KEY_MANAGEMENT -> KeyUsage.keyEncipherment
+        }
+        require(KeyUsage.fromExtensions(extensions)?.encoded?.contentEquals(KeyUsage(usage).encoded) == true) {
+            "Certificate key usage does not match purpose"
+        }
+        val expected = when (csr.selection.purpose) {
+            EnrollmentPurpose.TLS -> setOf(EnrollmentPurpose.TLS.eku, "1.3.6.1.4.1.311.20.2.2")
+            EnrollmentPurpose.DOCUMENT -> setOf(EnrollmentPurpose.DOCUMENT.eku, "1.3.6.1.4.1.311.10.3.12") +
+                if (csr.identity.email.isEmpty()) emptySet() else setOf(EnrollmentPurpose.KEY_MANAGEMENT.eku)
+            EnrollmentPurpose.KEY_MANAGEMENT -> if (csr.identity.email.isEmpty()) emptySet() else setOf(EnrollmentPurpose.KEY_MANAGEMENT.eku)
+        }
+        val eku = ExtendedKeyUsage.fromExtensions(extensions)
+        val actual = eku?.usages?.map { it.id }.orEmpty()
+        require(actual.toSet() == expected && (expected.isNotEmpty() || eku == null)) {
+            "Certificate extended key usage does not match purpose"
+        }
     }
     fun publicKey(spki: SubjectPublicKeyInfo, algorithm: KeyAlgorithm) {
         require(spki.publicKeyData.padBits == 0)
@@ -155,16 +233,25 @@ object EnrollmentProfile {
         val tbs = holder.toASN1Structure().tbsCertificate
         require(tbs.versionNumber == 3 && tbs.issuerUniqueId == null && tbs.subjectUniqueId == null)
         require(tbs.signature == holder.signatureAlgorithm)
-        subject(holder.subject, csr.cn)
-        publicKey(holder.subjectPublicKeyInfo, csr.selection.algorithm)
-        require(leaf.publicKey.encoded.contentEquals(csr.spki))
-        require(holder.getExtension(Extension.subjectAlternativeName) == null)
+        certificateSubject(holder.subject, csr.identity)
+        require(runCatching { publicKey(holder.subjectPublicKeyInfo, csr.selection.algorithm) }.isSuccess) {
+            "Certificate public key does not match the requested algorithm"
+        }
+        require(leaf.publicKey.encoded.contentEquals(csr.spki)) { "Certificate public key does not match the CSR" }
         val extensions = requireNotNull(holder.extensions)
-        require(KeyUsage.fromExtensions(extensions).encoded.contentEquals(KeyUsage(KeyUsage.digitalSignature).encoded))
-        require(ExtendedKeyUsage.fromExtensions(extensions).encoded.contentEquals(ExtendedKeyUsage(KeyPurposeId.getInstance(org.bouncycastle.asn1.ASN1ObjectIdentifier(csr.selection.purpose.eku))).encoded))
-        require(BasicConstraints.fromExtensions(extensions).encoded.contentEquals(BasicConstraints(false).encoded))
-        require(leaf.notBefore.time >= issuedAt - 300000 && leaf.notBefore.time <= issuedAt &&
-            leaf.notAfter.time <= issuedAt + 86400000 && leaf.notAfter.after(leaf.notBefore))
+        alternativeNames(holder, csr)
+        usages(extensions, csr)
+        val constraints = BasicConstraints.fromExtensions(extensions)
+        require(constraints == null || constraints.encoded.contentEquals(BasicConstraints(false).encoded)) {
+            "Certificate basicConstraints must identify an end entity"
+        }
+        require(leaf.notBefore.time >= issuedAt - CLOCK_SKEW_MS && leaf.notBefore.time <= issuedAt) {
+            "Certificate notBefore is outside the issuance window"
+        }
+        require(leaf.notAfter.after(leaf.notBefore)) { "Certificate notAfter must be later than notBefore" }
+        require(leaf.notAfter.time - leaf.notBefore.time <= CARD_LIFETIME_MS + CLOCK_SKEW_MS) {
+            "Certificate lifetime exceeds 8760 hours plus 300 seconds"
+        }
         certificates.forEach { it.checkValidity(Date(now)) }
         val pathCerts = if (certificates.last().encoded.contentEquals(root.encoded)) certificates.dropLast(1) else certificates
         require(pathCerts.isNotEmpty())

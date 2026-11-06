@@ -32,9 +32,9 @@ class EnrollmentProfileTest {
         val original = csr.der
         csr.der.fill(0); csr.spki.fill(0)
         assertArrayEquals(original, csr.der)
-        denied { EnrollmentCsr(original + byteArrayOf(0), csr.cn) }
-        denied { EnrollmentCsr(original.copyOf().apply { this[lastIndex] = (last().toInt() xor 1).toByte() }, csr.cn) }
-        denied { EnrollmentCsr(original, "other") }
+        denied { EnrollmentCsr(original + byteArrayOf(0), csr.identity) }
+        denied { EnrollmentCsr(original.copyOf().apply { this[lastIndex] = (last().toInt() xor 1).toByte() }, csr.identity) }
+        denied { EnrollmentCsr(original, csr.identity.copy(displayName = "other")) }
     }
     @Test fun exactIdentityKeyUsagePurposeAndCaAreRequired() {
         val badLeaves = listOf(fixture.leaf(cn = "other"), fixture.leaf(extraSubject = true), fixture.leaf(sans = true),
@@ -42,12 +42,12 @@ class EnrollmentProfileTest {
             fixture.leaf(usage = KeyUsage.keyAgreement), fixture.leaf(purposes = arrayOf(KeyPurposeId.id_kp_clientAuth, KeyPurposeId.id_kp_serverAuth)),
             fixture.leaf(purposes = arrayOf(KeyPurposeId.id_kp_serverAuth)), fixture.leaf(ca = true), fixture.leaf(critical = true))
         badLeaves.forEach { denied { validate(it) } }
-        for (missing in listOf("basic", "ku", "eku")) denied { validate(fixture.leaf(omit = missing)) }
+        for (missing in listOf("ku", "eku")) denied { validate(fixture.leaf(omit = missing)) }
     }
     @Test fun validityAndBackdatingAreBoundedAndImportChecksCurrentTime() {
         denied { validate(fixture.leaf(from = fixture.now - 301000)) }
         denied { validate(fixture.leaf(from = fixture.now + 1000)) }
-        denied { validate(fixture.leaf(to = fixture.now + 86401000)) }
+        denied { validate(fixture.leaf(to = fixture.now + 8760L * 3600000 + 301000)) }
         denied { validate(fixture.leaf(to = fixture.now - 1)) }
         val bundle = validate()
         EnrollmentProfile.validate(bundle.chain, fixture.root, fixture.csr, fixture.now + 120000, bundle.verifiedAt)

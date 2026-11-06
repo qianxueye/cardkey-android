@@ -45,8 +45,8 @@ class UserUpdateHelpTest {
                 val state by inventory.state.collectAsState()
                 MaterialTheme { Box(Modifier.requiredSize(800.dp, 1000.dp)) {
                     ManagerScreen(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)), 0,
-                        {}, {}, { submitted = it }, {}, {}, null, {}, {}, {}, {}, EnrollmentState(), { _, _ -> }, {},
-                        { it.close() }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() },
+                        {}, {}, { submitted = it }, {}, {}, null, {}, {}, {}, {}, EnrollmentState(), {}, {},
+                        { it.close() }, {}, {}, TlsQualificationState(), {}, {}, { it.close() },
                         SigningFileState(), { _, _ -> }, {}, state, { _, _ -> }, { _, _ -> }, {}, {},
                         protectedPiv = ProtectedPivState(), onProtectedPivDocument = {}, onProtectedPivClear = {},
                         onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })

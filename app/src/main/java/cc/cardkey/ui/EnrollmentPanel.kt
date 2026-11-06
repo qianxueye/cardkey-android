@@ -16,25 +16,24 @@ import cc.cardkey.enrollment.*
 import cc.cardkey.protocol.hexBytes
 import cc.cardkey.protocol.piv.ManagementAlgorithm
 import cc.cardkey.protocol.piv.KeyAlgorithm
-import cc.cardkey.protocol.piv.PivClient
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, clearInputs: Int,
-                    onSettings: (String, String) -> Unit, onRoot: () -> Unit,
-                    onSubmit: (OperationInput) -> Unit, onIssue: (CharArray, Long) -> Unit,
+                    onSettings: (String) -> Unit, onRoot: () -> Unit,
+                    onSubmit: (OperationInput) -> Unit, onIssue: (Long) -> Unit,
                     onExport: (ManagerReport) -> Unit, onCancel: () -> Unit, onAbandon: () -> Unit,
-                    onSelection: (EnrollmentSelection) -> Unit, viewportHeight: Dp) {
+                    onSelection: (EnrollmentSelection) -> Unit, viewportHeight: Dp,
+                    issuerContent: (@Composable () -> Unit)? = null) {
     var pin by remember { mutableStateOf("") }
     var admin by remember { mutableStateOf("") }
-    var token by remember { mutableStateOf("") }
     var algorithm by remember { mutableStateOf(ManagementAlgorithm.TDES) }
     var pending by remember { mutableStateOf<PendingOperation?>(null) }
     var invalid by remember { mutableStateOf(false) }
     LaunchedEffect(clearInputs, state.revision, canUseCard) {
-        pin = ""; admin = ""; token = ""; pending?.close(); pending = null; invalid = false
+        pin = ""; admin = ""; pending?.close(); pending = null; invalid = false
     }
-    LaunchedEffect(busy) { if (busy) { pin = ""; admin = ""; token = ""; pending?.close(); pending = null } }
+    LaunchedEffect(busy) { if (busy) { pin = ""; admin = ""; pending?.close(); pending = null } }
     DisposableEffect(Unit) { onDispose { pending?.close() } }
     pending?.let { operation ->
         AlertDialog(onDismissRequest = { operation.close(); pending = null },
@@ -66,35 +65,38 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                     EnrollmentRequestFacts(csr, receipt?.endpoint ?: state.address, receipt?.ca)
                 }
                 message?.let { Text(stringResource(it), style = MaterialTheme.typography.bodyLarge) }
+                state.receipt?.takeIf { it.csr === state.csr }?.let { receipt ->
+                    PlexoFactRow(stringResource(R.string.enrollment_requestId), receipt.issuanceId)
+                    if (receipt.reportPending) Text(stringResource(R.string.enrollment_resultUnreported))
+                }
                 if (state.stage == EnrollmentStage.ISSUING) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         }
         state.unknownReceipts.filterNot { it.csr === state.receipt?.csr && state.stage in setOf(EnrollmentStage.ISSUING, EnrollmentStage.UNKNOWN) }.forEach { receipt ->
             PlexoSection(stringResource(R.string.plexo_ca_unknownRequest), Modifier.testTag("enrollment-unknown-receipt")) {
                 EnrollmentRequestFacts(receipt.csr, receipt.endpoint, receipt.ca)
+                PlexoFactRow(stringResource(R.string.enrollment_requestId), receipt.issuanceId)
                 Text(stringResource(R.string.enrollment_unknown), style = MaterialTheme.typography.bodyLarge)
             }
         }
         PlexoSection(stringResource(R.string.plexo_ca_prepare), Modifier.testTag("enrollment-preparation")) {
+            issuerContent?.invoke()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 EnrollmentPurpose.entries.forEach { purpose ->
                     FilterChip(selected = state.selection.purpose == purpose, enabled = !busy,
                         modifier = Modifier.heightIn(min = 48.dp),
                         onClick = { if (state.selection.purpose != purpose) onSelection(EnrollmentSelection(purpose)) },
-                        label = { Text(stringResource(if (purpose == EnrollmentPurpose.TLS) R.string.enrollment_purpose else R.string.enrollment_document)) })
+                        label = { Text(stringResource(enrollmentPurposeLabel(purpose))) })
                 }
             }
             if (state.selection.purpose == EnrollmentPurpose.DOCUMENT) {
-                Choice("槽位", state.selection.slot, PivClient.slots, { "%02X".format(it) }, !busy) {
-                    onSelection(state.selection.copy(slot = it))
-                }
+                Text("9C")
                 Choice("算法", state.selection.algorithm, KeyAlgorithm.entries, { it.name }, !busy) {
                     onSelection(state.selection.copy(algorithm = it))
                 }
                 Text(stringResource(R.string.enrollment_documentScope), style = MaterialTheme.typography.bodyMedium)
-                if (state.selection.slot == 0x9a) Text(stringResource(R.string.enrollment_document9a), style = MaterialTheme.typography.bodyMedium)
-            } else Text("P-256 · 9A")
-            OutlinedTextField(state.address, { onSettings(it, state.cn) }, enabled = !busy,
+            } else Text(if (state.selection.purpose == EnrollmentPurpose.KEY_MANAGEMENT) "RSA-2048 · 9D" else "P-256 · 9A")
+            OutlinedTextField(state.address, onSettings, enabled = !busy,
                 label = { Text(stringResource(R.string.enrollment_address)) }, singleLine = true,
                 supportingText = {
                     val valid = state.address.isEmpty() || runCatching { enrollmentOrigin(state.address) }.isSuccess
@@ -103,9 +105,9 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                 },
                 isError = state.address.isNotEmpty() && runCatching { enrollmentOrigin(state.address) }.isFailure,
                 modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-address"))
-            OutlinedTextField(state.cn, { onSettings(state.address, it) }, enabled = !busy,
-                label = { Text(stringResource(R.string.enrollment_cn)) }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-cn"))
+            state.target?.identity?.let { identity ->
+                PlexoFactRow(stringResource(R.string.plexo_ca_identity), "${identity.displayName} · ${identity.employeeReference}")
+            }
             OutlinedButton(onClick = onRoot, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-root")) {
                 Text(stringResource(R.string.enrollment_chooseRoot))
             }
@@ -119,9 +121,9 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                     modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-pin"))
                 Text("6–8 位数字", style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = {
-                    val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = pin.toCharArray(), text = state.cn,
-                        enrollmentSelection = state.selection, enrollmentRevision = state.revision)
-                    pin = ""; token = ""; admin = ""
+                    val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = pin.toCharArray(),
+                        enrollmentIdentity = state.target?.identity, enrollmentSelection = state.selection, enrollmentRevision = state.revision)
+                    pin = ""; admin = ""
                     pending = PendingOperation(input)
                 }, enabled = !busy && canUseCard && state.hasRoot && state.cn.isNotBlank() && state.address.isNotBlank(),
                     modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-create-csr")) {
@@ -137,11 +139,8 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                 }
                 Text(stringResource(R.string.enrollment_scope), style = MaterialTheme.typography.bodyMedium)
                 if (!state.attempted) {
-                    OutlinedTextField(token, { token = it }, enabled = !busy && !state.attempted,
-                        label = { Text(stringResource(R.string.enrollment_token)) }, visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth().workspaceInput(viewportHeight).testTag("enrollment-token"))
-                    Button(onClick = { val secret = token.toCharArray(); token = ""; pin = ""; admin = ""; onIssue(secret, state.revision) },
-                        enabled = !busy && canUseCard && !state.attempted && token.isNotBlank(),
+                    Button(onClick = { pin = ""; admin = ""; onIssue(state.revision) },
+                        enabled = !busy && canUseCard && !state.attempted && state.target != null,
                         modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-issue")) { Text(stringResource(R.string.enrollment_issue)) }
                 }
             }
@@ -164,7 +163,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
                             if (key.size != algorithm.keySize) { key.fill(0); throw IllegalArgumentException() }
                             val input = OperationInput(ManagerOperation.PIV_ENROLL_IMPORT, adminKey = key, managementAlgorithm = algorithm,
                                 enrollmentSelection = state.selection, enrollmentRevision = state.revision)
-                            admin = ""; pin = ""; token = ""; pending = PendingOperation(input)
+                            admin = ""; pin = ""; pending = PendingOperation(input)
                         } catch (_: IllegalArgumentException) { admin = ""; invalid = true }
                     }, enabled = !busy && canUseCard, modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-import")) {
                         Text(stringResource(R.string.plexo_ca_importReview))
@@ -181,18 +180,23 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
         }
         if (invalid) Text(stringResource(R.string.error_invalidInput), color = MaterialTheme.colorScheme.error)
         if (busy) OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-cancel")) { Text("取消") }
-        else if (state.csr != null) OutlinedButton(onClick = { pin = ""; admin = ""; token = ""; pending?.close(); pending = null; onAbandon() },
+        else if (state.csr != null) OutlinedButton(onClick = { pin = ""; admin = ""; pending?.close(); pending = null; onAbandon() },
             modifier = Modifier.heightIn(min = 48.dp).testTag("enrollment-cancel")) { Text("取消") }
     }
 }
 
 @Composable
 private fun EnrollmentRequestFacts(csr: EnrollmentCsr, address: String, ca: EnrollmentCA?) {
-    PlexoFactRow(stringResource(R.string.plexo_ca_identity), csr.cn)
-    PlexoFactRow(stringResource(R.string.plexo_ca_purpose), stringResource(
-        if (csr.selection.purpose == EnrollmentPurpose.DOCUMENT) R.string.plexo_ca_documentIdentity else R.string.plexo_ca_tlsIdentity))
+    PlexoFactRow(stringResource(R.string.plexo_ca_identity), "${csr.cn} · ${csr.identity.employeeReference}")
+    PlexoFactRow(stringResource(R.string.plexo_ca_purpose), stringResource(enrollmentPurposeLabel(csr.selection.purpose)))
     PlexoFactRow(stringResource(R.string.plexo_ca_slotAlgorithm), "%02X · %s".format(csr.selection.slot, csr.selection.algorithm.name))
     PlexoFactRow(stringResource(R.string.plexo_ca_service), address)
     val rootSubject = remember(ca) { ca?.let { EnrollmentProfile.certificate(it.anchor).subjectX500Principal.name } }
     rootSubject?.let { PlexoFactRow(stringResource(R.string.plexo_ca_root), it) }
+}
+
+private fun enrollmentPurposeLabel(purpose: EnrollmentPurpose) = when (purpose) {
+    EnrollmentPurpose.TLS -> R.string.enrollment_purpose
+    EnrollmentPurpose.DOCUMENT -> R.string.enrollment_document
+    EnrollmentPurpose.KEY_MANAGEMENT -> R.string.enrollment_keyManagement
 }
