@@ -20,6 +20,7 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.ActivityResultLauncher
 import androidx.credentials.CredentialManager
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import cc.cardkey.ui.TextButton
 import androidx.compose.ui.res.stringResource
