@@ -11,9 +11,15 @@
     <string name="enrollment_noIssuedCards">This list has no issued cards.</string>
     <string name="enrollment_keyManagement">Key management</string>
     <string name="enrollment_connectIssuer">Connect to the issuer with an operator account before requesting a certificate.</string>
-    <string name="enrollment_resultUnreported">The certificate is saved on this device, but the issuer has not confirmed receiving it. Ask the issuing administrator to check the request record.</string>
+    <string name="enrollment_resultUnreported">The issuer did not confirm receiving this result. Ask the issuing administrator to check the request record.</string>
     <string name="enrollment_tokenAlreadyRequested">Authorization was already requested. Ask the issuing administrator to check this request before continuing.</string>
     <string name="enrollment_issuerIneligible">The issuer declined authorization for this person, card or request. Ask the issuing administrator to check its status.</string>
     <string name="enrollment_issuerRequestFailed">Authorization did not complete. Check the request record with the issuing administrator before continuing.</string>
     <string name="enrollment_requestId">Request ID</string>
+    <string name="enrollment_signingAttemptUnresolved">Authorization for this request was used. The issuer has not recorded a signing result. Ask the issuing administrator to check this request. Do not request another authorization.</string>
+    <string name="enrollment_signingTokenLive">The authorization is still valid. The issuer cannot record a rejected or unsubmitted result yet. Ask the issuing administrator to check this request.</string>
+    <string name="enrollment_issuanceNotPending">This request has ended and cannot get another signing authorization. Ask the issuing administrator to check the request record.</string>
+    <string name="enrollment_issuanceTerminal">This request already has a final result. Ask the issuing administrator to check the recorded result.</string>
+    <string name="enrollment_signingUnavailable">The issuer cannot provide signing authorization right now. Try again later; if it still fails, ask the issuing administrator to check the signing service.</string>
+    <string name="enrollment_keyManagementRsaRequired">Slot 9D needs an RSA-2048 key. Check the key in slot 9D, then create the CSR again.</string>
 </resources>

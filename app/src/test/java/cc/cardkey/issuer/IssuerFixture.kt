@@ -119,7 +119,7 @@ internal class IssuerFixture : AutoCloseable {
         }
         val capabilities = capabilityOverride ?: when (role) {
             "employee" -> listOf("self:read", "self:artwork:read")
-            "administrator" -> listOf("people:read", "people:write", "cards:read", "cards:write", "issuances:write", "events:read", "issuances:close-out")
+            "administrator" -> listOf("people:read", "people:write", "cards:read", "cards:write", "issuances:write", "events:read", "issuances:close-out", "issuances:resolve-not-signed")
             else -> listOf("people:read", "people:write", "cards:read", "cards:write", "issuances:write", "events:read")
         }
         return com.google.gson.JsonObject().apply {

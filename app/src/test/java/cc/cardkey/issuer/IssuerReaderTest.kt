@@ -314,6 +314,24 @@ class IssuerReaderTest {
             } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
         }
     }
+    @Test fun administratorResolveNotSignedCapabilityKeepsAdministratorRoleAndStaffReads() = runBlocking {
+        IssuerFixture().use { fixture ->
+            fixture.role = "administrator"
+            fixture.capabilityOverride = listOf("people:read", "people:write", "cards:read", "cards:write",
+                "issuances:write", "events:read", "issuances:close-out", "issuances:resolve-not-signed")
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = IssuerReader(secrets(), scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                reader.connect("https://issuer.invalid", "synthetic-admin-token"); awaitReady(reader)
+                assertNull(reader.state.value.error)
+                assertEquals(IssuerRole.ADMINISTRATOR, reader.state.value.identity?.role)
+                assertEquals(fixture.personID, reader.state.value.people.single().id)
+                assertTrue(fixture.requests.any { it.first.substringBefore('?') == "/v1/people" })
+                assertFalse(fixture.requests.any { it.first.endsWith("/resolve-not-signed") })
+                assertTrue(fixture.mutations.isEmpty())
+            } finally { reader.close(); withTimeout(10000) { scope.coroutineContext[Job]!!.cancelAndJoin() } }
+        }
+    }
     @Test fun administratorRetainsStaffReadsAndEmployeeBindingsAreChecked() = runBlocking {
         IssuerFixture().use { fixture ->
             fixture.role = "administrator"

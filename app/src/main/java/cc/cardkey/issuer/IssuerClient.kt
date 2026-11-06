@@ -118,7 +118,7 @@ internal class IssuerClient(val origin: String, private val token: String, clien
             val expected = when (role) {
                 IssuerRole.EMPLOYEE -> setOf("self:read", "self:artwork:read")
                 IssuerRole.OPERATOR -> staffCapabilities
-                IssuerRole.ADMINISTRATOR -> staffCapabilities + "issuances:close-out"
+                IssuerRole.ADMINISTRATOR -> staffCapabilities + setOf("issuances:close-out", "issuances:resolve-not-signed")
             }
             require(capabilities.size == expected.size && capabilities.toSet() == expected)
             val administrator = operator.get("administrator")

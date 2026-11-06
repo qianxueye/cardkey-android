@@ -11,9 +11,15 @@
     <string name="enrollment_noIssuedCards">此列表中没有已发放的卡片。</string>
     <string name="enrollment_keyManagement">密钥管理</string>
     <string name="enrollment_connectIssuer">请先使用操作员账户连接发卡服务，再申请证书。</string>
-    <string name="enrollment_resultUnreported">证书已保存在此设备上，但发卡服务未确认收到。请让发卡管理员核对申请记录。</string>
+    <string name="enrollment_resultUnreported">发卡服务没有确认收到本次结果。请让发卡管理员核对申请记录。</string>
     <string name="enrollment_tokenAlreadyRequested">此申请已请求过授权。请让发卡管理员核对记录后再继续。</string>
     <string name="enrollment_issuerIneligible">发卡服务拒绝为此人员、卡片或申请授权。请让发卡管理员检查状态。</string>
     <string name="enrollment_issuerRequestFailed">授权未完成。请先向发卡管理员核对申请记录。</string>
     <string name="enrollment_requestId">申请编号</string>
+    <string name="enrollment_signingAttemptUnresolved">本申请的授权已使用，发卡服务没有记录签发结果。请让发卡管理员检查此申请，勿再次请求授权。</string>
+    <string name="enrollment_signingTokenLive">授权仍在有效期内，发卡服务暂不能记录拒绝或未提交的结果。请让发卡管理员检查此申请。</string>
+    <string name="enrollment_issuanceNotPending">此申请已结束，不能再获取签发授权。请让发卡管理员查看申请记录。</string>
+    <string name="enrollment_issuanceTerminal">此申请已有最终结果。请让发卡管理员检查已记录的结果。</string>
+    <string name="enrollment_signingUnavailable">发卡服务暂时无法签发授权。请稍后重试；仍失败时请让发卡管理员检查签发服务。</string>
+    <string name="enrollment_keyManagementRsaRequired">9D 槽位需要 RSA-2048 密钥。请核对 9D 的密钥后重新生成 CSR。</string>
 </resources>

@@ -3,6 +3,7 @@ package cc.cardkey.issuer
 import cc.cardkey.enrollment.EnrollmentCsr
 import cc.cardkey.enrollment.EnrollmentIdentity
 import cc.cardkey.enrollment.EnrollmentPurpose
+import cc.cardkey.R
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -15,7 +16,9 @@ internal enum class IssuerMintError(val code: String) {
     INVALID_REQUEST("invalid_request"), STORAGE_FAILURE("storage_failure"),
     INVALID_IDEMPOTENCY_KEY("invalid_idempotency_key"), IDEMPOTENCY_CONFLICT("idempotency_conflict"),
     REQUEST_TOO_LARGE("request_too_large"), INVALID_ISSUANCE("invalid_issuance"),
-    ISSUANCE_NOT_PENDING("issuance_not_pending"), CARD_PERSON_MISMATCH("card_person_mismatch"),
+    ISSUANCE_NOT_PENDING("issuance_not_pending"), ISSUANCE_TERMINAL("issuance_terminal"),
+    SIGNING_ATTEMPT_UNRESOLVED("signing_attempt_unresolved"),
+    KEY_MANAGEMENT_ALGORITHM_MISMATCH("key_management_algorithm_mismatch"), CARD_PERSON_MISMATCH("card_person_mismatch"),
     CARD_INELIGIBLE("card_ineligible"), PERSON_INACTIVE("person_inactive"),
     SIGNING_TOKEN_LIVE("signing_token_live"), SIGNING_TOKEN_NOT_REPLAYABLE("signing_token_not_replayable"),
     SIGNING_UNAVAILABLE("signing_unavailable"), INVALID_PURPOSE("invalid_purpose"),
@@ -28,6 +31,22 @@ internal enum class IssuerMintError(val code: String) {
     }
 }
 internal class IssuerEnrollmentFailure(val status: Int, val reason: IssuerMintError) : IOException()
+internal fun issuerEnrollmentError(failure: Exception, reporting: Boolean = false): Int =
+    when ((failure as? IssuerEnrollmentFailure)?.reason) {
+        IssuerMintError.UNAUTHORIZED -> R.string.issuer_unauthorized
+        IssuerMintError.STAFF_REQUIRED -> R.string.issuer_forbidden
+        IssuerMintError.SIGNING_TOKEN_LIVE -> if (reporting) R.string.enrollment_signingTokenLive else R.string.enrollment_tokenAlreadyRequested
+        IssuerMintError.SIGNING_TOKEN_NOT_REPLAYABLE -> R.string.enrollment_tokenAlreadyRequested
+        IssuerMintError.SIGNING_ATTEMPT_UNRESOLVED -> R.string.enrollment_signingAttemptUnresolved
+        IssuerMintError.ISSUANCE_NOT_PENDING -> R.string.enrollment_issuanceNotPending
+        IssuerMintError.ISSUANCE_TERMINAL -> R.string.enrollment_issuanceTerminal
+        IssuerMintError.SIGNING_UNAVAILABLE -> R.string.enrollment_signingUnavailable
+        IssuerMintError.KEY_MANAGEMENT_ALGORITHM_MISMATCH -> R.string.enrollment_keyManagementRsaRequired
+        IssuerMintError.CARD_INELIGIBLE, IssuerMintError.CARD_PERSON_MISMATCH,
+        IssuerMintError.PERSON_INACTIVE -> R.string.enrollment_issuerIneligible
+        else -> if (reporting) R.string.enrollment_resultUnreported else R.string.enrollment_issuerRequestFailed
+    }
+
 internal class IssuerIssuanceExpectation(val personID: String, val cardID: String, val caID: String, val csr: EnrollmentCsr) {
     init { recordID(personID); recordID(cardID); require(caID.isNotBlank()) }
     val purpose get() = when (csr.selection.purpose) {

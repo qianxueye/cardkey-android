@@ -1,6 +1,6 @@
 # PIV certificate enrollment
 
-The PIV／PKI panel selects a person and issued card from cardkey-issuer, requests a certificate from the selected CA, and imports it after explicit confirmation. Policy follows the issuer contract at `f65e5ad`, `docs/certificate-profile-v2.md`, and rulings `rul-20261103-b88d` and `rul-20261103-50c6`. Runtime and physical qualification remain separate coordinator gates.
+The PIV／PKI panel selects a person and issued card from cardkey-issuer, requests a certificate from the selected CA, and imports it after explicit confirmation. Policy follows the issuer contract at `4913338`, `docs/certificate-profile-v2.md`, and rulings `rul-20261103-b88d` and `rul-20261103-50c6`. Runtime and physical qualification remain separate coordinator gates.
 
 ## Use the enrollment panel
 
@@ -42,7 +42,24 @@ Cancellation before preparation leaves the CSR available. Once preparation compl
 
 Validated bundles and pending result-report status survive process recreation. Historical bundles are checked at their recorded verification instant when loaded; import and TLS use recheck current validity. Initial reader selection retains a restored request. Subsequent reader changes, observed detach, explicit abandonment, or edits to the person, purpose, algorithm, CA or root retire current eligibility. Unknown receipts remain retained. IMPORTED recovery does not offer reimport.
 
-A result-report failure preserves the local result and request ID and directs the operator to administrator reconciliation. Public-key checks and the existing card-write recovery fences still apply to every explicit import.
+A result-report failure preserves the request ID and pending-report flag. A refused negative report leaves an unknown receipt; a validated certificate remains available when its report fails. Both authorization and result reporting use the same issuer-error mapping. Public-key checks and the existing card-write recovery fences still apply to every explicit import.
+
+## Issuer authorization errors
+
+The issuer contract's “Token lifetime, authorization and recovery” section defines the live interval through `exp + 60` and the consumed-attempt fence. The app never automatically retries a mutation or offers another authorization for an attempted request. Errors direct the operator to the issuing administrator using the saved request ID.
+
+| Code | App operation | Handling |
+|---|---|---|
+| `signing_attempt_unresolved` | Mint; negative result report | Retain the unknown receipt and block another authorization. |
+| `signing_token_live` | Mint; negative result report | Explain that authorization remains valid and a negative report cannot yet be recorded; retain the unknown receipt. |
+| `issuance_not_pending` | Mint | Identify the request state and ask the administrator to check it. |
+| `issuance_terminal` | Result report | Identify the existing final result and ask the administrator to check it. |
+| `signing_unavailable` | Mint | Ask the administrator to check the signing service. |
+| `key_management_algorithm_mismatch` | Intent registration; mint; issued result report | State the existing 9D/RSA-2048 key requirement and ask the administrator to check the key and request. |
+
+Each row has a separate localized message. The issuer error body carries no retry time, so the app uses administrator reconciliation instead of displaying a guessed deadline. It does not call the CA authorization hook, administrator `resolve-not-signed`, or issuer certificate-readback endpoint. `signing_attempt_resolved`, `signing_token_expired` and `signing_token_mismatch` originate only from the hook or administrator resolution, outside the app's calls. Administrator identity parsing accepts the final contract's `issuances:resolve-not-signed` capability without exposing that operation in the app.
+
+CA activation remains held by the issuer profile's “Owner decision: CA activation prerequisites” section until authenticated request binding is approved. Client error mapping does not activate the issuer or CA.
 
 ## Run the targeted checks
 

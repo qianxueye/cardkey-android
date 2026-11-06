@@ -542,23 +542,18 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                             receipt.certificateId.takeIf { result == "issued" }, outcome.getOrNull()?.chain.orEmpty())
                         enrollment.markResultReported(receipt.issuanceId)
                     } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) {
-                        if (owner == enrollment.generation) mutable.update { it.copy(enrollmentError = R.string.enrollment_resultUnreported) }
+                    catch (failure: Exception) {
+                        if (owner == enrollment.generation) {
+                            if (stage == EnrollmentStage.REJECTED) enrollment.settleIssuance(owner, null, EnrollmentStage.UNKNOWN)
+                            mutable.update { it.copy(enrollmentError = issuerEnrollmentError(failure, reporting = true)) }
+                        }
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 if (preparedOwner == null || preparedOwner == enrollment.generation) {
                     preparedOwner?.let { enrollment.unsubmitted(it) }
-                    val error = when ((failure as? IssuerEnrollmentFailure)?.reason) {
-                        IssuerMintError.UNAUTHORIZED -> R.string.issuer_unauthorized
-                        IssuerMintError.STAFF_REQUIRED -> R.string.issuer_forbidden
-                        IssuerMintError.SIGNING_TOKEN_LIVE, IssuerMintError.SIGNING_TOKEN_NOT_REPLAYABLE -> R.string.enrollment_tokenAlreadyRequested
-                        IssuerMintError.CARD_INELIGIBLE, IssuerMintError.CARD_PERSON_MISMATCH,
-                        IssuerMintError.PERSON_INACTIVE, IssuerMintError.ISSUANCE_NOT_PENDING -> R.string.enrollment_issuerIneligible
-                        else -> R.string.enrollment_issuerRequestFailed
-                    }
-                    mutable.update { it.copy(enrollmentError = error) }
+                    mutable.update { it.copy(enrollmentError = issuerEnrollmentError(failure)) }
                 }
             } finally {
                 if (issuerEnrollmentJob === currentCoroutineContext()[Job]) {

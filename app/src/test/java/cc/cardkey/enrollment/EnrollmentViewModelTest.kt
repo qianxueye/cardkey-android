@@ -78,12 +78,16 @@ class EnrollmentViewModelTest {
         enrollment.choosePerson(enrollmentTarget("https://issuer.example.test", fixture.csr.identity))
         enrollmentRoot(enrollment.rootRequest(), fixture.root)
     }
-    private fun attachIssuer(model: ManagerViewModel, fixture: EnrollmentFixtures, caAddress: String) {
+    private fun attachIssuer(model: ManagerViewModel, fixture: EnrollmentFixtures, caAddress: String,
+                             errorRoute: String? = null, errorCode: String = "", status: Int = 409): IssuerFixture {
         val issuer = IssuerFixture().also(issuerFixtures::add)
         val csr = requireNotNull(model.enrollment.state.value.csr)
         var row: JsonObject? = null
         issuer.enrollmentResponse = { method, path, body ->
             when {
+                errorRoute != null && (path.endsWith(errorRoute) ||
+                    errorRoute == "/intent" && method == "PUT" && !path.endsWith("/result")) ->
+                    status to """{"error":{"code":"$errorCode"}}"""
                 path.endsWith("/token") -> 200 to JsonObject().apply {
                     addProperty("token", fixture.token(csr, caAddress)); addProperty("jti", "synthetic-jti")
                     addProperty("exp", fixture.now / 1000 + 300); addProperty("provisioner_role", when (csr.selection.purpose) {
@@ -125,7 +129,85 @@ class EnrollmentViewModelTest {
         val client = IssuerClient(requireNotNull(model.enrollment.state.value.target).issuerOrigin, "synthetic", http)
         runBlocking { client.me() }
         model.enrollmentIssuerClient = { client }
+        return issuer
     }
+
+    private fun issuerErrorKeepsUnknownReceipt(code: String, english: String, chinese: String,
+                                              route: String = "/token", status: Int = 409,
+                                              selection: EnrollmentSelection = EnrollmentSelection()) {
+        val fixture = EnrollmentFixtures()
+        EnrollmentHttpsServer(fixture) { "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n" }.use { server ->
+            val model = model(fixture, server.address)
+            model.enrollmentSelection(selection)
+            val csr = if (selection.purpose == EnrollmentPurpose.KEY_MANAGEMENT) fixture.csr(
+                key = java.security.KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair(),
+                selection = selection) else fixture.csr
+            model.enrollment.settleCsr(model.enrollment.startCsr(), csr)
+            val issuer = attachIssuer(model, fixture, server.address, route, code, status)
+            model.issueEnrollment(); await(model)
+            val state = model.enrollment.state.value
+            assertEquals("$code stage", EnrollmentStage.UNKNOWN, state.stage)
+            assertTrue("$code must block another authorization", state.attempted)
+            assertNull(state.bundle)
+            val receipt = requireNotNull(state.receipt)
+            assertEquals(EnrollmentStage.UNKNOWN, receipt.stage)
+            assertEquals(route == "/result", receipt.reportPending)
+            assertEquals(receipt.issuanceId, state.unknownReceipts.single().issuanceId)
+            val restored = EnrollmentWorkflow(EnrollmentSettings(app.getSharedPreferences(
+                "enrollment_settings", android.content.Context.MODE_PRIVATE)))
+            assertEquals(EnrollmentStage.UNKNOWN, restored.state.value.stage)
+            assertEquals(receipt.issuanceId, restored.state.value.unknownReceipts.single().issuanceId)
+            assertTrue(runCatching { restored.prepareIssuerRequest() }.isFailure)
+            val message = requireNotNull(model.state.value.enrollmentError)
+            for ((language, expected) in listOf("en" to english, "zh" to chinese)) {
+                val configuration = android.content.res.Configuration(app.resources.configuration).apply {
+                    setLocale(java.util.Locale.forLanguageTag(language))
+                }
+                assertEquals("$code $language", expected, app.createConfigurationContext(configuration).getString(message))
+            }
+            assertEquals("Only one mint attempt", if (route == "/intent") 0 else 1,
+                issuer.requests.count { it.first.endsWith("/token") })
+            assertEquals("Only one result report", if (route == "/result") 1 else 0,
+                issuer.requests.count { it.first.endsWith("/result") })
+            assertEquals("CA calls", if (route == "/result") 1 else 0, server.requests.get())
+            assertFalse(model.state.value.requiresInspection)
+        }
+    }
+
+    @Test fun signingAttemptUnresolvedKeepsUnknownAndExactAdministratorMessage() {
+        for (route in listOf("/token", "/result")) issuerErrorKeepsUnknownReceipt("signing_attempt_unresolved",
+            "Authorization for this request was used. The issuer has not recorded a signing result. Ask the issuing administrator to check this request. Do not request another authorization.",
+            "本申请的授权已使用，发卡服务没有记录签发结果。请让发卡管理员检查此申请，勿再次请求授权。", route)
+    }
+
+    @Test fun signingTokenLiveKeepsUnknownAndExactValidAuthorizationMessage() {
+        for (route in listOf("/token", "/result")) issuerErrorKeepsUnknownReceipt("signing_token_live",
+            "The authorization is still valid. The issuer cannot record a rejected or unsubmitted result yet. Ask the issuing administrator to check this request.",
+            "授权仍在有效期内，发卡服务暂不能记录拒绝或未提交的结果。请让发卡管理员检查此申请。", route)
+    }
+
+    @Test fun issuanceNotPendingKeepsUnknownAndExactRequestStatusMessage() = issuerErrorKeepsUnknownReceipt(
+        "issuance_not_pending", "This request has ended and cannot get another signing authorization. Ask the issuing administrator to check the request record.",
+        "此申请已结束，不能再获取签发授权。请让发卡管理员查看申请记录。")
+
+    @Test fun issuanceTerminalKeepsUnknownAndExactFinalResultMessage() = issuerErrorKeepsUnknownReceipt(
+        "issuance_terminal", "This request already has a final result. Ask the issuing administrator to check the recorded result.",
+        "此申请已有最终结果。请让发卡管理员检查已记录的结果。", route = "/result")
+
+    @Test fun signingUnavailable503KeepsUnknownAndExactSigningServiceMessage() = issuerErrorKeepsUnknownReceipt(
+        "signing_unavailable", "The issuer cannot provide signing authorization right now. Try again later; if it still fails, ask the issuing administrator to check the signing service.",
+        "发卡服务暂时无法签发授权。请稍后重试；仍失败时请让发卡管理员检查签发服务。", status = 503)
+
+    @Test fun keyManagementAlgorithmMismatch422KeepsUnknownAndExact9dRsa2048Message() {
+        for (route in listOf("/intent", "/token")) issuerErrorKeepsUnknownReceipt("key_management_algorithm_mismatch",
+            "Slot 9D needs an RSA-2048 key. Check the key in slot 9D, then create the CSR again.",
+            "9D 槽位需要 RSA-2048 密钥。请核对 9D 的密钥后重新生成 CSR。", route, status = 422,
+            selection = EnrollmentSelection(EnrollmentPurpose.KEY_MANAGEMENT))
+    }
+
+    @Test fun resultReportFailureKeepsUnknownAndExactMissingAcknowledgmentMessage() = issuerErrorKeepsUnknownReceipt(
+        "future_error", "The issuer did not confirm receiving this result. Ask the issuing administrator to check the request record.",
+        "发卡服务没有确认收到本次结果。请让发卡管理员核对申请记录。", route = "/result", status = 500)
     private fun run(model: ManagerViewModel, input: OperationInput, channel: CardChannel) {
         val state = ReflectionHelpers.getField<MutableStateFlow<ManagerState>>(model, "mutable")
         state.value = model.state.value.copy(busy = true, operation = input.operation, result = null)
