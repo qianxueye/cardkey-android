@@ -11,7 +11,7 @@
     <string name="enrollment_noIssuedCards">This list has no issued cards.</string>
     <string name="enrollment_keyManagement">Key management</string>
     <string name="enrollment_connectIssuer">Connect to the issuer with an operator account before requesting a certificate.</string>
-    <string name="enrollment_resultUnreported">The result is saved on this device. The issuer has not acknowledged it; ask the issuing administrator to check the request.</string>
+    <string name="enrollment_resultUnreported">The certificate is saved on this device, but the issuer has not confirmed receiving it. Ask the issuing administrator to check the request record.</string>
     <string name="enrollment_tokenAlreadyRequested">Authorization was already requested. Ask the issuing administrator to check this request before continuing.</string>
     <string name="enrollment_issuerIneligible">The issuer declined authorization for this person, card or request. Ask the issuing administrator to check its status.</string>
     <string name="enrollment_issuerRequestFailed">Authorization did not complete. Check the request record with the issuing administrator before continuing.</string>
