@@ -180,11 +180,13 @@ class EnrollmentViewModelTest {
             "本申请的授权已使用，发卡服务没有记录签发结果。请让发卡管理员检查此申请，勿再次请求授权。", route)
     }
 
-    @Test fun signingTokenLiveKeepsUnknownAndExactValidAuthorizationMessage() {
-        for (route in listOf("/token", "/result")) issuerErrorKeepsUnknownReceipt("signing_token_live",
-            "The authorization is still valid. The issuer cannot record a rejected or unsubmitted result yet. Ask the issuing administrator to check this request.",
-            "授权仍在有效期内，发卡服务暂不能记录拒绝或未提交的结果。请让发卡管理员检查此申请。", route)
-    }
+    @Test fun signingTokenLiveDuringMintKeepsUnknownAndAlreadyRequestedMessage() = issuerErrorKeepsUnknownReceipt("signing_token_live",
+        "Authorization was already requested. Ask the issuing administrator to check this request before continuing.",
+        "此申请已请求过授权。请让发卡管理员核对记录后再继续。", "/token")
+
+    @Test fun signingTokenLiveDuringResultKeepsUnknownAndExactValidAuthorizationMessage() = issuerErrorKeepsUnknownReceipt("signing_token_live",
+        "The authorization is still valid. The issuer cannot record a rejected or unsubmitted result yet. Ask the issuing administrator to check this request.",
+        "授权仍在有效期内，发卡服务暂不能记录拒绝或未提交的结果。请让发卡管理员检查此申请。", "/result")
 
     @Test fun issuanceNotPendingKeepsUnknownAndExactRequestStatusMessage() = issuerErrorKeepsUnknownReceipt(
         "issuance_not_pending", "This request has ended and cannot get another signing authorization. Ask the issuing administrator to check the request record.",
