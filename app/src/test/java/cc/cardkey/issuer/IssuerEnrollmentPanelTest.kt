@@ -20,6 +20,7 @@ import cc.cardkey.enrollment.EnrollmentTarget
 import cc.cardkey.ui.CardKeyTheme
 import cc.cardkey.ui.EnrollmentIssuerPanel
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -118,4 +119,62 @@ class IssuerEnrollmentPanelTest {
             } finally { activity.pause().stop().destroy(); reader.close(); scope.cancel() }
         }
     }
+    private fun findEditor(view: android.view.View): android.view.View? {
+        if (view.onCheckIsTextEditor()) return view
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) findEditor(view.getChildAt(index))?.let { return it }
+        }
+        return null
+    }
+
+    @Test fun reviewOperatorTokenImeUsesPasswordVariationAndZeroAutoCorrectFlag() {
+        val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("token-ime", Context.MODE_PRIVATE)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val reader = IssuerReader(IssuerSecrets(prefs) { error("No secrets needed") }, scope)
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        try {
+            activity.get().setContent { CardKeyTheme { EnrollmentIssuerPanel(reader, null, true) {} } }
+            compose.onNodeWithTag("enrollment-issuer-credential").performClick().assertIsFocused()
+            compose.runOnIdle {
+                val info = android.view.inputmethod.EditorInfo()
+                assertNotNull(requireNotNull(findEditor(activity.get().window.decorView)).onCreateInputConnection(info))
+                assertEquals("operator token IME class", android.text.InputType.TYPE_CLASS_TEXT,
+                    info.inputType and android.text.InputType.TYPE_MASK_CLASS)
+                assertEquals("operator token IME Password variation", android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                    info.inputType and android.text.InputType.TYPE_MASK_VARIATION)
+                assertEquals("operator token IME autocorrect flag", 0, info.inputType and android.text.InputType.TYPE_TEXT_FLAG_AUTO_CORRECT)
+            }
+        } finally { activity.pause().stop().destroy(); reader.close(); scope.cancel() }
+    }
+
+    @Test fun reviewTwentyTwoCjkCharactersAre66Utf8BytesAndCannotSelectIssuedCard() = runBlocking<Unit> {
+        IssuerFixture().use { fixture ->
+            fixture.personName = "陈".repeat(22)
+            assertEquals("CJK display name UTF-8 bytes", 66, fixture.personName.toByteArray(Charsets.UTF_8).size)
+            fixture.personOverride = fixture.person().replace("\"employment_status\":\"inactive\"", "\"employment_status\":\"active\"")
+            fixture.cardItemsOverride = fixture.card().replace("\"status\":\"lost\"", "\"status\":\"issued\"")
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val reader = reader(fixture, scope)
+            reader.connect("https://issuer.invalid", "synthetic-token")
+            withTimeout(10000) { reader.state.first { !it.busy } }
+            reader.selectPerson(reader.state.value.people.single())
+            withTimeout(10000) { reader.state.first { !it.busy } }
+            val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+            var selected: EnrollmentTarget? = null
+            try {
+                activity.get().setContent { CardKeyTheme {
+                    Column(Modifier.requiredSize(375.dp, 812.dp).verticalScroll(rememberScrollState())) {
+                        EnrollmentIssuerPanel(reader, null, true) { selected = it }
+                    }
+                } }
+                compose.onNodeWithText(activity.get().getString(R.string.enrollment_caId)).performScrollTo().performTextInput("synthetic-ca")
+                compose.onNodeWithTag("enrollment-person-card").performScrollTo().assertIsNotEnabled()
+                compose.onNodeWithText("This person record cannot be used for a certificate. Ask the issuing administrator to check it.")
+                    .performScrollTo().assertIsDisplayed()
+                assertNull("invalid identity selection refused", selected)
+                assertTrue(fixture.mutations.isEmpty())
+            } finally { activity.pause().stop().destroy(); reader.close(); scope.cancel() }
+        }
+    }
+
 }

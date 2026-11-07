@@ -199,4 +199,62 @@ class EnrollmentRecoveryTest {
         preferences.edit().putString("issuance_receipts", "{broken").commit()
         assertTrue(runCatching { EnrollmentWorkflow(EnrollmentSettings(preferences)) }.isFailure)
     }
+    @Test fun reviewCaSwitchRestoresBWithoutReactivatingAOrItsRoot() {
+        val store = EnrollmentSettings(preferences)
+        val flow = ready(store)
+        val receipt = flow.prepareIssuerRequest().second
+        flow.settings("https://ca-b.example:8443")
+        val restored = EnrollmentWorkflow(store)
+        assertEquals("active CA B", "https://ca-b.example:8443", restored.state.value.address)
+        assertFalse("CA A root is retired", restored.state.value.hasRoot)
+        assertEquals("retired stage", EnrollmentStage.EMPTY, restored.state.value.stage)
+        assertNull(restored.state.value.csr)
+        assertEquals(receipt.issuanceId, store.loadReceipts().single().issuanceId)
+        assertEquals(receipt.issuanceId, restored.state.value.unknownReceipts.single().issuanceId)
+    }
+
+    @Test fun reviewCancelledVerifiedReceiptStaysNotImportableAfterRebuildAndKeepsAttemptFence() {
+        val store = EnrollmentSettings(preferences)
+        val flow = ready(store)
+        val (owner, receipt) = flow.prepareIssuerRequest()
+        flow.settleIssuance(owner, EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate),
+            fixture.root, fixture.csr), EnrollmentStage.VERIFIED)
+        flow.retire()
+        val restored = EnrollmentWorkflow(store)
+        assertEquals("cancelled stage", EnrollmentStage.EMPTY, restored.state.value.stage)
+        assertTrue("cancelled receipt cannot import", runCatching { restored.importRequest() }.isFailure)
+        assertNull(restored.state.value.bundle)
+        assertEquals(receipt.issuanceId, store.loadReceipts().single().issuanceId)
+        restored.choosePerson(target)
+        restored.acceptRoot(restored.rootRequest(), fixture.root)
+        restored.settleCsr(restored.startCsr(), fixture.csr)
+        assertTrue("history retains attempt fence", restored.state.value.attempted)
+    }
+
+    @Test fun reviewPersonSwitchDoesNotRestoreHistoricalTargetAfterRebuild() {
+        val store = EnrollmentSettings(preferences)
+        val flow = ready(store)
+        flow.prepareIssuerRequest()
+        flow.choosePerson(target.copy(personId = "person-99"))
+        val restored = EnrollmentWorkflow(store)
+        assertNull("historical person must not become active", restored.state.value.target)
+        assertEquals(EnrollmentStage.EMPTY, restored.state.value.stage)
+        assertEquals(1, store.loadReceipts().size)
+    }
+
+    @Test fun reviewImportedCommitFailureKeepsImportedBundleAndBlocksReimport() {
+        val failing = EnrollmentFailingPreferences(preferences)
+        val flow = ready(EnrollmentSettings(failing))
+        val (owner, _) = flow.prepareIssuerRequest()
+        val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate), fixture.root, fixture.csr)
+        flow.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
+        failing.reject = { key, value -> key == "issuance_receipts" && value!!.contains("\"stage\":\"IMPORTED\"") }
+        val completion = runCatching { flow.imported(owner) }
+        assertEquals("failed IMPORTED commits", 1, failing.failures)
+        assertEquals("completed import stage", EnrollmentStage.IMPORTED, flow.state.value.stage)
+        assertTrue("save failure must not escape", completion.isSuccess)
+        assertSame("retained imported bundle", bundle, flow.importedIdentity().bundle)
+        assertTrue("repeat import blocked", runCatching { flow.importRequest() }.isFailure)
+    }
+
 }

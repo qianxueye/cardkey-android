@@ -1,12 +1,14 @@
 package cc.cardkey.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import cc.cardkey.R
 import cc.cardkey.enrollment.EnrollmentIdentity
@@ -31,6 +33,7 @@ internal fun EnrollmentIssuerPanel(reader: IssuerReader, target: EnrollmentTarge
         if (state.identity == null) {
             OutlinedTextField(credential, { credential = it }, enabled = editable, singleLine = true,
                 label = { Text(stringResource(R.string.issuer_token)) }, visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth().testTag("enrollment-issuer-credential"))
             Text(stringResource(R.string.issuer_token_hint), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { onTarget(null); reader.connect(address, credential); credential = "" }, enabled = editable) {
@@ -60,23 +63,26 @@ internal fun EnrollmentIssuerPanel(reader: IssuerReader, target: EnrollmentTarge
             if (state.peopleLoaded && state.people.isEmpty()) Text(stringResource(R.string.issuer_no_people))
             if (state.peopleCursor.isNotEmpty()) TextButton(onClick = reader::morePeople, enabled = editable) { Text(stringResource(R.string.issuer_more_people)) }
             state.person?.let { person ->
+                val identity = remember(person) {
+                    runCatching { EnrollmentIdentity(person.reference, person.name, person.upn, person.email) }.getOrNull()
+                }
+                if (identity == null) Text(stringResource(R.string.enrollment_personNotEligible), color = MaterialTheme.colorScheme.error)
                 Text(listOf(person.upn, person.email).filter(String::isNotEmpty).distinct().joinToString(" · "))
                 state.cardsError?.let {
                     Text(stringResource(it), color = MaterialTheme.colorScheme.error)
                     TextButton(onClick = reader::retryCards, enabled = editable) { Text(stringResource(R.string.issuer_retry_cards)) }
                 }
                 Box {
-                    OutlinedButton(onClick = { cardMenu = true }, enabled = editable && person.active && caId.isNotBlank(), modifier = Modifier.fillMaxWidth().testTag("enrollment-person-card")) {
+                    OutlinedButton(onClick = { cardMenu = true }, enabled = editable && person.active && identity != null && caId.isNotBlank(), modifier = Modifier.fillMaxWidth().testTag("enrollment-person-card")) {
                         val selected = state.cards.firstOrNull { it.id == target?.cardId }
                         Text(selected?.let { stringResource(R.string.issuer_card, it.serial, stringResource(R.string.issuer_issued)) }
                             ?: stringResource(R.string.enrollment_chooseCard))
                     }
-                    DropdownMenu(expanded = cardMenu && editable && person.active, onDismissRequest = { cardMenu = false }, modifier = Modifier.heightIn(max = 320.dp)) {
+                    DropdownMenu(expanded = cardMenu && editable && person.active && identity != null && caId.isNotBlank(), onDismissRequest = { cardMenu = false }, modifier = Modifier.heightIn(max = 320.dp)) {
                         state.cards.filter { it.status == "issued" }.forEach { card ->
                             DropdownMenuItem(text = { Text(card.serial) }, onClick = {
                                 cardMenu = false
-                                onTarget(EnrollmentTarget(state.origin, person.id, card.id, caId,
-                                    EnrollmentIdentity(person.reference, person.name, person.upn, person.email)))
+                                identity?.let { onTarget(EnrollmentTarget(state.origin, person.id, card.id, caId, it)) }
                             })
                         }
                     }

@@ -266,4 +266,52 @@ class EnrollmentPanelTest {
             compose.onNodeWithText("导出 CSR").performScrollTo().assertIsEnabled()
         }
     }
+    @Test fun reviewPendingReportWithoutBundleShowsNeutralStatusForRejectedInvalidAndUnknown() {
+        for (stage in listOf(EnrollmentStage.REJECTED, EnrollmentStage.INVALID, EnrollmentStage.UNKNOWN)) {
+            val flow = EnrollmentWorkflow().apply {
+                settings("https://localhost"); choosePerson(enrollmentTarget("https://localhost", fixture.identity))
+                acceptRoot(rootRequest(), fixture.root); settleCsr(startCsr(), fixture.csr)
+            }
+            flow.settleIssuance(flow.prepareIssuerRequest().first, null, stage)
+            render(360, 640, flow.state.value) {
+                compose.onNodeWithText("发卡服务没有确认收到本次结果。请让发卡管理员核对申请记录。")
+                    .performScrollTo().assertIsDisplayed()
+                compose.onNodeWithTag("enrollment-export-chain").assertDoesNotExist()
+            }
+        }
+    }
+
+    @Test fun reviewPendingReportWithBundleShowsNeutralStatusAndAllowsExport() {
+        val flow = EnrollmentWorkflow().apply {
+            settings("https://localhost"); choosePerson(enrollmentTarget("https://localhost", fixture.identity))
+            acceptRoot(rootRequest(), fixture.root); settleCsr(startCsr(), fixture.csr)
+        }
+        flow.settleIssuance(flow.prepareIssuerRequest().first,
+            EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate), fixture.root, fixture.csr), EnrollmentStage.VERIFIED)
+        render(360, 640, flow.state.value) {
+            compose.onNodeWithText("发卡服务没有确认收到本次结果。请让发卡管理员核对申请记录。")
+                .performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("enrollment-export-chain").performScrollTo().assertIsEnabled()
+        }
+    }
+
+    @Test fun reviewLocalRecordSaveFailureShowsDistinctWarningAndRetainsCertificateExport() {
+        val prefs = org.robolectric.RuntimeEnvironment.getApplication().getSharedPreferences("review-save-warning", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val failing = EnrollmentFailingPreferences(prefs)
+        val flow = EnrollmentWorkflow(EnrollmentSettings(failing)).apply {
+            settings("https://localhost"); choosePerson(enrollmentTarget("https://localhost", fixture.identity))
+            acceptRoot(rootRequest(), fixture.root); settleCsr(startCsr(), fixture.csr)
+        }
+        val owner = flow.prepareIssuerRequest().first
+        failing.reject = { key, _ -> key == "issuance_receipts" }
+        runCatching { flow.settleIssuance(owner,
+            EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate), fixture.root, fixture.csr), EnrollmentStage.VERIFIED) }
+        render(360, 640, flow.state.value) {
+            compose.onNodeWithText("无法保存本机申请记录。如已收到证书，请在离开此页面前导出。")
+                .performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("enrollment-export-chain").performScrollTo().assertIsEnabled()
+        }
+    }
+
 }

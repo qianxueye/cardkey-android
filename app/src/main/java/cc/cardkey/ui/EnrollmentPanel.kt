@@ -48,6 +48,7 @@ fun EnrollmentPanel(state: EnrollmentState, busy: Boolean, canUseCard: Boolean, 
         Text(stringResource(R.string.enrollment_title), style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.semantics { heading() })
         Text(stringResource(R.string.workspace_enrollmentFlow), style = MaterialTheme.typography.bodyMedium)
+        if (state.persistenceFailed) Text(stringResource(R.string.enrollment_recordSaveFailed), color = MaterialTheme.colorScheme.error)
         val message = when (state.stage) {
             EnrollmentStage.CSR -> R.string.enrollment_csrReady
             EnrollmentStage.ISSUING -> R.string.enrollment_issuing

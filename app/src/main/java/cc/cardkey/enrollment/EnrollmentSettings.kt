@@ -18,7 +18,9 @@ class EnrollmentSettings(private val preferences: SharedPreferences) {
         check(editor.commit()) { "Could not save enrollment settings" }
     }
 
-    internal fun saveReceipts(receipts: List<IssuanceReceipt>) {
+    internal fun activeReceiptId(): String? = preferences.getString("active_issuance_id", null)
+
+    internal fun saveReceipts(receipts: List<IssuanceReceipt>, activeId: String? = receipts.lastOrNull()?.issuanceId) {
         val encoded = JsonArray().apply {
             receipts.forEach { receipt ->
                 add(JsonObject().apply {
@@ -52,7 +54,8 @@ class EnrollmentSettings(private val preferences: SharedPreferences) {
                 })
             }
         }
-        check(preferences.edit().putString("issuance_receipts", encoded.toString()).commit()) {
+        check(preferences.edit().putString("issuance_receipts", encoded.toString())
+            .putString("active_issuance_id", activeId.orEmpty()).commit()) {
             "Could not save enrollment recovery"
         }
     }

@@ -22,4 +22,6 @@
     <string name="enrollment_issuanceTerminal">This request already has a final result. Ask the issuing administrator to check the recorded result.</string>
     <string name="enrollment_signingUnavailable">The issuer cannot provide signing authorization right now. Try again later; if it still fails, ask the issuing administrator to check the signing service.</string>
     <string name="enrollment_keyManagementRsaRequired">Slot 9D needs an RSA-2048 key. Check the key in slot 9D, then create the CSR again.</string>
+    <string name="enrollment_personNotEligible">This person record cannot be used for a certificate. Ask the issuing administrator to check it.</string>
+    <string name="enrollment_recordSaveFailed">Could not save the local request record. If a certificate was received, export it before leaving this screen.</string>
 </resources>

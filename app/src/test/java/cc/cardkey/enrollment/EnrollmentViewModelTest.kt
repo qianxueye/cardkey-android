@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.*
@@ -492,4 +493,81 @@ class EnrollmentViewModelTest {
         assertTrue(card.commands.none { it.ins == 0x20 })
         assertTrue(input.pin.all { it == '\u0000' })
     }
+    private fun awaitReviewCompletion(model: ManagerViewModel) = runBlocking {
+        withTimeout(10000) { model.state.first { !it.busy } }
+    }
+
+    @Test fun reviewPostCaCommitFailureRetainsVerifiedBundleSendsIssuedResultAndFinishes() {
+        val fixture = EnrollmentFixtures()
+        val leaf = fixture.leaf()
+        val body = JsonObject().apply {
+            add("certChain", com.google.gson.JsonArray().apply {
+                add(EnrollmentProfile.pem(leaf)); add(EnrollmentProfile.pem(fixture.intermediate))
+            })
+        }.toString().toByteArray()
+        EnrollmentHttpsServer(fixture, body) { "HTTP/1.1 201 Created\r\nContent-Length: ${body.size}\r\n\r\n" }.use { server ->
+            val model = model(fixture, server.address)
+            model.enrollment.settleCsr(model.enrollment.startCsr(), fixture.csr)
+            val failing = EnrollmentFailingPreferences(app.getSharedPreferences("enrollment_settings", android.content.Context.MODE_PRIVATE))
+            failing.reject = { key, value -> key == "issuance_receipts" && value!!.contains("\"stage\":\"VERIFIED\"") }
+            ReflectionHelpers.setField(model.enrollment, "settingsStore", EnrollmentSettings(failing))
+            val issuer = attachIssuer(model, fixture, server.address)
+            model.issueEnrollment(); awaitReviewCompletion(model)
+            assertEquals("received certificate stage", EnrollmentStage.VERIFIED, model.enrollment.state.value.stage)
+            assertArrayEquals("retained verified leaf", leaf, model.enrollment.importRequest().bundle.leaf)
+            assertEquals("CA requests", 1, server.requests.get())
+            val report = issuer.mutations.single { JsonParser.parseString(it.third).asJsonObject.has("outcome") }
+            assertEquals("reported outcome", "issued", JsonParser.parseString(report.third).asJsonObject["outcome"].asString)
+            assertFalse("result acknowledged in memory", model.enrollment.state.value.receipt!!.reportPending)
+            assertTrue("post-CA persistence failed", failing.failures > 0)
+            assertNull("local persistence is not an issuer error", model.state.value.enrollmentError)
+        }
+    }
+
+    @Test fun reviewImportedCommitFailureFinishesCardReadbackWithAppliedResult() {
+        val fixture = EnrollmentFixtures()
+        val model = model(fixture)
+        val card = EnrollmentCard()
+        val csr = fixture.csr(key = card.keyPair)
+        val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(key = card.keyPair), fixture.intermediate), fixture.root, csr)
+        model.enrollment.settleCsr(model.enrollment.startCsr(), csr)
+        val (owner, _) = model.enrollment.prepareIssuerRequest()
+        model.enrollment.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
+        val failing = EnrollmentFailingPreferences(app.getSharedPreferences("enrollment_settings", android.content.Context.MODE_PRIVATE))
+        failing.reject = { key, value -> key == "issuance_receipts" && value!!.contains("\"stage\":\"IMPORTED\"") }
+        ReflectionHelpers.setField(model.enrollment, "settingsStore", EnrollmentSettings(failing))
+        val input = OperationInput(ManagerOperation.PIV_ENROLL_IMPORT, adminKey = card.managementKey.copyOf(),
+            enrollmentImport = model.enrollment.importRequest())
+        run(model, input, card); awaitReviewCompletion(model)
+        assertEquals("imported stage", EnrollmentStage.IMPORTED, model.enrollment.state.value.stage)
+        assertEquals("completed write effect", Effect.APPLIED, (model.state.value.result as OperationResult.Completed).effect)
+        assertArrayEquals("readback certificate", bundle.leaf, card.certificate)
+        assertTrue("card channel closed", card.closed)
+        assertTrue("synthetic management key cleared", input.adminKey.all { it == 0.toByte() })
+        assertEquals("failed IMPORTED commits", 1, failing.failures)
+    }
+
+    @Test fun reviewReportFailureWithVerifiedBundleUsesNeutralUnreportedMessage() {
+        val fixture = EnrollmentFixtures()
+        val body = JsonObject().apply {
+            add("certChain", com.google.gson.JsonArray().apply {
+                add(EnrollmentProfile.pem(fixture.leaf())); add(EnrollmentProfile.pem(fixture.intermediate))
+            })
+        }.toString().toByteArray()
+        EnrollmentHttpsServer(fixture, body) { "HTTP/1.1 201 Created\r\nContent-Length: ${body.size}\r\n\r\n" }.use { server ->
+            val model = model(fixture, server.address)
+            model.enrollment.settleCsr(model.enrollment.startCsr(), fixture.csr)
+            attachIssuer(model, fixture, server.address, "/result", "future_error", 500)
+            model.issueEnrollment(); awaitReviewCompletion(model)
+            assertNotNull("verified bundle retained", model.enrollment.state.value.bundle)
+            assertTrue(model.enrollment.state.value.receipt!!.reportPending)
+            assertEquals(cc.cardkey.R.string.enrollment_resultUnreported, model.state.value.enrollmentError)
+            val resources = app.createConfigurationContext(android.content.res.Configuration(app.resources.configuration).apply {
+                setLocale(java.util.Locale.ENGLISH)
+            }).resources
+            assertEquals("The issuer did not confirm receiving this result. Ask the issuing administrator to check the request record.",
+                resources.getString(model.state.value.enrollmentError!!))
+        }
+    }
+
 }

@@ -27,6 +27,7 @@ data class EnrollmentState(
     val selection: EnrollmentSelection = EnrollmentSelection(), val revision: Long = 0,
     val savedAddress: String = "",
     val restored: Boolean = false,
+    val persistenceFailed: Boolean = false,
 ) {
     val cn get() = target?.identity?.displayName.orEmpty()
 }
@@ -37,7 +38,10 @@ class EnrollmentImport(val csr: EnrollmentCsr, val ca: EnrollmentCA, val bundle:
 class EnrollmentWorkflow(private val settingsStore: EnrollmentSettings? = null) {
     private val savedAddress = settingsStore?.load().orEmpty()
     private var receipts = settingsStore?.loadReceipts().orEmpty()
-    private val recovered = receipts.lastOrNull()
+    private val savedActiveId = settingsStore?.activeReceiptId()
+    private val recovered = if (savedActiveId == null) receipts.lastOrNull()
+        else receipts.singleOrNull { it.issuanceId == savedActiveId }
+    private var activeReceiptId = recovered?.issuanceId
     private val mutable = MutableStateFlow(EnrollmentState(
         address = recovered?.ca?.endpoint?.newBuilder()?.encodedPath("/")?.build()?.toString()?.let(::enrollmentOrigin) ?: savedAddress,
         target = recovered?.target, hasRoot = recovered != null, csr = recovered?.csr,
@@ -59,8 +63,14 @@ class EnrollmentWorkflow(private val settingsStore: EnrollmentSettings? = null) 
         receipts.any { it.stage == EnrollmentStage.UNKNOWN && intent(it.csr, it.ca, it.target) == intent(csr) }
     private var preparedOwner: Long? = null
     private fun persist(next: List<IssuanceReceipt>) {
-        settingsStore?.saveReceipts(next)
+        settingsStore?.saveReceipts(next, next.lastOrNull()?.issuanceId)
         receipts = next
+        activeReceiptId = next.lastOrNull()?.issuanceId
+    }
+    private fun saveCompleted(next: List<IssuanceReceipt> = receipts) {
+        receipts = next
+        val failed = runCatching { settingsStore?.saveReceipts(receipts, activeReceiptId) }.isFailure
+        mutable.value = mutable.value.copy(persistenceFailed = failed)
     }
     fun choosePerson(target: EnrollmentTarget?) {
         if (target == mutable.value.target) return
@@ -122,7 +132,7 @@ class EnrollmentWorkflow(private val settingsStore: EnrollmentSettings? = null) 
         preparedOwner = owner
         attemptedBindings += csr.binding
         mutable.value = state.copy(attempted = true, stage = EnrollmentStage.ISSUING, revision = owner,
-            receipt = receipt, unknownReceipts = receipts.filter { it.stage == EnrollmentStage.UNKNOWN })
+            receipt = receipt, persistenceFailed = false, unknownReceipts = receipts.filter { it.stage == EnrollmentStage.UNKNOWN })
         return owner to receipt
     }
     fun startIssuance(token: String): Pair<Long, EnrollmentCsr> {
@@ -140,14 +150,14 @@ class EnrollmentWorkflow(private val settingsStore: EnrollmentSettings? = null) 
         if (owner != generation) return
         require(stage in setOf(EnrollmentStage.VERIFIED, EnrollmentStage.UNKNOWN, EnrollmentStage.REJECTED, EnrollmentStage.INVALID))
         val receipt = requireNotNull(mutable.value.receipt).copy(stage = stage, bundle = bundle, reportPending = true)
-        persist(receipts.map { if (it.issuanceId == receipt.issuanceId) receipt else it })
+        saveCompleted(receipts.map { if (it.issuanceId == receipt.issuanceId) receipt else it })
         preparedOwner = null
         mutable.value = mutable.value.copy(bundle = bundle, stage = stage, receipt = receipt,
             unknownReceipts = receipts.filter { it.stage == EnrollmentStage.UNKNOWN })
     }
     fun markResultReported(issuanceId: String) {
         val receipt = receipts.single { it.issuanceId == issuanceId }.copy(reportPending = false)
-        persist(receipts.map { if (it.issuanceId == issuanceId) receipt else it })
+        saveCompleted(receipts.map { if (it.issuanceId == issuanceId) receipt else it })
         if (mutable.value.receipt?.issuanceId == issuanceId) mutable.value = mutable.value.copy(receipt = receipt)
         mutable.value = mutable.value.copy(unknownReceipts = receipts.filter { it.stage == EnrollmentStage.UNKNOWN })
     }
@@ -162,7 +172,7 @@ class EnrollmentWorkflow(private val settingsStore: EnrollmentSettings? = null) 
     fun imported(owner: Long) {
         if (owner != generation) return
         val receipt = requireNotNull(mutable.value.receipt).copy(stage = EnrollmentStage.IMPORTED)
-        persist(receipts.map { if (it.issuanceId == receipt.issuanceId) receipt else it })
+        saveCompleted(receipts.map { if (it.issuanceId == receipt.issuanceId) receipt else it })
         mutable.value = mutable.value.copy(stage = EnrollmentStage.IMPORTED, receipt = receipt)
     }
     fun pause() {
@@ -175,6 +185,8 @@ class EnrollmentWorkflow(private val settingsStore: EnrollmentSettings? = null) 
     fun retire() {
         pause()
         settingsGeneration++
+        activeReceiptId = null
+        if (receipts.isNotEmpty()) saveCompleted()
         mutable.value = mutable.value.copy(csr = null, bundle = null, stage = EnrollmentStage.EMPTY, attempted = false, restored = false)
     }
 }

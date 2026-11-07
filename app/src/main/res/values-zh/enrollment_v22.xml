@@ -22,4 +22,6 @@
     <string name="enrollment_issuanceTerminal">此申请已有最终结果。请让发卡管理员检查已记录的结果。</string>
     <string name="enrollment_signingUnavailable">发卡服务暂时无法签发授权。请稍后重试；仍失败时请让发卡管理员检查签发服务。</string>
     <string name="enrollment_keyManagementRsaRequired">9D 槽位需要 RSA-2048 密钥。请核对 9D 的密钥后重新生成 CSR。</string>
+    <string name="enrollment_personNotEligible">此人员记录不符合证书要求。请让发卡管理员检查此记录。</string>
+    <string name="enrollment_recordSaveFailed">无法保存本机申请记录。如已收到证书，请在离开此页面前导出。</string>
 </resources>
