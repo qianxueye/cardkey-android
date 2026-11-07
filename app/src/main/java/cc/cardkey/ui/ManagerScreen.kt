@@ -52,10 +52,10 @@ fun ManagerScreen(
     onSecureChange: (Boolean) -> Unit,
     onProviderSettings: () -> Unit,
     enrollment: EnrollmentState,
-    onEnrollmentSettings: (String, String) -> Unit,
+    onEnrollmentSettings: (String) -> Unit,
     onEnrollmentRoot: () -> Unit,
     onEnrollmentSubmit: (OperationInput) -> Unit,
-    onEnrollmentIssue: (CharArray, Long) -> Unit,
+    onEnrollmentIssue: (Long) -> Unit,
     onEnrollmentAbandon: () -> Unit,
     tls: TlsQualificationState,
     onTlsSettings: (String) -> Unit,
@@ -78,6 +78,7 @@ fun ManagerScreen(
     badgeContent: (@Composable () -> Unit)? = null,
     artworkReference: CardArtworkReference? = null,
     artworkSource: CardArtworkSource = UnconfiguredCardArtworkSource,
+    enrollmentIssuerContent: (@Composable () -> Unit)? = null,
 ) {
     val resources = LocalResources.current
     val displayName = stringResource(R.string.app_name)
@@ -759,10 +760,10 @@ fun ManagerScreen(
                         clearInputs + recognitionInputRetirements, onEnrollmentSettings, onEnrollmentRoot, { input ->
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
                             onEnrollmentSubmit(input)
-                        }, { token, revision ->
+                        }, { revision ->
                             pin = ""; newPin = ""; adminKey = ""; newAdminKey = ""; extensionValue = ""
-                            onEnrollmentIssue(token, revision)
-                        }, onExport, onCancel, onEnrollmentAbandon, onEnrollmentSelection, viewportHeight) }
+                            onEnrollmentIssue(revision)
+                        }, onExport, onCancel, onEnrollmentAbandon, onEnrollmentSelection, viewportHeight, enrollmentIssuerContent) }
                     if (tab == 3 && enrollment.stage == cc.cardkey.enrollment.EnrollmentStage.IMPORTED &&
                         enrollment.selection == cc.cardkey.enrollment.EnrollmentSelection()) {
                         key(state.selectedReader?.routeKey, enrollment.bundle) {

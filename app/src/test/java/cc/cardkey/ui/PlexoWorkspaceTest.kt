@@ -2,6 +2,7 @@ package cc.cardkey.ui
 
 import java.io.File
 
+import android.content.Context
 import android.hardware.usb.UsbDevice
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,6 +20,10 @@ import androidx.compose.ui.unit.dp
 import cc.cardkey.enrollment.EnrollmentState
 import cc.cardkey.enrollment.EnrollmentCard
 import cc.cardkey.enrollment.EnrollmentStage
+import cc.cardkey.issuer.IssuerClient
+import cc.cardkey.issuer.IssuerFixture
+import cc.cardkey.issuer.IssuerReader
+import cc.cardkey.issuer.IssuerSecrets
 import cc.cardkey.protocol.CardWire
 import cc.cardkey.transport.UsbReaderDescriptor
 import cc.cardkey.tls.TlsFixture
@@ -30,13 +35,16 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlinx.coroutines.*
 import org.robolectric.Robolectric
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.util.ReflectionHelpers
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.LooperMode
+import javax.crypto.KeyGenerator
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "zh-rCN-w1200dp-h1000dp-mdpi")
@@ -50,22 +58,31 @@ class PlexoWorkspaceTest {
                        onExport: (ManagerReport) -> Unit = {},
                        initial: ManagerState = ManagerState(),
                        enrollment: EnrollmentState = EnrollmentState(),
+                       enrollmentIssuer: IssuerReader? = null,
                        openPasskeys: Boolean = true,
                        check: (ComponentActivity, (ManagerState) -> Unit, () -> Pair<ManagerOperation?, Int>?) -> Unit) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val state = mutableStateOf(initial)
+        val enrollmentState = mutableStateOf(enrollment)
         var action: Pair<ManagerOperation?, Int>? = null
         controller.get().setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
                 CardKeyTheme {
                     Box(Modifier.requiredSize(width.dp, height.dp)) {
                         ManagerScreen(state.value, 0, {}, {}, onSubmit, {}, {}, null, onExport, {}, {}, {},
-                            enrollment, { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                            enrollmentState.value, { address -> enrollmentState.value = enrollmentState.value.copy(address = address) }, {}, { it.close() }, {}, {},
                             TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(),
                             { operation, slot -> action = operation to slot }, {}, InventoryState(),
                             { _, _ -> }, { _, _ -> }, {}, {}, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
                             onProtectedPivDocument = {}, onProtectedPivClear = {},
-                            onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
+                            onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') },
+                            enrollmentIssuerContent = {
+                                enrollmentIssuer?.let { issuer ->
+                                    EnrollmentIssuerPanel(issuer, enrollmentState.value.target, !state.value.busy) { target ->
+                                        enrollmentState.value = enrollmentState.value.copy(target = target)
+                                    }
+                                }
+                            })
                     }
                 }
             }
@@ -371,34 +388,61 @@ class PlexoWorkspaceTest {
         }
     }
 
-    @Test fun certificatePreparationStaysPublicWhileRecognitionLossRetiresCsrPin() {
-        val selected = reader("recognition-ca")
-        val descriptor = ManagerState(nfc = false, selectedReader = selected)
-        render(360, 640, initial = descriptor) { _, update, _ ->
-            compose.onNode(navTab("设置")).performClick()
-            compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
-            compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithTag("enrollment-cn").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsEnabled()
-            compose.onNodeWithTag("enrollment-pin").assertExists()
-            compose.onNodeWithTag("enrollment-create-csr").assertExists()
-            compose.onNodeWithTag("enrollment-admin").assertDoesNotExist()
-            val recognized = descriptor.copy(recognition = CardRecognition(selected.routeKey, 1, CardFamily.PIV))
-            update(recognized)
-            compose.onNodeWithTag("enrollment-pin").performScrollTo().assertIsEnabled().performTextInput("123456")
-            update(descriptor)
-            compose.onNodeWithTag("enrollment-pin").assertExists()
-            compose.onNodeWithTag("enrollment-create-csr").assertExists()
-            compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsEnabled()
-            update(recognized.copy(recognition = CardRecognition(selected.routeKey, 2, CardFamily.PIV)))
-            assertEquals("", compose.onNodeWithTag("enrollment-pin").fetchSemanticsNode()
-                .config[SemanticsProperties.EditableText].text)
+    @Test fun certificatePreparationStaysPublicWhileRecognitionLossRetiresCsrPin() = runBlocking<Unit> {
+        IssuerFixture().use { fixture ->
+            fixture.personOverride = fixture.person().replace("\"employment_status\":\"inactive\"", "\"employment_status\":\"active\"")
+            fixture.cardItemsOverride = fixture.card().replace("\"status\":\"lost\"", "\"status\":\"issued\"")
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val preferences = RuntimeEnvironment.getApplication().getSharedPreferences(
+                "workspace-enrollment-${java.util.UUID.randomUUID()}", Context.MODE_PRIVATE)
+            val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+            val issuer = IssuerReader(IssuerSecrets(preferences) { key }, scope) { _, token -> IssuerClient(fixture.origin, token) }
+            try {
+                issuer.connect("https://issuer.invalid", "synthetic-token")
+                withTimeout(10_000) { while (issuer.state.value.busy) delay(10) }
+                val selected = reader("recognition-ca")
+                val descriptor = ManagerState(nfc = false, selectedReader = selected)
+                render(360, 640, initial = descriptor, enrollmentIssuer = issuer) { activity, update, _ ->
+                    compose.onNode(navTab("设置")).performClick()
+                    compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
+                    compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed().assertIsEnabled()
+                    compose.onNodeWithTag("enrollment-cn").assertDoesNotExist()
+                    compose.onNodeWithText(activity.getString(cc.cardkey.R.string.enrollment_caId))
+                        .performScrollTo().performTextInput("synthetic-ca")
+                    compose.onNodeWithTag("enrollment-person").performScrollTo().assertIsEnabled().performClick()
+                    compose.onNodeWithText("Synthetic Person · EMP-001").performClick()
+                    runBlocking { withTimeout(10_000) { while (issuer.state.value.busy) delay(10) } }
+                    compose.waitForIdle()
+                    compose.onNodeWithTag("enrollment-person-card").performScrollTo().assertIsEnabled().performClick()
+                    compose.onNodeWithText("123456").performClick()
+                    compose.onNodeWithTag("enrollment-person").assertTextContains("Synthetic Person · EMP-001")
+                    compose.onNodeWithText(activity.getString(cc.cardkey.R.string.issuer_card, "123456",
+                        activity.getString(cc.cardkey.R.string.issuer_issued))).assertExists()
+                    compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsEnabled()
+                    compose.onNodeWithTag("enrollment-pin").assertExists()
+                    compose.onNodeWithTag("enrollment-create-csr").assertExists()
+                    compose.onNodeWithTag("enrollment-admin").assertDoesNotExist()
+                    val recognized = descriptor.copy(recognition = CardRecognition(selected.routeKey, 1, CardFamily.PIV))
+                    update(recognized)
+                    compose.onNodeWithTag("enrollment-pin").performScrollTo().assertIsEnabled().performTextInput("123456")
+                    update(descriptor)
+                    compose.onNodeWithTag("enrollment-pin").assertExists()
+                    compose.onNodeWithTag("enrollment-create-csr").assertExists()
+                    compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsEnabled()
+                    compose.onNodeWithTag("enrollment-person").performScrollTo().assertIsEnabled()
+                    compose.onNodeWithTag("enrollment-person-card").performScrollTo().assertIsEnabled()
+                    update(recognized.copy(recognition = CardRecognition(selected.routeKey, 2, CardFamily.PIV)))
+                    assertEquals("Recognition loss must clear the CSR PIN", "", compose.onNodeWithTag("enrollment-pin")
+                        .fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+                    assertTrue("Public certificate preparation must not mutate issuer state", fixture.mutations.isEmpty())
+                }
+            } finally { issuer.close(); scope.cancel() }
         }
     }
 
     @Test fun importedTlsPreparationStaysPublicAndRecognitionEpochClearsPin() {
         val fixture = TlsFixture()
-        val imported = EnrollmentState("https://localhost", fixture.csr.cn, true,
+        val imported = EnrollmentState("https://localhost", cc.cardkey.enrollment.enrollmentTarget("https://localhost", fixture.csr.identity), true,
             fixture.csr, fixture.bundle, EnrollmentStage.IMPORTED)
         val selected = reader("recognition-tls")
         val descriptor = ManagerState(nfc = false, selectedReader = selected)

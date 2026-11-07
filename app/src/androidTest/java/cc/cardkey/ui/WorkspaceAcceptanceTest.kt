@@ -51,9 +51,9 @@ class WorkspaceAcceptanceTest {
                                     else host.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                                 },
                                 onProviderSettings = {}, enrollment = EnrollmentState(),
-                                onEnrollmentSettings = { _, _ -> }, onEnrollmentRoot = {},
+                                onEnrollmentSettings = { _ -> }, onEnrollmentRoot = {},
                                 onEnrollmentSubmit = { dispatches.incrementAndGet(); it.close() },
-                                onEnrollmentIssue = { token, _ -> dispatches.incrementAndGet(); token.fill('\u0000') },
+                                onEnrollmentIssue = { _ -> dispatches.incrementAndGet() },
                                 onEnrollmentAbandon = {}, tls = TlsQualificationState(),
                                 onTlsSettings = {}, onTlsRoot = {},
                                 onTlsSubmit = { dispatches.incrementAndGet(); it.close() },
@@ -112,7 +112,8 @@ class WorkspaceAcceptanceTest {
             compose.onNodeWithText(activity.getString(R.string.enrollment_title)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P-256 · 9A").assertExists()
             compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithTag("enrollment-cn").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithText(activity.getString(R.string.enrollment_steps)).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("enrollment-cn").assertDoesNotExist()
             compose.onNodeWithTag("enrollment-root").performScrollTo().assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithTag("enrollment-pin").assertDoesNotExist()
             compose.onNodeWithTag("enrollment-create-csr").assertDoesNotExist()

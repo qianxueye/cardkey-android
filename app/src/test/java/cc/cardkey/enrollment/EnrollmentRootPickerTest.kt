@@ -36,7 +36,7 @@ class EnrollmentRootPickerTest {
         try {
             val original = controller.get()
             val model = ViewModelProvider(original)[ManagerViewModel::class.java]
-            model.enrollmentSettings("https://localhost", fixture.csr.cn)
+            model.enrollmentSettings("https://localhost")
             compose.waitForIdle()
             compose.onNode(cc.cardkey.ui.navTab("设置")).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
@@ -64,7 +64,7 @@ class EnrollmentRootPickerTest {
         try {
             val original = controller.get()
             val model = ViewModelProvider(original)[ManagerViewModel::class.java]
-            model.enrollmentSettings("https://localhost", fixture.csr.cn)
+            model.enrollmentSettings("https://localhost")
             compose.waitForIdle()
             compose.onNode(cc.cardkey.ui.navTab("设置")).performClick()
             compose.onNodeWithText("申请 PIV 证书").performScrollTo().performClick()
@@ -72,8 +72,8 @@ class EnrollmentRootPickerTest {
             val launch = shadowOf(original).nextStartedActivityForResult
             controller.recreate()
             val recreated = controller.get()
-            model.enrollmentSettings("https://different.invalid", "New identity")
-            model.enrollmentSettings("https://localhost", fixture.csr.cn)
+            model.enrollmentSettings("https://different.invalid")
+            model.enrollmentSettings("https://localhost")
             val uri = Uri.parse("content://enrollment-fixture/stale-root")
             val read = java.util.concurrent.CountDownLatch(1)
             shadowOf(recreated.contentResolver).registerInputStream(uri, object : ByteArrayInputStream(fixture.root) {

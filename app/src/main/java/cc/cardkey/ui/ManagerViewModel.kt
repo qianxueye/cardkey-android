@@ -11,6 +11,8 @@ import androidx.lifecycle.viewModelScope
 import cc.cardkey.protocol.*
 import cc.cardkey.protectedpiv.*
 import cc.cardkey.enrollment.*
+import cc.cardkey.issuer.*
+import cc.cardkey.R
 import cc.cardkey.tls.*
 import cc.cardkey.signing.*
 import android.provider.OpenableColumns
@@ -29,6 +31,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.util.concurrent.atomic.AtomicReference
 
 data class ManagerState(
@@ -49,6 +55,7 @@ data class ManagerState(
     val userPresenceRequired: Boolean = false,
     val ctap2Reader: String? = null,
     val recognition: CardRecognition? = null,
+    val enrollmentError: Int? = null,
 ) {
     private val recognizedFamily get() = recognition?.takeIf {
         !permissionPending && it.route == (if (nfc) "nfc" else selectedReader?.routeKey)
@@ -77,6 +84,9 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     private val feedback = MutableSharedFlow<Int>(extraBufferCapacity = 1)
     val operationFeedback = feedback.asSharedFlow()
     val enrollment = EnrollmentWorkflow(EnrollmentSettings(application.getSharedPreferences("enrollment_settings", android.content.Context.MODE_PRIVATE)))
+    internal val enrollmentIssuer = IssuerReader(IssuerSecrets(application.getSharedPreferences("issuer-operator", android.content.Context.MODE_PRIVATE)), viewModelScope)
+    internal var enrollmentIssuerClient: () -> IssuerClient = { enrollmentIssuer.clientForEnrollment() }
+    private var issuerEnrollmentJob: Job? = null
     val signingFiles = PivSigningFiles()
     val inventory = FidoInventory()
     private val protectedWorkflow = ProtectedPivWorkflow()
@@ -253,6 +263,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectReader(reader: UsbReaderDescriptor?) {
         if (mutable.value.busy) return
+        val preserveRecovery = mutable.value.selectedReader == null && enrollment.state.value.restored
         retireRecognition()
         protectedWorkflow.retire()
         protectedDocumentReturn = null
@@ -260,17 +271,24 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         retireInventoryExport()
         signingFiles.retire()
         retireTls()
-        enrollment.retire()
+        if (!preserveRecovery) enrollment.retire()
         operations.clearSession()
         inventory.retire()
         presenceGeneration++
         mutable.value = mutable.value.copy(userPresenceRequired = false, ctap2Reader = null, selectedReader = reader, nfc = reader == null, result = null)
     }
 
-    fun enrollmentSettings(address: String, cn: String) {
+    fun enrollmentSettings(address: String) {
         if (!mutable.value.busy) {
-            if (address != enrollment.state.value.address || cn != enrollment.state.value.cn) retireTls()
-            enrollment.settings(address, cn)
+            if (address != enrollment.state.value.address) retireTls()
+            enrollment.settings(address)
+        }
+    }
+    fun enrollmentTarget(target: EnrollmentTarget?) {
+        if (!mutable.value.busy && target != enrollment.state.value.target) {
+            retireTls()
+            enrollment.choosePerson(target)
+            mutable.update { it.copy(enrollmentError = null) }
         }
     }
     fun enrollmentSelection(selection: EnrollmentSelection) {
@@ -305,7 +323,7 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             require(input.enrollmentSelection == enrollment.state.value.selection)
             when (input.operation) {
                 ManagerOperation.PIV_ENROLL_CSR -> {
-                    require(input.text == enrollment.state.value.cn)
+                    require(input.enrollmentIdentity == requireNotNull(enrollment.state.value.target).identity)
                     retireTls()
                     enrollment.startCsr()
                 }
@@ -466,30 +484,45 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
     fun currentEnrollmentExport(report: ManagerReport): Boolean =
         report.enrollmentCsr == null || report.enrollmentCsr === enrollment.state.value.csr
 
-    fun issueEnrollment(token: CharArray, revision: Long = enrollment.state.value.revision) {
+    fun issueEnrollment(revision: Long = enrollment.state.value.revision) {
         val reader = mutable.value.selectedReader
         if (mutable.value.busy || mutable.value.requiresInspection || mutable.value.nfc ||
-            reader?.wire != CardWire.APDU || !UsbAuthenticatorReader.isCurrent(usb, reader)) { token.fill('\u0000'); return }
-        var preparedOwner: Long? = null
-        try {
+            reader?.wire != CardWire.APDU || !UsbAuthenticatorReader.isCurrent(usb, reader)) return
+        val api = try {
             require(revision == enrollment.state.value.revision)
-            val ca = enrollment.ca()
-            val (owner, csr) = enrollment.startIssuance(String(token))
-            preparedOwner = owner
-            val call = ca.call(csr, String(token))
-            token.fill('\u0000')
-            operations.clearSession()
-            inventory.retire()
-            retireInventoryExport()
-            retireResult()
-            signingFiles.retireSelection()
-            val attempt = EnrollmentCall(owner, call)
-            networkCall.set(attempt)
-            mutable.update { it.copy(busy = true, result = null, operation = null) }
-            viewModelScope.launch {
+            enrollmentIssuerClient().also { require(it.origin == requireNotNull(enrollment.state.value.target).issuerOrigin) }
+        } catch (_: Exception) {
+            mutable.update { it.copy(enrollmentError = R.string.enrollment_connectIssuer) }
+            return
+        }
+        operations.clearSession()
+        inventory.retire()
+        retireInventoryExport()
+        retireResult()
+        signingFiles.retireSelection()
+        mutable.update { it.copy(busy = true, result = null, operation = null, enrollmentError = null) }
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            var preparedOwner: Long? = null
+            try {
+                require(revision == enrollment.state.value.revision)
+                val (owner, receipt) = enrollment.prepareIssuerRequest()
+                preparedOwner = owner
+                val target = receipt.target
+                val csr = receipt.csr
+                val expected = IssuerIssuanceExpectation(target.personId, target.cardId, target.caId, csr)
+                api.registerIssuance(receipt.issuanceId, receipt.registrationKey, target.personId, target.cardId, target.caId, csr)
+                currentCoroutineContext().ensureActive()
+                val minted = api.mintIssuanceSigningToken(receipt.issuanceId, receipt.mintKey, expected)
+                currentCoroutineContext().ensureActive()
+                require(owner == enrollment.generation)
+                enrollment.startIssuance(minted.token)
+                val call = receipt.ca.call(csr, minted.token)
+                val attempt = EnrollmentCall(owner, call)
+                networkCall.set(attempt)
                 val outcome = withContext(Dispatchers.IO) {
-                    if (attempt.begin()) runCatching { ca.execute(call, csr) } else null
+                    if (attempt.begin()) runCatching { receipt.ca.execute(call, csr) } else null
                 }
+                currentCoroutineContext().ensureActive()
                 if (outcome != null && networkCall.compareAndSet(attempt, null) && owner == enrollment.generation) {
                     val stage = outcome.fold({ EnrollmentStage.VERIFIED }, { error ->
                         when ((error as? EnrollmentException)?.failure) {
@@ -499,13 +532,38 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
                         }
                     })
                     enrollment.settleIssuance(owner, outcome.getOrNull(), stage)
+                    try {
+                        val result = when (stage) {
+                            EnrollmentStage.VERIFIED -> "issued"
+                            EnrollmentStage.REJECTED -> "rejected"
+                            else -> "unknown"
+                        }
+                        api.reportIssuanceResult(receipt.issuanceId, receipt.resultKey, expected, result,
+                            receipt.certificateId.takeIf { result == "issued" }, outcome.getOrNull()?.chain.orEmpty())
+                        enrollment.markResultReported(receipt.issuanceId)
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (failure: Exception) {
+                        if (owner == enrollment.generation) {
+                            if (stage == EnrollmentStage.REJECTED) enrollment.settleIssuance(owner, null, EnrollmentStage.UNKNOWN)
+                            mutable.update { it.copy(enrollmentError = issuerEnrollmentError(failure, reporting = true)) }
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (preparedOwner == null || preparedOwner == enrollment.generation) {
+                    preparedOwner?.let { enrollment.unsubmitted(it) }
+                    mutable.update { it.copy(enrollmentError = issuerEnrollmentError(failure)) }
+                }
+            } finally {
+                if (issuerEnrollmentJob === currentCoroutineContext()[Job]) {
+                    issuerEnrollmentJob = null
                     mutable.update { it.copy(busy = false) }
                 }
             }
-        } catch (_: Exception) {
-            preparedOwner?.let { enrollment.unsubmitted(it) }
-            mutable.update { it.copy(result = OperationResult.Failed(FailureCode.INVALID_INPUT, Effect.NONE)) }
-        } finally { token.fill('\u0000') }
+        }
+        issuerEnrollmentJob = job
+        job.start()
     }
 
     fun fileSigningAction(operation: ManagerOperation?, slot: Int = 0x9a) {
@@ -1046,6 +1104,8 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
             (mutable.value.result as? OperationResult.Completed)?.value?.let {
                 it.protectedPivSlot != null || mutable.value.operation?.isOwnedExport == true && (it.signatureFormat != null || it.sshPublicKey)
             } == true
+        issuerEnrollmentJob?.let { it.cancel(); mutable.update { state -> state.copy(busy = false) } }
+        issuerEnrollmentJob = null
         networkCall.getAndSet(null)?.let { attempt ->
             if (!attempt.cancel()) enrollment.unsubmitted(attempt.owner)
             mutable.update { it.copy(busy = false) }
@@ -1077,5 +1137,5 @@ class ManagerViewModel(application: Application) : AndroidViewModel(application)
         if (!inProgress && mutable.value.busy) finish(OperationResult.Failed(FailureCode.CANCELLED, Effect.NONE))
     }
 
-    override fun onCleared() { cancel(); super.onCleared() }
+    override fun onCleared() { cancel(); enrollmentIssuer.close(); super.onCleared() }
 }

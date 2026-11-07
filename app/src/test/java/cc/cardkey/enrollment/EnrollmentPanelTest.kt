@@ -36,7 +36,7 @@ class EnrollmentPanelTest {
     @get:Rule val compose = createEmptyComposeRule()
     private val fixture = EnrollmentFixtures()
     private fun render(width: Int, height: Int,
-                       initial: EnrollmentState = EnrollmentState(address = "https://localhost", cn = fixture.csr.cn, hasRoot = true, csr = fixture.csr, stage = EnrollmentStage.CSR),
+                       initial: EnrollmentState = EnrollmentState(address = "https://localhost", target = enrollmentTarget("https://localhost", fixture.csr.identity), hasRoot = true, csr = fixture.csr, stage = EnrollmentStage.CSR),
                        onExport: (ManagerReport) -> Unit = {},
                        workflow: EnrollmentWorkflow? = null,
                        onSelection: (EnrollmentSelection) -> Unit = {},
@@ -54,8 +54,8 @@ class EnrollmentPanelTest {
                     ManagerScreen(ManagerState(selectedReader = reader, nfc = false,
                         recognition = cc.cardkey.ui.CardRecognition(reader.routeKey, 1, cc.cardkey.ui.CardFamily.PIV)), clear.intValue,
                         {}, {}, {}, {}, {}, null, onExport, {}, {}, {}, enrollment,
-                        { address, cn -> if (workflow != null) workflow.settings(address, cn) else state.value = state.value.copy(address = address, cn = cn) }, {},
-                        { error("A cancelled confirmation must not submit") }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, { selection ->
+                        { address -> if (workflow != null) workflow.settings(address) else state.value = state.value.copy(address = address) }, {},
+                        { error("A cancelled confirmation must not submit") }, {}, {}, TlsQualificationState(), {}, {}, { it.close() }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, { selection ->
                             onSelection(selection)
                             if (workflow != null) workflow.selection(selection)
                             else state.value = state.value.copy(selection = selection, revision = state.value.revision + 1, csr = null)
@@ -73,7 +73,7 @@ class EnrollmentPanelTest {
         } finally { controller.pause().stop().destroy() }
     }
     @Test fun savedAddressAndInvalidGuidanceRemainReachableInPortrait() {
-        val flow = EnrollmentWorkflow().apply { settings("https://CA.example:8443/", "") }
+        val flow = EnrollmentWorkflow().apply { settings("https://CA.example:8443/") }
         render(360, 640, workflow = flow) {
             compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("地址会自动保存。").performScrollTo().assertIsDisplayed()
@@ -90,7 +90,7 @@ class EnrollmentPanelTest {
     @Test
     @Config(sdk = [34], qualifiers = "en-rUS-w800dp-h800dp-mdpi")
     fun englishSavedAddressGuidanceFitsCompactLandscape() {
-        val flow = EnrollmentWorkflow().apply { settings("https://ca.example:8443", "") }
+        val flow = EnrollmentWorkflow().apply { settings("https://ca.example:8443") }
         render(800, 240, workflow = flow) {
             compose.onNodeWithTag("enrollment-address").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Address saved automatically.").performScrollTo().assertIsDisplayed()
@@ -98,15 +98,16 @@ class EnrollmentPanelTest {
         }
     }
 
-    @Test fun addressEditClearsTransientTokenAndPinWithTheOldRequest() {
+    @Test fun addressEditClearsPinAndOldRequestWithoutEditableIdentityOrToken() {
         val flow = EnrollmentWorkflow().apply {
-            settings("https://localhost", fixture.csr.cn)
+            settings("https://localhost"); choosePerson(enrollmentTarget("https://localhost", fixture.csr.identity))
             acceptRoot(rootRequest(), fixture.root)
             settleCsr(startCsr(), fixture.csr)
         }
         render(360, 640, workflow = flow) {
             compose.onNodeWithTag("enrollment-pin").performScrollTo().performTextInput("123456")
-            compose.onNodeWithTag("enrollment-token").performScrollTo().performTextInput("synthetic-ott")
+            compose.onNodeWithTag("enrollment-token").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-cn").assertDoesNotExist()
             compose.onNodeWithTag("enrollment-address").performScrollTo().performTextReplacement("https://other.example:8443")
             compose.onNodeWithTag("enrollment-token").assertDoesNotExist()
             compose.onNodeWithTag("enrollment-export-csr").assertDoesNotExist()
@@ -119,22 +120,38 @@ class EnrollmentPanelTest {
     @Test fun documentSelectionDefaultsTo9cAndClearsOldCsrAndSecrets() {
         render(360, 640) {
             compose.onNodeWithText("当前 PIV PIN").performScrollTo().performTextInput("123456")
-            compose.onNodeWithText("文档签名").performScrollTo().performClick()
+            compose.onNode(hasText("文档签名") and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithText("9C").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("使用所选槽位的现有密钥申请文档签名证书。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(org.robolectric.RuntimeEnvironment.getApplication().getString(cc.cardkey.R.string.enrollment_documentScope)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("导出 CSR").assertDoesNotExist()
             compose.onNodeWithText("123456").assertDoesNotExist()
         }
     }
+    @Test fun keyManagementPurposeLocksSlot9dAndRsa2048WithoutDocumentAlgorithmPicker() {
+        val changes = mutableListOf<EnrollmentSelection>()
+        render(360, 640, onSelection = { changes += it }) {
+            val label = org.robolectric.RuntimeEnvironment.getApplication().getString(cc.cardkey.R.string.enrollment_keyManagement)
+            compose.onNodeWithText(label).performScrollTo().performClick()
+            compose.onNodeWithText("RSA-2048 · 9D").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("P384").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-cn").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-token").assertDoesNotExist()
+            compose.runOnIdle {
+                assertEquals(listOf(EnrollmentSelection(EnrollmentPurpose.KEY_MANAGEMENT, 0x9d, KeyAlgorithm.RSA2048)), changes)
+            }
+        }
+    }
     @Test fun selectedDocumentPurposePreservesRequestAndVerifiedImportUntilPurposeChanges() {
-        val selection = EnrollmentSelection(EnrollmentPurpose.DOCUMENT, 0x9d, KeyAlgorithm.P384)
+        val selection = EnrollmentSelection(EnrollmentPurpose.DOCUMENT, 0x9c, KeyAlgorithm.P384)
         val key = EnrollmentCard(algorithm = selection.algorithm).keyPair
         val csr = fixture.csr(key = key, selection = selection)
         val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(key = key,
-            purposes = arrayOf(KeyPurposeId.getInstance(ASN1ObjectIdentifier(EnrollmentPurpose.DOCUMENT.eku)))),
+            purposes = arrayOf(KeyPurposeId.getInstance(ASN1ObjectIdentifier(EnrollmentPurpose.DOCUMENT.eku)), EnrollmentFixtures.oid("1.3.6.1.4.1.311.10.3.12"), EnrollmentFixtures.oid(EnrollmentPurpose.KEY_MANAGEMENT.eku)),
+            usage = org.bouncycastle.asn1.x509.KeyUsage.digitalSignature or org.bouncycastle.asn1.x509.KeyUsage.nonRepudiation,
+            identity = csr.identity, names = EnrollmentFixtures.emailNames(csr.identity)),
             fixture.intermediate), fixture.root, csr)
         val flow = EnrollmentWorkflow().apply {
-            settings("https://localhost", csr.cn)
+            settings("https://localhost"); choosePerson(enrollmentTarget("https://localhost", csr.identity))
             selection(selection)
             acceptRoot(rootRequest(), fixture.root)
             settleCsr(startCsr(), csr)
@@ -142,17 +159,17 @@ class EnrollmentPanelTest {
         val changes = mutableListOf<EnrollmentSelection>()
         render(360, 640, workflow = flow, onSelection = { changes += it }) {
             val beforeCsr = flow.state.value
-            compose.onNodeWithText("文档签名").performScrollTo().performClick()
+            compose.onNode(hasText("文档签名") and hasClickAction()).performScrollTo().performClick()
             compose.runOnIdle {
                 assertTrue(changes.isEmpty())
                 assertSame(beforeCsr, flow.state.value)
                 assertSame(csr, flow.state.value.csr)
-                val (owner, _) = flow.startIssuance(fixture.token(csr))
+                val (owner, _) = flow.prepareIssuerRequest()
                 flow.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
             }
             compose.onNodeWithTag("enrollment-import").performScrollTo().assertIsEnabled()
             val beforeVerified = flow.state.value
-            compose.onNodeWithText("文档签名").performScrollTo().performClick()
+            compose.onNode(hasText("文档签名") and hasClickAction()).performScrollTo().performClick()
             compose.runOnIdle {
                 assertTrue(changes.isEmpty())
                 assertSame(beforeVerified, flow.state.value)
@@ -160,10 +177,10 @@ class EnrollmentPanelTest {
                 assertSame(csr, flow.importRequest().csr)
                 assertSame(bundle, flow.importRequest().bundle)
             }
-            compose.onNodeWithText("9D").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("9C").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("P384").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("enrollment-import").performScrollTo().assertIsEnabled()
-            compose.onNodeWithText("客户端认证（TLS）").performScrollTo().performClick()
+            compose.onNode(hasText("客户端认证（TLS）") and hasClickAction()).performScrollTo().performClick()
             compose.runOnIdle {
                 assertEquals(listOf(EnrollmentSelection()), changes)
                 assertEquals(EnrollmentSelection(), flow.state.value.selection)
@@ -174,7 +191,7 @@ class EnrollmentPanelTest {
                 assertTrue(runCatching { flow.importRequest() }.isFailure)
             }
             compose.onNodeWithTag("enrollment-import").assertDoesNotExist()
-            compose.onNodeWithText("文档签名").performScrollTo().performClick()
+            compose.onNode(hasText("文档签名") and hasClickAction()).performScrollTo().performClick()
             compose.runOnIdle {
                 assertEquals(listOf(EnrollmentSelection(), EnrollmentSelection(EnrollmentPurpose.DOCUMENT)), changes)
                 assertEquals(EnrollmentSelection(EnrollmentPurpose.DOCUMENT), flow.state.value.selection)
@@ -185,7 +202,8 @@ class EnrollmentPanelTest {
     }
     @Test fun portraitEnrollmentCanReachFieldsAndExportAndPauseClearsPendingPinConfirmation() {
         render(360, 640) { pause ->
-            compose.onNodeWithText("通用名称（CN）").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("enrollment-cn").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-token").assertDoesNotExist()
             compose.onNodeWithText("导出 CSR").performScrollTo().assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithText("当前 PIV PIN").performScrollTo().performTextInput("123456")
             compose.onNodeWithText("生成 CSR").performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -197,29 +215,30 @@ class EnrollmentPanelTest {
     }
     @Test fun unknownReceiptShowsOriginalCnAndCaAfterChangingTheForm() {
         val flow = EnrollmentWorkflow()
-        flow.settings("https://localhost", fixture.csr.cn)
+        flow.settings("https://localhost"); flow.choosePerson(enrollmentTarget("https://localhost", fixture.csr.identity))
         flow.acceptRoot(flow.rootRequest(), fixture.root)
         flow.settleCsr(flow.startCsr(), fixture.csr)
-        flow.startIssuance(fixture.token())
+        flow.prepareIssuerRequest()
         flow.pause()
-        flow.settings("https://new-ca.invalid", "New identity")
+        flow.settings("https://new-ca.invalid")
+        flow.choosePerson(enrollmentTarget("https://new-ca.invalid", fixture.identity.copy(displayName = "New identity")))
         assertNull(flow.state.value.csr)
         render(360, 640, flow.state.value) {
-            compose.onNodeWithText("New identity").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("New identity", substring = true).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("https://new-ca.invalid").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText(fixture.csr.cn).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("${fixture.csr.cn} · ${fixture.csr.identity.employeeReference}").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("https://localhost/1.0/sign").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("未收到签发结果。请先向 CA 管理员核实，勿重复提交。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(org.robolectric.RuntimeEnvironment.getApplication().getString(cc.cardkey.R.string.enrollment_unknown)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("导出 CSR").assertDoesNotExist()
         }
     }
 
     @Test fun importedPanelExportsTheExactChainWithoutOfferingReimport() {
         val flow = EnrollmentWorkflow()
-        flow.settings("https://localhost", fixture.csr.cn)
+        flow.settings("https://localhost"); flow.choosePerson(enrollmentTarget("https://localhost", fixture.csr.identity))
         flow.acceptRoot(flow.rootRequest(), fixture.root)
         flow.settleCsr(flow.startCsr(), fixture.csr)
-        val (owner, _) = flow.startIssuance(fixture.token())
+        val (owner, _) = flow.prepareIssuerRequest()
         val bundle = EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate), fixture.root, fixture.csr)
         flow.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
         flow.imported(owner)
@@ -237,13 +256,62 @@ class EnrollmentPanelTest {
         }
     }
 
-    @Test fun compactEnrollmentKeepsTokenAndIssuanceReachable() {
+    @Test fun compactEnrollmentKeepsIssuanceReachableWithoutTokenOrCnInputs() {
         render(800, 240) { pause ->
-            compose.onNodeWithText("一次性授权令牌").performScrollTo().assertIsDisplayed().performTextInput("synthetic-token")
+            compose.onNodeWithTag("enrollment-token").assertDoesNotExist()
+            compose.onNodeWithTag("enrollment-cn").assertDoesNotExist()
             compose.onNodeWithText("申请证书").performScrollTo().assertIsDisplayed().assertIsEnabled()
             pause()
-            compose.onNodeWithText("申请证书").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("申请证书").performScrollTo().assertIsEnabled()
             compose.onNodeWithText("导出 CSR").performScrollTo().assertIsEnabled()
         }
     }
+    @Test fun reviewPendingReportWithoutBundleShowsNeutralStatusForRejectedInvalidAndUnknown() {
+        for (stage in listOf(EnrollmentStage.REJECTED, EnrollmentStage.INVALID, EnrollmentStage.UNKNOWN)) {
+            val flow = EnrollmentWorkflow().apply {
+                settings("https://localhost"); choosePerson(enrollmentTarget("https://localhost", fixture.identity))
+                acceptRoot(rootRequest(), fixture.root); settleCsr(startCsr(), fixture.csr)
+            }
+            flow.settleIssuance(flow.prepareIssuerRequest().first, null, stage)
+            render(360, 640, flow.state.value) {
+                compose.onNodeWithText("发卡服务没有确认收到本次结果。请让发卡管理员核对申请记录。")
+                    .performScrollTo().assertIsDisplayed()
+                compose.onNodeWithTag("enrollment-export-chain").assertDoesNotExist()
+            }
+        }
+    }
+
+    @Test fun reviewPendingReportWithBundleShowsNeutralStatusAndAllowsExport() {
+        val flow = EnrollmentWorkflow().apply {
+            settings("https://localhost"); choosePerson(enrollmentTarget("https://localhost", fixture.identity))
+            acceptRoot(rootRequest(), fixture.root); settleCsr(startCsr(), fixture.csr)
+        }
+        flow.settleIssuance(flow.prepareIssuerRequest().first,
+            EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate), fixture.root, fixture.csr), EnrollmentStage.VERIFIED)
+        render(360, 640, flow.state.value) {
+            compose.onNodeWithText("发卡服务没有确认收到本次结果。请让发卡管理员核对申请记录。")
+                .performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("enrollment-export-chain").performScrollTo().assertIsEnabled()
+        }
+    }
+
+    @Test fun reviewLocalRecordSaveFailureShowsDistinctWarningAndRetainsCertificateExport() {
+        val prefs = org.robolectric.RuntimeEnvironment.getApplication().getSharedPreferences("review-save-warning", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val failing = EnrollmentFailingPreferences(prefs)
+        val flow = EnrollmentWorkflow(EnrollmentSettings(failing)).apply {
+            settings("https://localhost"); choosePerson(enrollmentTarget("https://localhost", fixture.identity))
+            acceptRoot(rootRequest(), fixture.root); settleCsr(startCsr(), fixture.csr)
+        }
+        val owner = flow.prepareIssuerRequest().first
+        failing.reject = { key, _ -> key == "issuance_receipts" }
+        runCatching { flow.settleIssuance(owner,
+            EnrollmentProfile.validate(listOf(fixture.leaf(), fixture.intermediate), fixture.root, fixture.csr), EnrollmentStage.VERIFIED) }
+        render(360, 640, flow.state.value) {
+            compose.onNodeWithText("无法保存本机申请记录。如已收到证书，请在离开此页面前导出。")
+                .performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("enrollment-export-chain").performScrollTo().assertIsEnabled()
+        }
+    }
+
 }

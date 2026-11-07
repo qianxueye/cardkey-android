@@ -1,44 +1,72 @@
 # PIV certificate enrollment
 
-The PIV／PKI panel requests a certificate from a selected step-ca endpoint and imports it only after explicit confirmation. This application workflow is implemented and tested with a disposable loopback CA and a synthetic APDU card. It does not establish a deployed CA, physical-card qualification, Android KeyChain integration, or acceptance by VPN, SSH, email, or other system consumers.
+The PIV／PKI panel selects a person and issued card from cardkey-issuer, requests a certificate from the selected CA, and imports it after explicit confirmation. Policy follows the issuer contract at `4913338`, `docs/certificate-profile-v2.md`, and rulings `rul-20261103-b88d` and `rul-20261103-50c6`. Runtime and physical qualification remain separate coordinator gates.
 
 ## Use the enrollment panel
 
-Select a current USB APDU reader. Enter the CA's HTTPS origin and the common name (CN), then choose a CA root certificate through the system document picker. The selected root applies only to this workflow; it is never installed in the system trust store.
+Select a USB APDU reader. Connect to the issuer with an operator account, select an active person and their issued card, and enter the configured CA identifier. Enter the CA HTTPS origin and choose its root certificate through the system document picker. The selected root is scoped to this workflow.
 
-Choose the certificate purpose. TLS client authentication requires an existing P-256 key in PIV slot 9A. Document signing defaults to 9C and accepts an existing P-256, P-384 or RSA-2048 key in the selected slot. The slot is a local import destination, not a CSR field or token-authorized claim. [Document profile and lifecycle](DOCUMENT-ENROLLMENT.md). Generate the CSR using the PIN, export it, and obtain a CSR-bound one-time authorization token from the CA administrator. The application does not generate a key automatically and contains no CA provisioner private key.
+Choose a purpose and use the existing slot key to generate the CSR:
 
-Submit the token once. A verified result means the application checked the returned certificate; it has not yet written the card. Confirm import separately and provide the management key. The application opens a new card session, reads the current slot public key before management authentication, writes only the leaf certificate, and requires exact certificate readback. The intermediate certificates remain available in the application and PEM export.
+| Purpose | Slot | Key |
+|---|---|---|
+| Authentication | 9A | P-256 |
+| Document signing | 9C | P-256, P-384 or RSA-2048 |
+| Key management | 9D | RSA-2048 |
 
-A lost response or cancellation after the CA call begins remains unknown. Do not resubmit that identity to the same CA; first check with the CA administrator. Cancellation before the queued call begins restores the unsubmitted CSR and does not spend the attempt. Issuance history is separate from the existing card-write recovery fence. Rejected and invalid certificates are not imported. Unknown or accepted-but-unread card writes retain the manager's existing recovery rules.
+The person record supplies employee reference, display name, UPN and email. Authentication requires a UPN. The app freezes these values in the CSR request context; the CSR subject remains CN-only for the approved step-ca contract. Operators do not type the CN or paste a signing token. CSR export remains available.
+
+Request the certificate once. The app first saves the request and stable IDs, registers the issuer intent, reads back and compares its complete identity and request fields, then calls `mint_issuance_signing_token`. It sends the returned token and CSR to `/1.0/sign`. The CA checks the token signature and authorization. The app validates the returned certificate against its frozen person identity and reports the result to the issuer.
+
+Confirm import separately and provide the management key. A fresh card session compares the current slot public key before management authentication, writes the leaf certificate, and requires exact readback. The certificate chain remains available for PEM export. The reader route identifies an attachment; the key comparison does not establish hardware provenance.
 
 ## Certificate and transport contract
 
-- Exactly one CN; no other subject attributes and no subject alternative names.
-- Public key matching the independently verified, card-signed CSR; `digitalSignature` only and `CA=false`. TLS requires P-256 and exactly `clientAuth`. Document signing accepts P-256, P-384 or RSA-2048 and requires exactly EKU `1.3.6.1.5.5.7.3.36`. A document identity cannot enter TLS qualification.
-- Maximum 24-hour remaining validity at verification, with at most five minutes of backdating. Import rechecks current validity against the original verification time.
-- A fixed chain of at most five certificates, each at most 16,384 DER bytes. Java PKIX verifies the chain against the selected root. Revocation fetching and AIA path discovery are not used.
-- HTTPS origin only: no URL credentials, path prefix, query or fragment. The sign endpoint is `/1.0/sign`, with the selected root and ordinary hostname verification. Redirects, automatic connection retries, cookies, authenticators and cache are disabled. The request explicitly accepts identity encoding; a successful response with any other, empty, combined or repeated content coding leaves issuance unknown before parsing.
-- At most 131,072 response bytes. A known response length must match the received byte count before parsing or certificate validation; a mismatch leaves issuance unknown. Token preflight checks subject, audience, times, a lifetime of at most 600 seconds, and `cnf["x5rt#S256"]` containing the unpadded base64url SHA-256 digest of the full CSR DER. The CA verifies the token signature and authorization.
+- The leaf has exactly four separate RDNs, in order: `C=US`, `O=Aperture Intelligence LLC`, `UID=employee_reference`, `CN=display_name`. Compare decoded values, accepting PrintableString and UTF8String.
+- Authentication requires exactly digitalSignature KU, clientAuth and smartcardLogon EKUs, and one UTF8String UPN otherName (`1.3.6.1.4.1.311.20.2.3`). At most one matching email SAN is allowed.
+- Document signing requires digitalSignature and contentCommitment KU, documentSigning and Microsoft Document Signing EKUs, plus emailProtection when email exists. SAN is exactly that email, or absent without email.
+- RSA key management requires keyEncipherment KU. With email it requires emailProtection EKU and that email SAN; without email both are absent.
+- The leaf key matches the independently verified card-signed CSR. basicConstraints may be absent or explicitly CA=false. Lifetime is at most 8760 hours plus 300 seconds, retaining issuance-window and current-validity checks.
+- A fixed chain contains at most five certificates, each at most 16,384 DER bytes. Java PKIX verifies it against the selected root. Validation does not fetch revocation or AIA URLs.
+- CA input is an HTTPS origin without URL credentials, path prefix, query or fragment. The sign endpoint uses the selected root and hostname verification. Redirects, retries, cookies, authenticators and caching are disabled.
+- The CA response is bounded to 131,072 bytes. Content encoding and declared length are checked before certificate parsing. Token preflight checks CN, audience, times and the SHA-256 CSR binding; the token is not persisted.
+- Issuer mutations use stable UUID idempotency keys, bounded responses and no automatic retry. Mint errors are isolated in `IssuerMintError`; no raw server message is displayed.
 
-The reader route identifies an attachment, not a physical card. The public-key comparison prevents import into a replacement card with a different key; it does not prove physical identity or hardware key provenance.
+The X.509 structure and extension semantics follow RFC 5280 sections [4.1.2.6](https://www.rfc-editor.org/rfc/rfc5280#section-4.1.2.6), [4.2.1.3](https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.3), [4.2.1.6](https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.6), [4.2.1.9](https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.9), and [4.2.1.12](https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.12). Exact identity values and purpose sets come from the approved project profile.
 
-## Lifecycle and secrets
+## Recovery and lifecycle
 
-The card session and operation gate close before HTTP starts. PIN and management-key buffers are cleared, and secret form fields are cleared before submission. Ordinary document-picker pauses preserve settled public CSR and certificate artifacts in the ViewModel. Pauses cancel active work, clear pending confirmations and invalidate callback ownership. A cancelled begun issuance retains its unknown receipt, immutable CSR and CA/root context separately from the form. Attempted CSR bindings remain blocked during the ViewModel lifetime. An unknown-intent fence also blocks a randomized new CSR for the same purpose, slot, SPKI, CN and CA identity. Later requests do not overwrite unknown receipts; these records do not survive ViewModel destruction or app restart.
+Before issuer mutation, a checked synchronous preferences commit stores CSR DER, frozen identity, person/card/CA identifiers, root, purpose, slot, algorithm, and stable issuance and idempotency IDs. A failed commit stops preparation. PINs, operator credentials and minted signing tokens are excluded from this recovery state. Operator credentials retain the existing separate encrypted issuer store.
 
-Changing the purpose, slot, algorithm, CN, CA, root or reader, observed detach, and explicit abandonment retire import and issuance eligibility. Returning to an earlier selection does not restore it. Root-picker results also belong to their captured request and settings generation. Public artifacts are not persisted across process death.
+Cancellation before preparation leaves the CSR available. Once preparation completes, cancellation or missing responses preserve an unknown receipt and block another attempt. The fence also rejects a randomized CSR for the same unknown intent. Unknown receipts survive later requests and process recreation. Contact the issuing administrator using the displayed request ID before continuing an unknown request; no automatic reconciliation runs.
 
-## Run the contract tests
+Validated bundles and pending result-report status survive process recreation. Historical bundles are checked at their recorded verification instant when loaded; import and TLS use recheck current validity. Initial reader selection retains a restored request. Subsequent reader changes, observed detach, explicit abandonment, or edits to the person, purpose, algorithm, CA or root retire current eligibility. Unknown receipts remain retained. IMPORTED recovery does not offer reimport.
 
-Install the official Smallstep CLI **0.31.0** and step-ca **0.30.2**, then set `CARDKEY_STEP_CLI` and `CARDKEY_STEP_CA` to their executable paths. The repository's public CI installs those exact releases. The real-CA test fails when either executable is unavailable or has the wrong version; it does not silently skip.
+A result-report failure preserves the request ID and pending-report flag. A refused negative report leaves an unknown receipt; a validated certificate remains available when its report fails. Both authorization and result reporting use the same issuer-error mapping. Public-key checks and the existing card-write recovery fences still apply to every explicit import.
 
-Run the normal Android gate:
+## Issuer authorization errors
+
+The issuer contract's “Token lifetime, authorization and recovery” section defines the live interval through `exp + 60` and the consumed-attempt fence. The app never automatically retries a mutation or offers another authorization for an attempted request. Errors direct the operator to the issuing administrator using the saved request ID.
+
+| Code | App operation | Handling |
+|---|---|---|
+| `signing_attempt_unresolved` | Mint; negative result report | Retain the unknown receipt and block another authorization. |
+| `signing_token_live` | Mint; negative result report | Explain that authorization remains valid and a negative report cannot yet be recorded; retain the unknown receipt. |
+| `issuance_not_pending` | Mint | Identify the request state and ask the administrator to check it. |
+| `issuance_terminal` | Result report | Identify the existing final result and ask the administrator to check it. |
+| `signing_unavailable` | Mint | Ask the administrator to check the signing service. |
+| `key_management_algorithm_mismatch` | Intent registration; mint; issued result report | State the existing 9D/RSA-2048 key requirement and ask the administrator to check the key and request. |
+
+Each row has a separate localized message. The issuer error body carries no retry time, so the app uses administrator reconciliation instead of displaying a guessed deadline. It does not call the CA authorization hook, administrator `resolve-not-signed`, or issuer certificate-readback endpoint. `signing_attempt_resolved`, `signing_token_expired` and `signing_token_mismatch` originate only from the hook or administrator resolution, outside the app's calls. Administrator identity parsing accepts the final contract's `issuances:resolve-not-signed` capability without exposing that operation in the app.
+
+CA activation remains held by the issuer profile's “Owner decision: CA activation prerequisites” section until authenticated request binding is approved. Client error mapping does not activate the issuer or CA.
+
+## Run the targeted checks
+
+Use JDK 17 and Android SDK platform 36 with build tools 35.0.0. The contract tests require official Smallstep CLI **0.31.0** and step-ca **0.30.2**, selected through `CARDKEY_STEP_CLI` and `CARDKEY_STEP_CA`.
 
 ```sh
-./gradlew assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest
+./gradlew :app:testDebugUnitTest --tests 'cc.cardkey.enrollment.*' --tests 'cc.cardkey.issuer.*'
 ```
 
-The fixture creates its own CA with separate fixed TLS and document provisioners in a private temporary directory, obtains online CSR-bound tokens, and runs the application's actual CSR, HTTPS, PKIX and import/readback paths. Document qualification covers all three algorithms, wrong-role tokens and explicit use of the existing CMS consumer. It suppresses private process output, terminates its own CA process and removes its temporary keys and database. It needs no private repository, real credentials, connected reader, physical card, or system trust change.
-
-The suite also tests hostname/root rejection, redirect and retry refusal, bounded responses, certificate profile and path failures, token binding, replacement-card rejection before authentication, wrong-PIN diagnostics, last-attempt confirmation, cancellation, selection changes, export pauses and uncertain card effects.
+The synthetic contract fixture creates a disposable CA with authentication, document-signing and key-management provisioners. It uses generated keys and synthetic card channels, suppresses private process output, and removes its own temporary state. It requires no real card, operator credential, deployed CA or system trust change.

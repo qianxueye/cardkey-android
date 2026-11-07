@@ -41,7 +41,7 @@ class ProtectedPivResultHeaderTest {
                 MaterialTheme {
                     Box(Modifier.requiredSize(800.dp, 1000.dp)) {
                         ManagerScreen(state, 0, {}, {}, { it.close() }, {}, {}, null, {}, {}, {}, {},
-                            EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                            EnrollmentState(), {}, {}, { it.close() }, {}, {},
                             TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
                             InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, protectedPiv = ProtectedPivState(),
                             onProtectedPivDocument = {}, onProtectedPivClear = {},

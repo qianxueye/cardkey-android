@@ -56,12 +56,12 @@ class TlsPanelTest {
         val reader = UsbReaderDescriptor(device, 1, CardWire.APDU)
         manager.value = ManagerState(selectedReader = reader, nfc = false,
             recognition = CardRecognition(reader.routeKey, 1, CardFamily.PIV))
-        val enrollment = EnrollmentState("https://localhost", f.csr.cn, true, f.csr, f.bundle, EnrollmentStage.IMPORTED)
+        val enrollment = EnrollmentState("https://localhost", cc.cardkey.enrollment.enrollmentTarget("https://localhost", f.csr.identity), true, f.csr, f.bundle, EnrollmentStage.IMPORTED)
         activity.setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(width.dp, height.dp)) {
                     ManagerScreen(manager.value, clear.intValue, {}, {}, { it.close() }, { cancelled++ }, {}, null,
-                        {}, {}, {}, {}, enrollment, { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                        {}, {}, {}, {}, enrollment, {}, {}, { it.close() }, {}, {},
                         tls.value, { tls.value = tls.value.copy(address = it, revision = tls.value.revision + 1) }, {},
                         { submitted = it }, cc.cardkey.signing.SigningFileState(), { _, _ -> }, {}, cc.cardkey.ui.InventoryState(), { _, _ -> }, { _, _ -> }, {}, {}, protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
                             onProtectedPivDocument = {}, onProtectedPivClear = {},

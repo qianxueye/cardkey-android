@@ -11,7 +11,7 @@ class EnrollmentContractTest {
         StepCaFixture().use { fixture ->
             val card = EnrollmentCard()
             val pin = "123456".toCharArray()
-            val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = pin, text = "Synthetic, CN=literal")
+            val input = OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = pin, enrollmentIdentity = EnrollmentFixtures().identity.copy(displayName = "Synthetic, CN=literal"))
             val csr = CardOperationGate.tryAcquire()!!.use {
                 try { (CardSession(card).run { ManagerOperations().execute(it, input) } as OperationResult.Completed).value.enrollmentCsr!! }
                 finally { input.close() }
@@ -23,16 +23,17 @@ class EnrollmentContractTest {
             val token = fixture.token(csr)
             ca.checkToken(token, csr)
             val workflow = EnrollmentWorkflow()
-            workflow.settings(fixture.address, csr.cn)
+            workflow.settings(fixture.address)
+            workflow.choosePerson(enrollmentTarget(fixture.address, csr.identity))
             workflow.acceptRoot(workflow.rootRequest(), fixture.root)
             workflow.settleCsr(workflow.startCsr(), csr)
-            val (owner, _) = workflow.startIssuance(token)
+            val (owner, _) = workflow.prepareIssuerRequest()
             assertTrue(card.closed)
             CardOperationGate.tryAcquire()!!.close()
             val bundle = ca.execute(ca.call(csr, token), csr)
             workflow.settleIssuance(owner, bundle, EnrollmentStage.VERIFIED)
             assertEquals(EnrollmentStage.VERIFIED, workflow.state.value.stage)
-            assertFails { workflow.startIssuance(token) }
+            assertFails { workflow.prepareIssuerRequest() }
             val replay = runCatching { ca.execute(ca.call(csr, token), csr) }.exceptionOrNull() as EnrollmentException
             assertEquals(IssuanceFailure.REJECTED, replay.failure)
             val importInput = OperationInput(ManagerOperation.PIV_ENROLL_IMPORT, adminKey = card.managementKey.copyOf(), enrollmentImport = workflow.importRequest())
@@ -51,6 +52,18 @@ class EnrollmentContractTest {
                 val outcome = CardSession(card).run { PivClient(it).importCertificate(0x9a, bundle.leaf, ManagementAlgorithm.TDES, card.managementKey.copyOf()) } as OperationResult.Failed
                 if (lost) assertEquals(Effect.UNKNOWN, outcome.effect) else assertTrue(outcome.writeAccepted)
             }
+        }
+    }
+    @Test fun frozenPersonIdentitySuppliesCsrCommonNameAndTypedTextCannotReplaceIt() {
+        val identity = EnrollmentFixtures().identity.copy(displayName = "Selected Person")
+        val card = EnrollmentCard()
+        OperationInput(ManagerOperation.PIV_ENROLL_CSR, pin = "123456".toCharArray(),
+            text = "Unrelated typed name", enrollmentIdentity = identity).use { input ->
+            val result = CardSession(card).run { ManagerOperations().execute(it, input) } as OperationResult.Completed
+            val csr = requireNotNull(result.value.enrollmentCsr)
+            assertEquals(identity, csr.identity)
+            assertEquals("Selected Person", csr.cn)
+            EnrollmentProfile.subject(org.bouncycastle.pkcs.PKCS10CertificationRequest(csr.der).subject, "Selected Person")
         }
     }
     @Test fun p256AndMetadataAreCheckedBeforePinAndSignatureVerified() {

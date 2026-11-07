@@ -86,8 +86,8 @@ class CopyPruningTest {
             render({
                 val state by inventory.state.collectAsState()
                 ManagerScreen(ManagerState(recognition = CardRecognition("nfc", 1, CardFamily.FIDO2)), 0,
-                    {}, {}, { submitted = it }, {}, {}, null, {}, {}, {}, {}, EnrollmentState(), { _, _ -> }, {},
-                    { it.close() }, { token, _ -> token.fill('\u0000') }, {}, TlsQualificationState(), {}, {}, { it.close() },
+                    {}, {}, { submitted = it }, {}, {}, null, {}, {}, {}, {}, EnrollmentState(), {}, {},
+                    { it.close() }, {}, {}, TlsQualificationState(), {}, {}, { it.close() },
                     SigningFileState(), { _, _ -> }, {}, state, { _, _ -> }, { _, _ -> }, {}, {},
                     protectedPiv = ProtectedPivState(), onProtectedPivDocument = {}, onProtectedPivClear = {},
                     onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = { it.fill('\u0000') })
@@ -110,8 +110,8 @@ class CopyPruningTest {
         var submitted: OperationInput? = null
         try {
             render({ Column(Modifier.verticalScroll(rememberScrollState())) {
-                EnrollmentPanel(EnrollmentState(address = "https://ca.example.test", cn = "Synthetic", hasRoot = true),
-                    false, true, 0, { _, _ -> }, {}, { submitted = it }, { token, _ -> token.fill('\u0000') }, {}, {}, {}, {}, 1000.dp)
+                EnrollmentPanel(EnrollmentState(address = "https://ca.example.test", target = cc.cardkey.enrollment.enrollmentTarget("https://ca.example.test", cc.cardkey.enrollment.EnrollmentFixtures().identity), hasRoot = true),
+                    false, true, 0, {}, {}, { submitted = it }, {}, {}, {}, {}, {}, 1000.dp)
             } }) {
                 compose.onNodeWithTag("enrollment-pin").performScrollTo().performTextInput("123456")
                 compose.onNodeWithTag("enrollment-create-csr").performScrollTo().performClick()

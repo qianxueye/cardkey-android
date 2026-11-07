@@ -84,7 +84,7 @@ class IssuerBadgeLayoutTest {
                     CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
                         CardKeyTheme { Box(Modifier.requiredSize(width.dp, height.dp)) {
                             ManagerScreen(ManagerState(), 0, {}, {}, { fail("physical operation dispatched") }, {}, {}, null, {}, {}, {}, {},
-                                EnrollmentState(), { _, _ -> }, {}, { fail("enrollment dispatched") }, { _, _ -> fail("issuance dispatched") }, {},
+                                EnrollmentState(), {}, {}, { fail("enrollment dispatched") }, { fail("issuance dispatched") }, {},
                                 TlsQualificationState(), {}, {}, {}, SigningFileState(), { _, _ -> }, {}, InventoryState(),
                                 { _, _ -> }, { _, _ -> }, {}, {}, protectedPiv = ProtectedPivState(), onProtectedPivDocument = {},
                                 onProtectedPivClear = {}, onProtectedPivRecognize = { _, _, _ -> }, onProtectedPivExecute = {},

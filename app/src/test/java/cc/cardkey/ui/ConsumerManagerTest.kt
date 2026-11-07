@@ -39,7 +39,7 @@ class ConsumerManagerTest {
         activity.get().setContent {
             MaterialTheme { Box(Modifier.requiredSize(800.dp, 800.dp)) {
                 ManagerScreen(state.value, 0, {}, {}, { fail("Unexpected submission") }, {}, {}, null, {}, {}, {}, {},
-                    EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                    EnrollmentState(), {}, {}, { it.close() }, {}, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
                     InventoryState(), { _, _ -> }, { _, _ -> }, {}, {},
                     protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
@@ -77,7 +77,7 @@ class ConsumerManagerTest {
             val state = model.state.collectAsState().value
             MaterialTheme { Box(Modifier.requiredSize(800.dp, 800.dp)) {
                 ManagerScreen(state, 0, {}, {}, { it.close() }, {}, {}, null, {}, {}, {}, {},
-                    EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                    EnrollmentState(), {}, {}, { it.close() }, {}, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
                     InventoryState(), { _, _ -> }, { _, _ -> }, {}, {},
                     protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(awaitingPin = true),
@@ -117,7 +117,7 @@ class ConsumerManagerTest {
             val inventory = model.inventory.state.collectAsState().value
             MaterialTheme { Box(Modifier.requiredSize(400.dp, 800.dp)) {
                 ManagerScreen(state, 0, {}, {}, { submissions++; model.submit(it) }, model::cancel, {}, null, {}, {}, {}, {},
-                    EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                    EnrollmentState(), {}, {}, { it.close() }, {}, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
                     inventory, { _, _ -> }, { _, _ -> }, {}, model::inventoryAction,
                     protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),
@@ -149,7 +149,7 @@ class ConsumerManagerTest {
         activity.get().setContent {
             MaterialTheme { Box(Modifier.requiredSize(800.dp, 800.dp)) {
                 ManagerScreen(state.value, 0, {}, {}, { submissions++; submitted = it }, {}, {}, null, {}, {}, {}, {},
-                    EnrollmentState(), { _, _ -> }, {}, { it.close() }, { token, _ -> token.fill('\u0000') }, {},
+                    EnrollmentState(), {}, {}, { it.close() }, {}, {},
                     TlsQualificationState(), {}, {}, { it.close() }, SigningFileState(), { _, _ -> }, {},
                     InventoryState(), { _, _ -> }, { _, _ -> }, {}, {},
                     protectedPiv = cc.cardkey.protectedpiv.ProtectedPivState(),

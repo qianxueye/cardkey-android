@@ -15,6 +15,8 @@ internal class IssuerFixture : AutoCloseable {
     val revisionID = "33333333-3333-4333-8333-333333333333"
     val oldID = "44444444-4444-4444-8444-444444444444"
     val requests = CopyOnWriteArrayList<Pair<String, String?>>()
+    val mutations = CopyOnWriteArrayList<Triple<String, Map<String, String>, String>>()
+    var enrollmentResponse: ((String, String, String) -> Pair<Int, String>)? = null
     val completedRequests = CopyOnWriteArrayList<String>()
     var beforeResponse: ((String) -> Unit)? = null
     val png = ByteArrayOutputStream().use { out ->
@@ -26,6 +28,8 @@ internal class IssuerFixture : AutoCloseable {
     private val executor = Executors.newCachedThreadPool()
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
     val origin get() = "http://127.0.0.1:${server.localPort}"
+    var personOverride: String? = null
+    var cardItemsOverride: String? = null
     var personName = "Synthetic Person"
     var role = "operator"
     var identityOverride: String? = null
@@ -69,6 +73,11 @@ internal class IssuerFixture : AutoCloseable {
             val request = input.readLine() ?: return
             val headers = mutableMapOf<String, String>()
             while (true) { val line = input.readLine() ?: return; if (line.isEmpty()) break; headers[line.substringBefore(":").lowercase()] = line.substringAfter(":").trim() }
+            val bodyLength = headers["content-length"]?.toInt() ?: 0
+            val body = CharArray(bodyLength)
+            var offset = 0
+            while (offset < body.size) { val count = input.read(body, offset, body.size - offset); if (count < 0) return; offset += count }
+            val method = request.substringBefore(" ")
             val exchange = Exchange(socket, URI(request.split(" ")[1]), headers)
             try {
                 val path = exchange.requestURI.path
@@ -79,12 +88,19 @@ internal class IssuerFixture : AutoCloseable {
                 else if (failure != 0 && (failurePath == null || failurePath == path)) { exchange.responseHeaders["Location"] = redirect; respond(exchange, failure, "application/json", "{}".toByteArray()) }
                 else if (role == "employee" && path != "/v1/me" && !path.startsWith("/v1/me/")) respond(exchange, 403, "application/json", "{}".toByteArray())
                 else when {
+                    path.startsWith("/v1/issuances/") && enrollmentResponse != null -> {
+                        if (method != "GET") mutations.add(Triple(method, headers.toMap(), String(body)))
+                        val response = enrollmentResponse!!.invoke(method, path, String(body))
+                        exchange.responseHeaders["Retry-After"] = "0"
+                        if (response.first in 300..399) exchange.responseHeaders["Location"] = redirect
+                        respond(exchange, response.first, "application/json", response.second.toByteArray())
+                    }
                     path == "/v1/me" -> json(exchange, identity())
                     path == "/v1/me/person" -> json(exchange, com.google.gson.JsonParser.parseString(person()).asJsonObject.apply {
                         listOf("version", "created_at", "updated_at").forEach(::remove); addProperty("id", selfPersonOverride ?: personID)
                     }.toString())
                     path == "/v1/people" -> json(exchange, page(if (peopleEmpty || peoplePages && !peopleFirstPageHasPerson && !exchange.requestURI.query.contains("cursor=second")) "" else person(), if (peoplePages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
-                    path == "/v1/cards" || path == "/v1/me/cards" -> json(exchange, page(if (cardsEmpty || cardPages && !cardsFirstPageHasCard && !exchange.requestURI.query.contains("cursor=second")) "" else card().replace("\"person_id\":\"$personID\"", "\"person_id\":\"${selfCardPersonOverride ?: personID}\""), if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
+                    path == "/v1/cards" || path == "/v1/me/cards" -> json(exchange, page(if (cardsEmpty || cardPages && !cardsFirstPageHasCard && !exchange.requestURI.query.contains("cursor=second")) "" else (cardItemsOverride ?: card()).replace("\"person_id\":\"$personID\"", "\"person_id\":\"${selfCardPersonOverride ?: personID}\""), if (cardPages && !exchange.requestURI.query.contains("cursor=second")) "second" else ""))
                     path.endsWith("/badge-current") -> if (currentMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, if (path.startsWith("/v1/me/")) selfRevision() else revision())
                     path.endsWith("/badge-revisions") -> if (historyMissing) respond(exchange, 404, "application/json", "{}".toByteArray()) else json(exchange, page(if (historyEmpty || historyFirstPageEmpty && !exchange.requestURI.query.contains("cursor=older")) "" else if (exchange.requestURI.query.contains("cursor=older")) revision(oldID) else revision(), if (historyPages && !exchange.requestURI.query.contains("cursor=older")) "older" else ""))
                     path.endsWith("/front") || path.endsWith("/back") -> respond(exchange, if (mediaFailure == 0) 200 else mediaFailure, mediaType, mediaBytes ?: png)
@@ -103,7 +119,7 @@ internal class IssuerFixture : AutoCloseable {
         }
         val capabilities = capabilityOverride ?: when (role) {
             "employee" -> listOf("self:read", "self:artwork:read")
-            "administrator" -> listOf("people:read", "people:write", "cards:read", "cards:write", "issuances:write", "events:read", "issuances:close-out")
+            "administrator" -> listOf("people:read", "people:write", "cards:read", "cards:write", "issuances:write", "events:read", "issuances:close-out", "issuances:resolve-not-signed")
             else -> listOf("people:read", "people:write", "cards:read", "cards:write", "issuances:write", "events:read")
         }
         return com.google.gson.JsonObject().apply {
@@ -115,7 +131,7 @@ internal class IssuerFixture : AutoCloseable {
     fun selfRevision(): String = com.google.gson.JsonParser.parseString(revision()).asJsonObject.apply {
         listOf("source_output_id", "source_created_at", "person_version", "card_version", "actor").forEach(::remove)
     }.toString()
-    fun person() = """{"id":"$personID","employee_reference":"EMP-001","display_name":"$personName","badge_number":"B-01","department":"Example","job_title":"Operator","employment_status":"inactive","version":3,"created_at":"2026-10-26T00:00:00Z","updated_at":"2026-10-26T00:00:00Z"}"""
+    fun person() = personOverride ?: """{"id":"$personID","employee_reference":"EMP-001","display_name":"$personName","badge_number":"B-01","department":"Example","job_title":"Operator","employment_status":"inactive","upn":"synthetic@apture.cc","email":"synthetic@apture.cc","version":3,"created_at":"2026-10-26T00:00:00Z","updated_at":"2026-10-26T00:00:00Z"}"""
     fun card() = """{"id":"$cardID","person_id":"$personID","serial":"123456","status":"lost","version":2}"""
     fun revision(id: String = revisionID): String {
         val image = """{"media_type":"image/png","byte_length":${png.size},"width":20,"height":32,"accessibility_label":"${if (id == oldID) "Synthetic historical portrait card" else "Synthetic portrait card"}"}"""
